@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""
+status_pipeline.py — Consolidador del dashboard de estado personal.
+
+Une las 5 fuentes y las escribe en la hoja hub (Health_booster_data):
+  1. Intervals.icu  -> pestaña `objetivo` (HRV rMSSD, FC reposo, sueño, pasos)
+                       + duraciones de sesión (para sRPE)
+  2. Keep + Excel    -> `entreno_sets` (vía entreno_pipeline) + `entreno_sesion`
+  3. Hub (gspread)   -> lee `wellness_am`, `wellness_pm`, `peso`
+  4. entreno_sesion  -> `rm1` (mejor e1RM por semana, derivado)
+  5. Consolidación   -> `derived_diario` (readiness, sRPE, lags, ACWR, delta_am_pm)
+
+Solo ESCRIBE en: objetivo, entreno_sets, entreno_sesion, rm1, derived_diario.
+NUNCA toca wellness_am / wellness_pm / peso (esas las llenan los Forms / tú).
+
+Credenciales: se leen de un .env (ver .env.example). No hay secretos en el código.
+Uso:
+    pip install -r requirements.txt
+    python3 status_pipeline.py            # últimos 120 días
+    python3 status_pipeline.py --since 2026-06-01
+"""
+import os, re, sys, time, argparse, datetime as dt
+import requests
+import pandas as pd
+from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+import gspread
+
+import entreno_pipeline as ep   # el parser que ya validamos
+
+load_dotenv()
+API_KEY  = os.getenv("INTERVALS_API_KEY")
+ATHLETE  = os.getenv("INTERVALS_ATHLETE_ID")
+SA_JSON  = os.getenv("GOOGLE_SA_JSON")
+SHEET_ID = os.getenv("SHEET_ID")
+KEEP_TXT = os.getenv("KEEP_TXT")
+DRIVE_EXCEL_ID = os.getenv("DRIVE_EXCEL_ID")   # Hoja de Google "Hugo the GOAT" (plan de entreno)
+INTERVALS = "https://intervals.icu/api/v1"
+
+# ----------------------------------------------------------------------------
+# 1. INTERVALS
+# ----------------------------------------------------------------------------
+def intervals_get(path, params=None):
+    r = requests.get(f"{INTERVALS}{path}", params=params, auth=("API_KEY", API_KEY), timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+# Intervals crea la fila del día antes de tener los datos de la noche, así que un
+# primer fetch puede traer HRV/sueño vacíos aunque el reloj ya haya sincronizado.
+# Si falta el HRV de AYER (que debería existir), se reintenta unas veces con una
+# espera corta. Sube estos números si ves que sigue haciendo falta (el refetch es
+# siempre igual o mejor: Intervals solo añade datos, no los borra).
+INTERVALS_REINTENTOS = 3
+INTERVALS_ESPERA_S = 8
+
+def _wellness_once(oldest, newest):
+    data = intervals_get(f"/athlete/{ATHLETE}/wellness",
+                         {"oldest": oldest, "newest": newest})
+    rows = []
+    for d in data:
+        secs = d.get("sleepSecs")
+        rows.append(dict(
+            fecha       = d.get("id"),
+            hrv_rmssd   = d.get("hrv"),
+            fc_reposo   = d.get("restingHR"),
+            sueno_horas = round(secs/3600, 2) if secs else None,
+            sueno_score = d.get("sleepScore"),
+            pasos       = d.get("steps"),
+        ))
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df[df["fecha"].notna()].sort_values("fecha").reset_index(drop=True)
+
+def _falta_hrv_de_ayer(df):
+    """True si el día más reciente ANTERIOR a hoy no tiene HRV (debería tenerlo)."""
+    if df.empty:
+        return False
+    prev = df[df["fecha"] < str(dt.date.today())]
+    return not prev.empty and pd.isna(prev.iloc[-1]["hrv_rmssd"])
+
+def fetch_objetivo(oldest, newest):
+    """Wellness diario: HRV rMSSD, FC reposo, sueño, pasos. Reintenta si Intervals
+    aún no ha rellenado el HRV de ayer (ver INTERVALS_REINTENTOS)."""
+    df = _wellness_once(oldest, newest)
+    for intento in range(1, INTERVALS_REINTENTOS + 1):
+        if not _falta_hrv_de_ayer(df):
+            break
+        ultimo = df[df["fecha"] < str(dt.date.today())].iloc[-1]["fecha"]
+        print(f"   (Intervals: HRV de {ultimo} aún vacío; reintento "
+              f"{intento}/{INTERVALS_REINTENTOS} en {INTERVALS_ESPERA_S}s…)")
+        time.sleep(INTERVALS_ESPERA_S)
+        df = _wellness_once(oldest, newest)
+    if _falta_hrv_de_ayer(df):
+        print("   (Intervals: sigue sin HRV de ayer tras los reintentos; "
+              "probablemente el reloj aún no ha subido la noche — reejecuta en unos minutos)")
+    return df
+
+def fetch_duraciones(oldest, newest):
+    """Minutos de entreno por fecha (para sRPE), sumando actividades del día."""
+    try:
+        acts = intervals_get(f"/athlete/{ATHLETE}/activities",
+                            {"oldest": oldest, "newest": newest})
+    except Exception as e:
+        print(f"  (aviso) no pude leer actividades: {e}")
+        return pd.DataFrame(columns=["fecha", "duracion_min"])
+    rows = []
+    for a in acts:
+        start = (a.get("start_date_local") or "")[:10]
+        secs  = a.get("moving_time") or a.get("elapsed_time") or 0
+        if start:
+            rows.append((start, secs/60.0))
+    if not rows:
+        return pd.DataFrame(columns=["fecha", "duracion_min"])
+    return (pd.DataFrame(rows, columns=["fecha", "duracion_min"])
+              .groupby("fecha", as_index=False)["duracion_min"].sum().round(1))
+
+# ----------------------------------------------------------------------------
+# 2. ENTRENO  (Keep + Excel -> sets -> sesión)
+# ----------------------------------------------------------------------------
+# El plan de todos los bloques vive en un único archivo de Drive (Hoja de Google
+# "Hugo the GOAT"). Se lee la columna A de cada pestaña vía gspread (la exportación
+# a .xlsx falla por el límite de 10 MB de la API de Drive, y no hace falta el resto).
+# El reparto pestaña -> (bloque, semana) está en ep.TAB_ROUTE.
+
+def drive_lookups():
+    """Lee el plan de entreno desde Drive -> {bloque: lookup_de_ejercicios}."""
+    if not DRIVE_EXCEL_ID:
+        return {}
+    scopes = ["https://www.googleapis.com/auth/spreadsheets",
+              "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file(SA_JSON, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(DRIVE_EXCEL_ID)
+    sheets = []
+    for ws in sh.worksheets():
+        try:
+            sheets.append((ws.title, ws.col_values(1)))
+        except Exception:
+            continue  # pestañas de gráfico no tienen columna A; se ignoran
+    return ep.extract_exercises(sheets, verbose=True)
+
+def build_entreno():
+    if not (KEEP_TXT and os.path.exists(KEEP_TXT)):
+        print("  (aviso) KEEP_TXT no encontrado; salto entreno.")
+        return pd.DataFrame(), pd.DataFrame()
+    if not DRIVE_EXCEL_ID:
+        print("  (aviso) DRIVE_EXCEL_ID no definido en .env; los sets saldrán sin nombres.")
+    lookups = ep.apply_basic_swaps(drive_lookups())
+    sets = ep.parse_keep(open(KEEP_TXT, encoding="utf-8").read(), lookups)
+    # sesión: solo sesiones con fecha (las que pueden cruzarse con el resto)
+    dated = sets[sets["fecha"].astype(str).str.len() == 10].copy()
+    if dated.empty:
+        return sets, pd.DataFrame()
+    def agg(g):
+        vb = g.loc[g["tipo"] == "básico", "volumen"].sum(min_count=1)
+        va = g.loc[g["tipo"] == "accesorio", "volumen"].sum(min_count=1)
+        dolor = ""
+        if "dolor_sesion" in g:
+            vals = g["dolor_sesion"].dropna().astype(str)
+            vals = vals[vals != ""]
+            if not vals.empty: dolor = vals.iloc[0]
+        return pd.Series(dict(
+            semana=g["semana"].iloc[0], dia=g["dia"].iloc[0], bloque=g["bloque"].iloc[0],
+            volumen_total=g["volumen"].sum(min_count=1),
+            n_series_total=g["n_series"].sum(min_count=1),
+            mejor_e1rm=g["e1rm"].max(),
+            vol_basicos=vb, vol_accesorios=va,
+            dolor_sesion_keep=dolor,
+        ))
+    sesion = dated.groupby("fecha", as_index=False).apply(agg, include_groups=False)
+    return sets, sesion
+
+# ----------------------------------------------------------------------------
+# 3/4. RM1 (derivado de entreno: mejor e1RM por semana y por ejercicio básico)
+# ----------------------------------------------------------------------------
+def build_rm1(sets):
+    if sets.empty: return pd.DataFrame()
+    b = sets[(sets["tipo"] == "básico") & sets["e1rm"].notna()]
+    if b.empty: return pd.DataFrame()
+    piv = (b.groupby(["bloque", "semana", "ejercicio"])["e1rm"].max()
+             .reset_index().rename(columns={"e1rm": "mejor_e1rm"}))
+    return piv
+
+# ----------------------------------------------------------------------------
+# 5. CONSOLIDACIÓN -> derived_diario
+# ----------------------------------------------------------------------------
+def to_num(df, cols):
+    for c in cols:
+        if c in df: df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+_HHMM = re.compile(r'^\s*(\d{1,2})[:.](\d{2})(?::\d{2})?\s*$')
+
+def _hhmm(v):
+    m = _HHMM.match(str(v)) if v is not None else None
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+def tiempo_en_cama(acostarse, despertar):
+    """Horas ENTRE acostarse y levantarse. Cruza medianoche.
+
+    Ojo: esto NO son horas dormidas. El formulario AM pregunta a qué hora te
+    metiste en la cama y a qué hora te levantaste, así que incluye lo que tardas
+    en dormirte y los despertares. Las horas dormidas de verdad las mide el reloj
+    (Intervals). La diferencia entre ambas es la eficiencia del sueño.
+    """
+    a, d = _hhmm(acostarse), _hhmm(despertar)
+    if a is None or d is None:
+        return None
+    if d <= a:
+        d += 24 * 60          # se acostó antes de medianoche, despertó después
+    h = (d - a) / 60.0
+    return round(h, 2) if 0 < h <= 16 else None   # fuera de rango = dato mal metido
+
+def consolidate(am, pm, peso, objetivo, sesion, duraciones):
+    # normaliza claves de fecha
+    for d in (am, pm, peso, objetivo, sesion, duraciones):
+        if not d.empty and "fecha" in d:
+            d["fecha"] = d["fecha"].astype(str).str[:10]
+
+    am = to_num(am, ["sueno_calidad","sensacion_am","animo","estres","molestias_nivel",
+                     "cafeina_ayer_mg","alcohol_ayer","latencia_min"])
+    pm = to_num(pm, ["energia","sensacion_global","cafeina_hoy_mg","rpd_sesion"])
+    peso = to_num(peso, ["peso_kg"])
+
+    # Varias pesadas el mismo día -> una sola fila (media). Si no, el merge duplica
+    # filas en derived_diario y rompe los lags y las ventanas móviles de abajo.
+    if not peso.empty and "fecha" in peso:
+        peso = peso.groupby("fecha", as_index=False)["peso_kg"].mean().round(2)
+
+    base = pd.DataFrame({"fecha": pd.unique(pd.concat(
+        [x["fecha"] for x in (am, pm, objetivo, sesion) if not x.empty and "fecha" in x],
+        ignore_index=True))}) if any(not x.empty for x in (am,pm,objetivo,sesion)) else pd.DataFrame(columns=["fecha"])
+    if base.empty: return base
+
+    # `latencia_min` (cuánto tardas en dormirte) aún no existe en el formulario AM.
+    # Se arrastra si algún día aparece; hasta entonces, la mezcla de latencia y
+    # despertares se ve como el hueco entre tiempo en cama y horas dormidas.
+    am_cols = ["fecha","sueno_calidad","sensacion_am","animo","estres","molestias_nivel",
+               "cafeina_ayer_mg","alcohol_ayer","hora_acostarse","hora_despertar","latencia_min"]
+    pm_cols = ["fecha","energia","sensacion_global","cafeina_hoy_mg","rpd_sesion",
+               "dolor_sesion_zona","dolor_sesion_nota"]
+    df = base.merge(am[[c for c in am_cols if c in am]], on="fecha", how="left") \
+             .merge(pm[[c for c in pm_cols if c in pm]], on="fecha", how="left") \
+             .merge(objetivo, on="fecha", how="left") \
+             .merge(sesion, on="fecha", how="left") \
+             .merge(duraciones, on="fecha", how="left") \
+             .merge(peso[["fecha","peso_kg"]] if not peso.empty else peso, on="fecha", how="left")
+
+    df = df.sort_values("fecha").drop_duplicates(subset="fecha", keep="last").reset_index(drop=True)
+
+    # Sueño. Dos magnitudes distintas que NO se mezclan:
+    #   sueno_horas       -> horas realmente dormidas, las mide el reloj (Intervals).
+    #   tiempo_en_cama_h  -> horas entre acostarse y levantarse, del formulario AM.
+    # La segunda incluye lo que tardas en dormirte y los despertares, así que
+    # rellenar la primera con la segunda inflaría tu sueño. Su cociente es la
+    # eficiencia: cuánto de lo que pasas en cama duermes de verdad.
+    if "sueno_horas" not in df:
+        df["sueno_horas"] = None
+    df["sueno_horas"] = pd.to_numeric(df["sueno_horas"], errors="coerce")
+    df["tiempo_en_cama_h"] = df.apply(
+        lambda r: tiempo_en_cama(r.get("hora_acostarse"), r.get("hora_despertar")), axis=1)
+    ef = df["sueno_horas"] / df["tiempo_en_cama_h"]
+    df["eficiencia_sueno"] = (ef * 100).round(1).where(ef.between(0, 1))
+
+    # readiness 0-100 (bipolares directas, unipolares invertidas)
+    def readiness(r):
+        bip = [r.get(k) for k in ("sueno_calidad","sensacion_am","animo","energia")]
+        uni = [9 - r.get(k) if pd.notna(r.get(k)) else None for k in ("estres","molestias_nivel")]
+        vals = [v for v in bip + uni if pd.notna(v)]
+        return round(sum(vals)/len(vals)/9*100, 1) if vals else None
+    df["readiness"] = df.apply(readiness, axis=1)
+
+    # delta AM->PM
+    df["delta_am_pm"] = df["sensacion_global"] - df["sensacion_am"]
+
+    # sRPE = RPD * duración (min)
+    if "rpd_sesion" in df and "duracion_min" in df:
+        df["sRPE"] = (df["rpd_sesion"] * df["duracion_min"]).round(0)
+
+    # lags y carga
+    df["hrv_ayer"] = df["hrv_rmssd"].shift(1) if "hrv_rmssd" in df else None
+    df["sueno_horas_ayer"] = df["sueno_horas"].shift(1) if "sueno_horas" in df else None
+    if "sRPE" in df:
+        df["sRPE_7d"]  = df["sRPE"].rolling(7,  min_periods=1).sum()
+        df["sRPE_28d"] = df["sRPE"].rolling(28, min_periods=1).sum()
+        df["ACWR"] = ((df["sRPE_7d"]/7) / (df["sRPE_28d"]/28)).round(2)
+    return df
+
+# ----------------------------------------------------------------------------
+# gspread helpers — escribir SOLO en pestañas de salida
+# ----------------------------------------------------------------------------
+def open_sheet():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets",
+              "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file(SA_JSON, scopes=scopes)
+    return gspread.authorize(creds).open_by_key(SHEET_ID)
+
+def read_tab(sh, name):
+    try:
+        return pd.DataFrame(sh.worksheet(name).get_all_records())
+    except Exception as e:
+        print(f"  (aviso) no pude leer '{name}': {e}")
+        return pd.DataFrame()
+
+def write_tab(sh, name, df):
+    if df is None or df.empty:
+        print(f"  (aviso) '{name}' vacío, no escribo."); return
+    try:
+        ws = sh.worksheet(name)
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title=name, rows=1000, cols=max(10, len(df.columns)))
+    ws.clear()
+    values = [df.columns.tolist()] + df.where(pd.notna(df), "").astype(object).values.tolist()
+    ws.update(values, value_input_option="USER_ENTERED")
+    print(f"  ✓ {name}: {len(df)} filas")
+
+def informe_frescura(df, hoy):
+    """Hasta qué día llega cada fuente.
+
+    Sin esto, que el reloj lleve una semana sin sincronizar con Intervals es
+    indistinguible de que el pipeline no se haya ejecutado: la hoja se reescribe
+    igual y el resumen dice "121 días" en ambos casos.
+    """
+    print("\n· Frescura de los datos (último día con valor):")
+    fuentes = [("hrv_rmssd", "HRV (reloj)"), ("sueno_horas", "sueño (reloj)"),
+               ("pasos", "pasos (reloj)"), ("sueno_calidad", "formulario AM"),
+               ("rpd_sesion", "formulario PM"), ("volumen_total", "entreno (keep)"),
+               ("peso_kg", "peso")]
+    for col, etiqueta in fuentes:
+        if col not in df:
+            print(f"    {etiqueta:<18} —  (columna ausente)"); continue
+        con_dato = df.loc[df[col].notna(), "fecha"]
+        if con_dato.empty:
+            print(f"    {etiqueta:<18} —  (sin datos)"); continue
+        ultimo = con_dato.iloc[-1]
+        atraso = (dt.date.fromisoformat(hoy) - dt.date.fromisoformat(ultimo)).days
+        aviso = "" if atraso <= 1 else f"   ← {atraso} días de retraso"
+        print(f"    {etiqueta:<18} {ultimo}{aviso}")
+
+# ----------------------------------------------------------------------------
+def main():
+    ap = argparse.ArgumentParser()
+    today = dt.date.today()
+    ap.add_argument("--since", default=str(today - dt.timedelta(days=120)))
+    ap.add_argument("--until", default=str(today))
+    args = ap.parse_args()
+
+    missing = [k for k,v in dict(INTERVALS_API_KEY=API_KEY, INTERVALS_ATHLETE_ID=ATHLETE,
+                                 GOOGLE_SA_JSON=SA_JSON, SHEET_ID=SHEET_ID).items() if not v]
+    if missing:
+        sys.exit(f"Faltan variables en .env: {', '.join(missing)}")
+
+    print(f"Rango: {args.since} -> {args.until}")
+    print("1) Intervals…")
+    objetivo   = fetch_objetivo(args.since, args.until)
+    duraciones = fetch_duraciones(args.since, args.until)
+    print(f"   objetivo: {len(objetivo)} días | actividades con duración: {len(duraciones)}")
+
+    print("2) Entreno (Keep + Excel)…")
+    sets, sesion = build_entreno()
+    rm1 = build_rm1(sets)
+    print(f"   sets: {len(sets)} | sesiones: {len(sesion)} | rm1: {len(rm1)}")
+
+    print("3) Hub (lectura)…")
+    sh = open_sheet()
+    am   = read_tab(sh, "wellness_am")
+    pm   = read_tab(sh, "wellness_pm")
+    peso = read_tab(sh, "peso")
+    print(f"   wellness_am: {len(am)} | wellness_pm: {len(pm)} | peso: {len(peso)}")
+
+    print("4) Consolidando derived_diario…")
+    derived = consolidate(am, pm, peso, objetivo, sesion, duraciones)
+    print(f"   derived_diario: {len(derived)} días")
+
+    print("5) Escribiendo en el hub…")
+    write_tab(sh, "objetivo", objetivo)
+    write_tab(sh, "entreno_sets", sets)
+    write_tab(sh, "entreno_sesion", sesion)
+    write_tab(sh, "rm1", rm1)
+    write_tab(sh, "derived_diario", derived)
+
+    if not derived.empty:
+        informe_frescura(derived, args.until)
+    print("\nHecho ✅")
+
+if __name__ == "__main__":
+    main()

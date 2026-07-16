@@ -1,0 +1,16 @@
+# --- secretos y datos personales — NUNCA al repo (el histórico se publica al hacerlo público) ---
+.env
+health-boost-*.json
+keep.txt
+
+# --- regenerable ---
+venv/
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+__pycache__/
+*.pyc
+entreno_join.csv
+
+# --- claude / editor / SO ---
+.claude/
+.DS_Store

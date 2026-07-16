@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""
+Pipeline de entreno v2 — consciente de BLOQUES.
+
+  - Entiende cabeceras "BLOQUE N". Cada bloque se mapea a su Excel (BLOQUE_EXCEL).
+    Solo se nombran los ejercicios de bloques con Excel; el resto entra con
+    números + e1RM/volumen pero sin nombre y con flag 'sin_excel'.
+  - Captura notas inline (dolor aductor, me caí, CONFÍE...) en columna `nota`.
+  - Maneja casos reales: banda elástica (sin kg), isométricos por segundos (3x30"),
+    tempo (3x12x2"), peso suelto sin reps (105), distancia (20m), RIR8+,
+    e intensidades no parseables (RIRmario) -> flag, nunca se inventa.
+"""
+import re, sys, unicodedata
+import pandas as pd
+from openpyxl import load_workbook
+
+# El plan de TODOS los bloques vive en la misma hoja ("Hugo the GOAT"): las pestañas
+# "Semana N" son el bloque 3 y las "Peaking SN" el bloque 4. El bloque no se puede
+# deducir del número (Semana 3 y Peaking S3 colisionarían), así que cada familia de
+# pestañas se enruta por regla; el número capturado es la semana dentro del bloque.
+# Al empezar un bloque 5 basta con añadir aquí su patrón de pestaña.
+PLAN_TAB_RULES = [
+    (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      3),
+    (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 4),
+]
+
+def route_tab(title):
+    """Título de pestaña -> (bloque, semana) o None si no es una semana de plan."""
+    for rx, bloque in PLAN_TAB_RULES:
+        m = rx.match(title)
+        if m:
+            return bloque, m.group(1)
+    return None
+
+# Fuente local del plan (solo para el modo __main__ de depuración; el pipeline real
+# lo lee de Drive).
+PLAN_XLSX = "/home/hugo/Desktop/Hugo the GOAT.xlsx"
+
+# Correcciones puntuales: semanas donde desviaste el plan del Excel.
+# (bloque, semana): {dia_que_entrenaste: dia_del_que_sacaste_los_BÁSICOS}
+# Solo rotan los básicos; los accesorios se quedan en su día.
+BASIC_SWAP = {
+    (3, '4'): {'2': '3', '3': '4', '4': '2'},   # B3-SEM4: básicos rotados DIA2<-3, DIA3<-4, DIA4<-2
+}
+
+def apply_basic_swaps(lk_by_bloque):
+    for (bloque, sem), mapping in BASIC_SWAP.items():
+        lk = lk_by_bloque.get(bloque)
+        if not lk:
+            continue
+        nuevo = {}
+        for perf_dia, src_dia in mapping.items():
+            basicos = [e for e in lk.get((sem, src_dia), []) if e['block'] == 'básico']
+            access  = [e for e in lk.get((sem, perf_dia), []) if e['block'] == 'accesorio']
+            nuevo[(sem, perf_dia)] = [dict(order=i, name=e['name'], block=e['block'], bw=e['bw'])
+                                      for i, e in enumerate(basicos + access, 1)]
+        lk.update(nuevo)
+    return lk_by_bloque
+
+RPE_TABLE = {
+    10.0:[100,95.5,92.2,89.2,86.3,83.7,81.1,78.6,76.2,73.9,70.7,68.0],
+    9.5:[97.8,93.9,90.7,87.8,85.0,82.4,79.9,77.4,75.1,72.3,69.4,66.7],
+    9.0:[95.5,92.2,89.2,86.3,83.7,81.1,78.6,76.2,73.9,70.7,68.0,65.3],
+    8.5:[93.9,90.7,87.8,85.0,82.4,79.9,77.4,75.1,72.3,69.4,66.7,64.0],
+    8.0:[92.2,89.2,86.3,83.7,81.1,78.6,76.2,73.9,70.7,68.0,65.3,62.6],
+    7.5:[90.7,87.8,85.0,82.4,79.9,77.4,75.1,72.3,69.4,66.7,64.0,61.3],
+    7.0:[89.2,86.3,83.7,81.1,78.6,76.4,73.9,70.7,68.0,65.3,62.6,59.9],
+    6.5:[87.8,85.0,82.4,79.9,77.4,75.1,72.3,69.4,66.7,64.0,61.3,58.6],
+    6.0:[86.3,83.7,81.1,78.6,76.2,73.9,70.7,68.0,65.3,62.6,59.9,57.4],
+}
+RPE_KEYS=sorted(RPE_TABLE); BW=('plancha','abduc','retrac','dominada','fondo','hollow','gusano')
+
+# Vocabulario controlado de zonas (mismo que el form AM) + sinónimos para normalizar texto libre.
+ZONE_KEYWORDS = {
+    'Abdomen':['abdomen','abdominal','core'], 'Aductor':['aductor','adductor'],
+    'Antebrazos':['antebrazo'], 'Bíceps':['biceps','bíceps'], 'Cadera':['cadera'],
+    'Codo':['codo'], 'Cuádriceps':['cuadricep','cuádricep','cuadriceps','cuádriceps'],
+    'Cuello':['cuello','cervical'], 'Dorsal/Trapecios':['dorsal','trapecio','trapa'],
+    'Gemelos':['gemelo','soleo','sóleo'], 'Glúteo':['gluteo','glúteo'],
+    'Hombro':['hombro','deltoid'], 'Isquios':['isquio','femoral'],
+    'Lumbar':['lumbar','espalda baja'], 'Manos':['mano'], 'Muñeca':['muñeca','muneca'],
+    'Pectoral':['pectoral','pecho'], 'Rodilla':['rodilla'], 'Tobillo':['tobillo'],
+    'Triceps':['triceps','tríceps'],
+}
+def normalize_zones(text):
+    if not text: return '', ''
+    low=text.lower()
+    zonas=[z for z,kws in ZONE_KEYWORDS.items() if any(k in low for k in kws)]
+    lado=''
+    if re.search(r'\bizq', low): lado='izq'
+    if re.search(r'\bder', low): lado='der' if not lado else 'bilateral'
+    if re.search(r'bilat|ambos|los dos|amb\b', low): lado='bilateral'
+    return ' | '.join(zonas), lado
+def rir_to_rpe(r): return max(6.0,min(10.0,10.0-float(r)))
+def snap(r): return min(RPE_KEYS,key=lambda k:abs(k-r))
+def e1rm(w,reps,rpe=None,rir=None):
+    if w is None or reps is None: return None,None
+    if rpe is None and rir is not None: rpe=rir_to_rpe(rir)
+    if rpe is None: rpe=10.0
+    ri=int(round(reps))
+    if 1<=ri<=12 and 6.0<=rpe<=10.0: return round(w/(RPE_TABLE[snap(rpe)][ri-1]/100.0),1),"tabla_RPE"
+    return round(w*(1+(reps+(10.0-rpe))/30.0),1),"epley_fallback"
+
+# ---------------------------------------------------------------------------
+# Normalización de nombres de ejercicio.
+#
+# El plan escribe el mismo ejercicio de formas distintas según la pestaña
+# ("Ext tríceps katana" vs "Extensión tríceps katana") y a veces le pega el esquema
+# de series ("Banca 3ct 4x3 @7"). Aquí se unifica.
+#
+# CUIDADO: las variantes de un mismo patrón son ejercicios DISTINTOS y no se
+# fusionan nunca. Banca comp ≠ Banca 3ct ≠ Banca mid grip.
+# ---------------------------------------------------------------------------
+_SCHEME_RE = re.compile(r'\s+\d+\s*x\s*\d+.*$', re.I)   # "... 4x3 @7", "... 1x2 y 3x4 @6"
+_TRAIL_RPE_RE = re.compile(r'\s*@[\d.]+\s*$')
+
+def _key(name):
+    """Clave de comparación: sin tildes, minúsculas, espacios colapsados."""
+    s = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode()
+    return re.sub(r'\s+', ' ', s).strip().lower()
+
+# clave normalizada -> nombre canónico para mostrar.
+#
+# Solo fusiona ABREVIATURAS del mismo ejercicio. "Sq low bar" es literalmente
+# "Sentadilla LB" (low bar). Lo que NO se fusiona nunca son variantes distintas:
+# Banca comp / Banca 3ct / Banca mid grip, o Sq high bar / Sq high bar pausa 2ct.
+ALIAS = {
+    'comp bp':                             'Banca comp',
+    'sq low bar':                          'Sentadilla LB',
+    'dl sumo':                             'Sumo dl',
+    'ext triceps katana':                  'Extensión tríceps katana',
+    'ext triceps barra polea':             'Extensión tríceps en polea con barra',
+    'elevaciones lat en polea':            'Elevaciones laterales en polea',
+    'press militar en maquina':            'Press militar máquina',
+    'hip thrust unilateral con mancuerna': 'Hip thrust unilateral',
+    'curl arana inclinado con barra z':    'Curl araña barra Z',
+    'plancha+abduccion lateral de cadera': 'Plancha+abd lateral',
+    'pull over unilateral polea alta':     'Pull over unilateral',
+    'leg extension 2ct arriba':            'Leg extension 2ct',
+}
+
+def canon_exercise(name):
+    """'Banca 3ct 4x3 @7' -> 'Banca 3ct'; 'Comp bp' -> 'Banca comp'."""
+    if not name: return name
+    t = _SCHEME_RE.sub('', name.strip())
+    t = _TRAIL_RPE_RE.sub('', t).strip()
+    return ALIAS.get(_key(t), t)
+
+SKIP={'básicos','basicos','accesorios','nombre','protocolo','comentario','observaciones','kg','repes','rir/rpe'}
+# "RPE EN LA SESIÓN (0-10)" y su errata "RPD EN LA SESIÓN" no son ejercicios.
+RPE_ROW_RE = re.compile(r'rp[ed]\s+en\s+la\s+sesi', re.I)
+SES_RE  = re.compile(r'sesi[oó]n\s*0*(\d+)', re.I)
+
+def _colA_from_xlsx(path):
+    """Genera (titulo_pestaña, [valores columna A]) desde un .xlsx local."""
+    wb=load_workbook(path, read_only=True, data_only=True)
+    for sh in wb.sheetnames:
+        yield sh, [(row[0] if row else None) for row in wb[sh].iter_rows(values_only=True)]
+
+def extract_exercises(source, verbose=False):
+    """Lee el plan y devuelve {bloque: {(semana, dia): [ejercicios]}}.
+
+    `source`: ruta a .xlsx local ó iterable de (titulo, columna_A) (p.ej. leído de
+    Google Drive vía gspread). Solo se usa la columna A. Las pestañas que no sean
+    una semana de plan se ignoran (nutrición, gráficos, movilidad…).
+    """
+    sheets = _colA_from_xlsx(source) if isinstance(source, str) else source
+    out={}; mapping=[]; skipped=[]
+    for sh, colA in sheets:
+        dest = route_tab(sh)
+        if dest is None:
+            skipped.append(sh); continue
+        bloque, wk = dest
+        mapping.append((sh, bloque, wk))
+        lk = out.setdefault(bloque, {})
+        dia=0; order=0; block=None
+        for a in colA:
+            if not isinstance(a,str): continue
+            t=a.strip(); low=t.lower()
+            if not t: continue   # gspread devuelve '' en celdas vacías; ignóralas (como openpyxl->None)
+            ms=SES_RE.match(t)
+            if ms: dia=ms.group(1); order=0; block=None; continue
+            if low in ('básicos','basicos'): block='básico'; continue
+            if low=='accesorios': block='accesorio'; continue
+            if low in SKIP or RPE_ROW_RE.match(low) or t in ('#N/A','-'): continue
+            if t=='#REF!':
+                if dia: order+=1; lk.setdefault((wk,dia),[]).append(dict(order=order,name='(cambiado/#REF)',block=block,bw=False))
+                continue
+            if dia==0: continue
+            order+=1
+            lk.setdefault((wk,dia),[]).append(dict(order=order,name=canon_exercise(t),block=block,
+                                                   bw=any(k in low for k in BW)))
+    if verbose:
+        src = source.split('/')[-1] if isinstance(source,str) else 'drive'
+        print(f"  [Plan {src}] pestaña -> (bloque, semana): {mapping}")
+        print(f"  [Plan] pestañas ignoradas: {skipped}")
+    return out
+
+def parse_segment(seg):
+    raw=seg.strip()
+    if not raw: return None
+    note=[]
+    for m in re.findall(r'\(([^)]*)\)', raw): note.append(m.strip())
+    s=re.sub(r'\([^)]*\)',' ',raw)
+    mc=re.search(r'es\s*@([\d.]+)',s); corr=float(mc.group(1)) if mc else None
+    s=re.sub(r'es\s*@[\d.]+',' ',s)
+    # RPE (rango @x-y SIN espacios -> media). El guion del rango va pegado a los
+    # números; un guion con espacio separa SERIES, no es rango, así que no puede
+    # tragarse el kg de la serie siguiente aunque falte un espacio.
+    rpe=None
+    m=re.search(r'@([\d.]+)(?:-([\d.]+))?',s)
+    if m:
+        a=float(m.group(1)); b=float(m.group(2)) if m.group(2) else None
+        rpe=round((a+b)/2,2) if b is not None else a
+    if rpe is not None and not (0 <= rpe <= 10): rpe=None   # a prueba de fallos
+    # RIR (rango RIRx-y SIN espacios -> media, y RIRx+)
+    rir=None
+    m=re.search(r'RIR\s*(\d+)(?:-(\d+))?(\+?)',s,re.I)
+    if m:
+        a=int(m.group(1)); b=int(m.group(2)) if m.group(2) else None
+        rir=round((a+b)/2,2) if b is not None else a
+    if rir is not None and not (0 <= rir <= 10): rir=None   # a prueba de fallos
+    bad_int=bool(re.search(r'RIR(?!\s*\d)',s,re.I))
+    s=re.sub(r'@[\d.]+(?:-[\d.]+)?',' ',s)
+    s=re.sub(r'RIR\s*\d+(?:-\d+)?\+?',' ',s,flags=re.I)
+    # rango de REPES (unilateral: 8 en un lado, 10 en el otro -> "8-10" -> media 9).
+    # A esta altura los rangos de @ y RIR ya se han quitado, así que un guion pegado
+    # entre dígitos solo puede ser un rango de repes.
+    s=re.sub(r'(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)',
+             lambda m: f"{round((float(m.group(1))+float(m.group(2)))/2,2):g}", s)
+    s=re.sub(r'RIR\w*',' ',s,flags=re.I)
+    # banda / goma (cualquier color)
+    banda=bool(re.search(r'\b(banda|goma)\w*',s,re.I))
+    if banda: s=re.sub(r'\b(?:banda|goma)_?[a-záéíóúü]+','BANDA',s,flags=re.I)
+    # distancia (metros) — toma la primera ocurrencia
+    metros=re.search(r'(\d+)\s*m\b',s)
+    if metros: note.append(f"{metros.group(1)}m")
+    s=re.sub(r'\d+\s*m\b',' ',s)
+    # segundos (isométrico / tempo)
+    had_secs=bool(re.search(r'\d+\s*"',s))
+    s=re.sub(r'\d+\s*"',' SECS ',s)
+    # separar núcleo numérico de palabras-nota (conservando espacios)
+    s=re.sub(r'[xX]',' ',s)
+    nums=[]; words=[]
+    for tok in s.split():
+        if tok in ('SECS','BANDA'): nums.append(tok)
+        elif re.fullmatch(r'[\d.]+', tok):
+            try: nums.append(float(tok))
+            except: pass
+        else: words.append(tok)
+    if words: note.append(' '.join(words))
+    return dict(raw=raw, nums=nums, rpe=corr if corr is not None else rpe, rir=rir,
+                bad_int=bad_int, banda=banda, metros=(int(metros.group(1)) if metros else None),
+                had_secs=had_secs, note=' | '.join(n for n in note if n))
+
+def interpret(nums, anchor, bw, banda, metros):
+    numeric=[n for n in nums if isinstance(n,float)]; has_secs='SECS' in nums
+    if banda or 'BANDA' in nums:
+        if metros is not None or has_secs:
+            return (numeric[0] if numeric else 1),None,None,'banda',''
+        if len(numeric)>=2: return numeric[0],None,numeric[-1],'banda',''
+        if len(numeric)==1: return 1,None,numeric[0],'banda',''
+        return 1,None,None,'banda','banda_rara'
+    if metros is not None:
+        return (numeric[0] if numeric else 1),None,None,'distancia','distancia_m'
+    if has_secs:
+        if len(numeric)>=2: return numeric[0],None,numeric[1],'tempo',''
+        return (numeric[0] if numeric else 1),None,None,'isometrico',''
+    if len(numeric)==3: return numeric[0],numeric[1],numeric[2],None,''
+    if len(numeric)==2:
+        a,b=numeric
+        if bw is True: return a,None,b,None,''
+        if bw is False: return 1,a,b,None,''
+        if anchor is not None and a==anchor: return 1,a,b,None,''
+        if a>=10: return 1,a,b,None,'AMB?peso'
+        return a,None,b,None,'AMB?corporal'
+    if len(numeric)==1: return 1,None,numeric[0],None,'incompleto'
+    return None,None,None,None,'sin_datos'
+
+def parse_keep(text, lookups):
+    rows=[]; bloque=None; week=dia=None; slot=0; exs=[]; cur_fecha=''; dolores={}
+    for line in text.splitlines():
+        line=line.strip()
+        if not line: continue
+        mb=re.match(r'BLOQUE\s+(\d+)',line,re.I)
+        if mb: bloque=int(mb.group(1)); continue
+        h=re.match(r'SEM(\d+)\s*-\s*D[IÍ]A\s*(\d+)',line,re.I)
+        if h:
+            week,dia=h.group(1),h.group(2); slot=0
+            ex=re.search(r'-\s*(\d{4}-\d{2}-\d{2})',line); cur_fecha=ex.group(1) if ex else ''
+            exs=lookups.get(bloque,{}).get((week,dia),[]); continue
+        # línea de dolores de sesión -> metadato de la sesión, NO un ejercicio
+        md=re.match(r'\s*dolor(?:es)?\b', line, re.I)
+        if md:
+            txt=re.sub(r'^\s*dolor(?:es)?\s*(?:de\s*)?(?:sesi[oó]n)?\s*:?\s*','',line,flags=re.I).strip()
+            dolores[(bloque,week,dia)] = txt or line
+            continue
+        slot+=1
+        info=exs[slot-1] if slot-1 < len(exs) else None
+        name=info['name'] if info else None; block=info['block'] if info else None; bw=info['bw'] if info else None
+        # el plan cubre la sesión sólo si tiene ejercicios para ese (semana, día)
+        has_excel=bool(exs)
+        # Separador de series = guion con espacio en AL MENOS un lado (tolera que
+        # falte un espacio: "@4.5 -75" o "@4.5- 75" separan igual). Un guion entre
+        # dígitos sin espacios (RIR8-10, @7-8) NO separa: es un rango.
+        segs=[parse_segment(t) for t in re.split(r'\s+-\s*|\s*-\s+', line)]; segs=[p for p in segs if p]
+        anchor=next((p['nums'][1] for p in segs if len([n for n in p['nums'] if isinstance(n,float)])==3), None)
+        for p in segs:
+            ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'])
+            if p['bad_int']: flag=(flag+' int_no_parseable').strip()
+            if not has_excel: flag=(flag+' sin_excel').strip()
+            est,met=e1rm(kg,reps,p['rpe'],p['rir']) if (kg is not None and sp is None) else (None,None)
+            vol=round(ns*kg*reps,1) if (kg is not None and reps is not None and ns is not None) else None
+            rows.append(dict(bloque=bloque,semana=week,dia=dia,fecha=cur_fecha,slot=slot,
+                ejercicio=name,tipo=block,especial=sp,token=p['raw'],n_series=ns,kg=kg,reps=reps,
+                rpe=p['rpe'],rir=p['rir'],e1rm=est,volumen=vol,nota=p['note'],flag=flag.strip()))
+    df=pd.DataFrame(rows)
+    if not df.empty:
+        df['dolor_sesion']=df.apply(lambda r: dolores.get((r['bloque'],r['semana'],r['dia']),''), axis=1)
+    return df
+
+if __name__=="__main__":
+    keep=open(sys.argv[1],encoding="utf-8").read() if len(sys.argv)>1 else ""
+    lookups=extract_exercises(PLAN_XLSX, verbose=True)
+    apply_basic_swaps(lookups)
+    df=parse_keep(keep, lookups)
+    out="entreno_join.csv"; df.to_csv(out,index=False)
+    pd.set_option("display.width",200,"display.max_columns",25)
+    print("Slots por bloque:", {int(b):int(g.slot.nunique()) for b,g in df.groupby('bloque')})
+    print("\nBLOQUE 3 / SEM5-DIA1 (nombres del Excel):")
+    s=df[(df.bloque==3)&(df.semana=='5')&(df.dia=='1')]
+    print(s[['slot','ejercicio','tipo','token','n_series','kg','reps','e1rm','volumen','especial','nota','flag']].to_string(index=False))
+    print("\nBLOQUE 4 / SEM1-DIA2 (sin Excel, casos raros):")
+    s2=df[(df.bloque==4)&(df.semana=='1')&(df.dia=='2')]
+    print(s2[['slot','token','n_series','kg','reps','especial','nota','flag']].to_string(index=False))
+    print(f"\nFilas: {len(df)} | e1RM: {df['e1rm'].notna().sum()} | notas: {(df['nota']!='').sum()} | flags: {(df['flag']!='').sum()}")
+    print(f"CSV -> {out}")
