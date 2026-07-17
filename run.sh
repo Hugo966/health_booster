@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
 # run.sh — actualiza los datos y levanta el dashboard Jarvis de un tirón.
+# Portable: funciona en Linux/macOS y en Windows (Git Bash) — detecta solo
+# la forma del venv (bin/ o Scripts/).
 #
 # Orden correcto: pipeline (lee todo lo nuevo y reescribe la hoja) -> backend
 # (arranca DESPUÉS, así no sirve caché vieja) -> frontend.
@@ -9,7 +11,7 @@
 #   ./run.sh                      # pipeline (últimos 120 días) + backend + frontend
 #   ./run.sh --since 2026-06-01   # acota el rango del pipeline
 #   ./run.sh --no-pipeline        # solo servir, sin tocar los datos
-#
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,18 +28,22 @@ if [[ "${1:-}" == "--no-pipeline" || "${1:-}" == "-n" ]]; then
 fi
 PIPELINE_ARGS=("$@")   # el resto (p.ej. --since 2026-06-01) va al pipeline
 
-# --- venv ------------------------------------------------------------------
-if [[ ! -f "$ROOT/venv/bin/activate" ]]; then
+# --- venv (Linux/macOS: venv/bin — Windows: venv/Scripts) ------------------
+# Usamos el python del venv por ruta explícita: equivale a activarlo, pero no
+# depende del PATH de cada shell (Git Bash en Windows no lo resolvía bien).
+if [[ -x "$ROOT/venv/bin/python" ]]; then
+  PY="$ROOT/venv/bin/python"
+elif [[ -x "$ROOT/venv/Scripts/python.exe" ]]; then
+  PY="$ROOT/venv/Scripts/python.exe"
+else
   echo "✗ No encuentro el venv en $ROOT/venv. Créalo primero." >&2
   exit 1
 fi
-# shellcheck disable=SC1091
-source "$ROOT/venv/bin/activate"
 
 # --- 1) pipeline -----------------------------------------------------------
 if [[ "$RUN_PIPELINE" -eq 1 ]]; then
   echo "▸ 1/3  Actualizando datos (status_pipeline.py)…"
-  ( cd "$ROOT" && python status_pipeline.py "${PIPELINE_ARGS[@]}" )
+  ( cd "$ROOT" && "$PY" status_pipeline.py "${PIPELINE_ARGS[@]}" )
 else
   echo "▸ 1/3  (saltado: --no-pipeline)"
 fi
@@ -53,7 +59,7 @@ trap cleanup EXIT INT TERM
 
 # --- 2) backend ------------------------------------------------------------
 echo "▸ 2/3  Backend en http://localhost:$BACKEND_PORT …"
-( cd "$BACKEND_DIR" && exec uvicorn main:app --port "$BACKEND_PORT" ) &
+( cd "$BACKEND_DIR" && exec "$PY" -m uvicorn main:app --port "$BACKEND_PORT" ) &
 BACK_PID=$!
 
 # espera a que /data responda (máx ~15s) para no arrancar el front antes de tiempo
