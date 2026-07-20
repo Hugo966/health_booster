@@ -209,8 +209,36 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
   el parser. Vigilar tokens raros nuevos en `keep.txt`.
 
 ## 9. Tareas pendientes (priorizadas)
-_Fase 1 completa: los 7 paneles revisados y sin pendientes conocidos._ Siguiente: **Fase 2**
-(chat "Jarvis" con voz). Ideas del backlog post-v1 en la memoria [[backlog-post-v1]].
+_Fase 1 completa: los 7 paneles revisados y sin pendientes conocidos._
+
+### Fase 2 EN CURSO — plan aprobado en `docs/fase2_plan.md` (leerlo antes de seguir)
+
+Jarvis no es un buscador de datos: es un **asistente conversacional con memoria** que
+además **maneja el dashboard**. Bromea y usa sarcasmo por iniciativa propia, recuerda la
+vida de Hugo entre sesiones, abre paneles cuando se lo pides y hace un tour comentado.
+La voz va **después**, como capa aparte.
+
+**Hecho y verificado (2026-07-20):**
+- `dashboard/backend/memoria.py` — SQLite (`jarvis.db`, ignorado por git). Dos memorias:
+  hilo de conversación y hechos de su vida. Verificado que persiste entre procesos.
+- `dashboard/backend/briefing.py` — parte de estado desde la hoja. **Cada métrica lleva su
+  antigüedad** y los umbrales replican `readinessBand` del frontend. Obsolescencia por
+  métrica (peso 10 días, el resto 2): Hugo se pesa semanalmente.
+- `dashboard/backend/personalidad.py` — el personaje. ~834 tokens con memoria y briefing.
+- `dashboard/backend/proveedor.py` — Ollama y Anthropic tras una interfaz común; se cambia
+  con `JARVIS_PROVEEDOR` en `.env`. Normalización probada; Ollama **sin probar de verdad**.
+
+**Siguiente, por orden:**
+1. `chat.py` + `POST /chat` con las herramientas (`dia`, `ejercicio`, `recordar`) y las
+   acciones de UI (`abrir_panel`, `resaltar`, `grafico`). Se puede montar y verificar con
+   un **proveedor de mentira** que devuelva respuestas fijas, sin modelo detrás.
+2. `ChatPanel` / `ChatExpanded` + enganche en `App.tsx` (4 puntos de contacto).
+3. Reproductor de acciones interrumpible + tour.
+4. **En el portátil (RTX 3060 Laptop, 6 GB):** instalar Ollama, `ollama pull qwen2.5:7b`,
+   y comprobar si el modelo local da el tono. **Es la decisión que condiciona el resto**;
+   si no lo da, se cambia `JARVIS_PROVEEDOR=anthropic` y se compara.
+
+Ideas del backlog post-v1 en la memoria [[backlog-post-v1]].
 
 Resueltas en esta tanda:
 - ✅ **Hueco bajo Fuerza/Peso**: la fila inferior se estira a la tarjeta más alta; se subieron las
