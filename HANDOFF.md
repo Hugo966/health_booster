@@ -279,10 +279,15 @@ Ollama ya probado de verdad en el portátil. Hallazgos (medidos con el desglose 
 
 **Comparar 3b vs Anthropic (pendiente, decisión de Hugo — quiere probar los dos):**
 - **Local 3b (default ahora):** `./run.sh --no-pipeline`. ~3s, privado, gratis.
+  **SOLO en el portátil**: el otro equipo no tiene Ollama, así que este lado de la
+  comparación NO se puede probar allí (ver `CLAUDE.md`, "Dos equipos"). En el otro equipo solo
+  se puede evaluar Anthropic (o el frontend contra `"proveedor":"falso"`).
 - **Anthropic:** en `.env` añadir `ANTHROPIC_API_KEY=sk-ant-…` y `JARVIS_PROVEEDOR=anthropic`,
   reiniciar. ~1-2s y mejor tono, pero las conversaciones de salud salen de casa. El SDK ya
   está. Alternativa sin reiniciar: mandar `"proveedor":"anthropic"` en el POST (o
-  `VITE_JARVIS_PROVEEDOR`).
+  `VITE_JARVIS_PROVEEDOR`). Nota: el chat necesita `.env` con las credenciales de Google
+  (GOOGLE_SA_JSON, SHEET_ID) para el briefing; si el otro equipo no las tiene, hay
+  que traspasarlas a mano (están fuera de git).
 
 **Siguiente, por orden:**
 1. `lib/acciones.ts` — reproductor interrumpible + tour. Engancharlo al *seam* `onAcciones`
