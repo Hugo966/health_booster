@@ -22,6 +22,9 @@ from openpyxl import load_workbook
 PLAN_TAB_RULES = [
     (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      3),
     (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 4),
+    # Offseason (desde 2026-07-20, 6 semanas). Tolera "offseason"/"offseasion" y
+    # separadores sueltos porque la pestaña la escribe Hugo a mano cada semana.
+    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 5),
 ]
 
 def route_tab(title):
