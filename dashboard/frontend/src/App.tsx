@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchData, num, type SheetData } from "./lib/api";
+import Arranque from "./components/Arranque";
 import Readiness, { ReadinessExpanded } from "./components/Readiness";
 import HrvTrend, { HrvExpanded } from "./components/HrvTrend";
 import SleepPanel, { SleepExpanded } from "./components/SleepPanel";
@@ -10,7 +11,7 @@ import CorrelationHeatmap, { CorrelationExpanded } from "./components/Correlatio
 import Expanded from "./components/Expanded";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
-import { theme } from "./lib/theme";
+import { anim, theme } from "./lib/theme";
 
 type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones";
 
@@ -56,6 +57,16 @@ export default function App() {
   const [origen, setOrigen] = useState<DOMRect | null>(null);
   const abrir = (w: Widget) => (o?: DOMRect) => { setOrigen(o ?? null); setAbierto(w); };
   const [objetivo, setObjetivo] = useObjetivoPeso();
+  // Secuencia de arranque: tapa la pantalla mientras cargan los datos y se
+  // aparta al terminar. Con "reducir movimiento" ni se monta.
+  //
+  // Son dos estados y no uno porque se solapan: el panel se monta cuando los
+  // engranajes EMPIEZAN a separarse, y el overlay no se desmonta hasta que
+  // termina de desvanecerse encima.
+  const [arrancando, setArrancando] = useState(anim.on);
+  const [revelado, setRevelado] = useState(!anim.on);
+  const revelar = useCallback(() => setRevelado(true), []);
+  const finArranque = useCallback(() => setArrancando(false), []);
 
   useEffect(() => {
     fetchData().then(setData).catch((e) => setError(String(e)));
@@ -185,10 +196,10 @@ export default function App() {
         />
       </header>
 
-      {error && <div style={{ color: theme.alert }}>Error: {error}</div>}
-      {!data && !error && <div style={{ color: theme.muted }}>Cargando datos…</div>}
+      {revelado && error && <div style={{ color: theme.alert }}>Error: {error}</div>}
+      {revelado && !data && !error && <div style={{ color: theme.muted }}>Cargando datos…</div>}
 
-      {data && (
+      {revelado && data && (
         <div className="jarvis-rise mx-auto flex max-w-6xl flex-col gap-6">
           <div className="flex justify-center">
             <Readiness
@@ -219,7 +230,15 @@ export default function App() {
         </div>
       )}
 
-      {data && abierto && (
+      {arrancando && (
+        <Arranque
+          cargado={data !== null || error !== null}
+          onRevelar={revelar}
+          onFin={finArranque}
+        />
+      )}
+
+      {revelado && data && abierto && (
         <Expanded
           title={TITULOS[abierto]}
           onClose={cerrar}
