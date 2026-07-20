@@ -1,6 +1,6 @@
 // Cliente del backend. El backend vive en :8099 en este entorno (el :8000 lo
 // ocupa otra app). Se puede sobreescribir con VITE_API_BASE.
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8099";
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8099";
 
 // Una fila de derived_diario. Solo tipamos lo que consumimos; los NaN de la
 // hoja llegan como string vacío "".

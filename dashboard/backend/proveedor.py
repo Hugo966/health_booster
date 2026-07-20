@@ -16,6 +16,7 @@ Las herramientas se declaran en formato neutro:
 """
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,6 +49,46 @@ class Respuesta:
     llamadas: list[Llamada] = field(default_factory=list)
 
 
+def _rescatar_llamadas_texto(texto: str, nombres: list[str]) -> tuple[str, list[Llamada]]:
+    """Rescata llamadas que el modelo escribió DENTRO del texto —p.ej.
+    `abrir_panel({"panel": "peso"})`— en vez de emitirlas por el canal de
+    herramientas.
+
+    Los modelos pequeños (qwen2.5:7b) lo hacen de vez en cuando, y es doblemente
+    malo: el usuario ve la llamada cruda (parece roto) y, como el hilo se guarda
+    en memoria, ese texto se vuelve un ejemplo que el modelo imita en los turnos
+    siguientes. Al sacarlas aquí, la acción se ejecuta de verdad y lo que se
+    guarda queda limpio, cortando ese bucle.
+
+    Solo se buscan nombres de herramientas conocidos seguidos de `({...}`, un
+    patrón que no aparece en prosa normal, así que no se traga texto legítimo.
+    """
+    if not texto or not nombres:
+        return texto, []
+    llamadas: list[Llamada] = []
+    patron = re.compile(
+        r"\b(" + "|".join(re.escape(n) for n in nombres) + r")\s*\(\s*(\{.*?\})\s*\)",
+        re.DOTALL,
+    )
+
+    def _sub(m: re.Match) -> str:
+        nombre, crudo = m.group(1), m.group(2)
+        try:
+            args = json.loads(crudo)
+        except json.JSONDecodeError:
+            try:  # a veces usa comillas simples
+                args = json.loads(crudo.replace("'", '"'))
+            except json.JSONDecodeError:
+                return ""  # ilegible: al menos que no lo vea el usuario
+        if isinstance(args, dict):
+            llamadas.append(Llamada(nombre=nombre, args=args))
+        return ""
+
+    limpio = patron.sub(_sub, texto)
+    limpio = re.sub(r"\n{3,}", "\n\n", limpio).strip()
+    return limpio, llamadas
+
+
 class ProveedorOllama:
     """Modelo local. Sin coste y sin que los datos de salud salgan de casa."""
 
@@ -78,6 +119,14 @@ class ProveedorOllama:
             "model": self.modelo,
             "messages": [{"role": "system", "content": sistema}] + mensajes,
             "stream": False,
+            # Mantener el modelo en la VRAM entre mensajes: si se descarga (idle de
+            # 5 min por defecto), el siguiente mensaje paga ~40s de recarga desde
+            # disco. Con 6 GB solo cabe este modelo, así que no estorba a nadie.
+            "keep_alive": "30m",
+            # A ~20 tok/s en este portátil, la latencia la manda la longitud de la
+            # respuesta: 40 tokens ≈ 2s, 180 ≈ 9s. El tope evita que un mensaje se
+            # dispare; la brevedad habitual la marca el prompt de personalidad.
+            "options": {"num_predict": 128},
         }
         if herramientas:
             cuerpo["tools"] = self._herramientas(herramientas)
@@ -98,7 +147,14 @@ class ProveedorOllama:
                     args = {}
             llamadas.append(Llamada(nombre=fn.get("name", ""), args=args))
 
-        return Respuesta(texto=msg.get("content", "") or "", llamadas=llamadas)
+        # Red de seguridad: si el modelo escribió alguna llamada como texto en vez
+        # de emitirla por el canal, la rescatamos y la quitamos de lo que se ve.
+        texto = msg.get("content", "") or ""
+        if herramientas:
+            texto, extra = _rescatar_llamadas_texto(texto, [h["nombre"] for h in herramientas])
+            llamadas.extend(extra)
+
+        return Respuesta(texto=texto, llamadas=llamadas)
 
 
 class ProveedorAnthropic:
@@ -212,6 +268,21 @@ class ProveedorFalso:
             )
 
         return Respuesta(texto="Aquí sigo. Cuéntame.")
+
+
+def precalentar():
+    """Carga el modelo local en la VRAM al arrancar, en segundo plano, para que el
+    PRIMER mensaje no espere a la carga desde disco (~8s). Con keep_alive luego se
+    queda residente. Si Ollama no está levantado, falla en silencio: ya lo dirá el
+    primer mensaje con un error claro."""
+    try:
+        requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={"model": OLLAMA_MODELO, "prompt": "", "keep_alive": "30m"},
+            timeout=TIMEOUT,
+        )
+    except Exception:
+        pass
 
 
 def obtener(nombre: str | None = None):

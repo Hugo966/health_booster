@@ -236,15 +236,60 @@ La voz va **después**, como capa aparte.
   bloques `tool_result`: Ollama y Anthropic los formatean distinto y esa era la parte
   más frágil del proveedor.
 
+**Frontend del chat — hecho y verificado (2026-07-20):**
+- `lib/chat.ts` — cliente `POST /chat` + hook `useChat(onAcciones?)`. Historial en
+  localStorage (`jarvis.chat.historial`) e id de sesión estable (`jarvis.chat.sesion`):
+  el backend agrupa el hilo por sesión, así que si cambiara en cada arranque se perdería
+  la continuidad. El proveedor se puede forzar con `VITE_JARVIS_PROVEEDOR=falso` para
+  desarrollar sin modelo; sin definir, manda el backend. `API_BASE` ahora se exporta desde
+  `lib/api.ts`. Las `acciones` que devuelve el backend se pasan hacia arriba por un *seam*
+  (`onAcciones`) **que aún no ejecuta nada**: eso es `lib/acciones.ts` (paso siguiente).
+- `components/ChatPanel.tsx` — `ChatPanel` (compacto, tarjeta a lo ancho bajo las dos filas
+  del grid, altura fija 263 px como el resto, §8) y `ChatExpanded` (overlay). Burbujas
+  usuario/Jarvis, autoscroll, "Jarvis está pensando…", entrada `<textarea>` (Enter envía,
+  Mayús+Enter salto) con `data-no-expand` (trampa 1). `ChatExpanded` usa **`h-[72vh]`**,
+  no `h-full`: dentro del `flex-1` de `Expanded` un `height:100%` no resuelve y la entrada
+  se pegaba arriba (trampa 2). El estado del chat vive en `App` (`useChat`), compartido por
+  compacto y ampliado.
+- `App.tsx` — 4 puntos de contacto enganchados (`Widget` "chat", `TITULOS`, render, caso en
+  `<Expanded>`). Verificado por CDP con `"proveedor":"falso"`: mensaje enviado, respuesta
+  pintada, deep-link `/#chat` abre el ampliado. Build (`npm run build`) limpio.
+
+**Modelo local y latencia — investigado y resuelto (2026-07-20):**
+Ollama ya probado de verdad en el portátil. Hallazgos (medidos con el desglose de
+`/api/chat` y `nvidia-smi`):
+- **La RTX 3060 Laptop tiene 6 GB, pero Windows ya usa ~2 GB** → solo ~4 GB libres.
+  **qwen2.5:7b (5.1 GB) NO cabe**: Ollama deja el ~18% en CPU y la latencia baila entre
+  5 y 25s, inestable. **qwen2.5:3b (2.2 GB) cabe al 100% en GPU → ~2.7-3s por mensaje,
+  estable** (medido por HTTP: hola 2.7s, peso 2.8s, sueño 3.0s con dato correcto). Por eso
+  el default pasó a **`OLLAMA_MODELO=qwen2.5:3b`** (.env y .env.example). El 3b es más tonto
+  (a veces yerra números), pero cumple la latencia.
+- **Dos fuentes de latencia arregladas, valen para cualquier proveedor:** (1) recarga del
+  modelo en frío (~40s tras 5 min idle) → `keep_alive:"30m"` + `proveedor.precalentar()` en
+  el `startup` de `main.py`; (2) **Google Sheets en frío tarda ~6s** y el chat lee la hoja en
+  cada mensaje (briefing) → hilo `_mantener_datos_calientes()` refresca la caché cada 240s
+  (por debajo del TTL de 300s), así nunca se enfría.
+- **Bug arreglado — llamadas coladas como texto:** qwen a veces escribe `abrir_panel({...})`
+  DENTRO del texto en vez de por el canal de tools; se veía crudo y, al guardarse en el hilo,
+  se reforzaba. `proveedor._rescatar_llamadas_texto()` las saca, las ejecuta y las quita del
+  texto. Se borró de `jarvis.db` un hecho envenenado ("El arte de la guerra", inventado) y 4
+  mensajes con sintaxis colada. Prompt reforzado: nunca inventar hechos de su vida; 1-3 frases.
+- **Tope de generación:** `num_predict:128` (a ~14 tok/s del 3b, evita respuestas que se
+  disparen). `anthropic>=0.40` instalado y en requirements (import perezoso).
+
+**Comparar 3b vs Anthropic (pendiente, decisión de Hugo — quiere probar los dos):**
+- **Local 3b (default ahora):** `./run.sh --no-pipeline`. ~3s, privado, gratis.
+- **Anthropic:** en `.env` añadir `ANTHROPIC_API_KEY=sk-ant-…` y `JARVIS_PROVEEDOR=anthropic`,
+  reiniciar. ~1-2s y mejor tono, pero las conversaciones de salud salen de casa. El SDK ya
+  está. Alternativa sin reiniciar: mandar `"proveedor":"anthropic"` en el POST (o
+  `VITE_JARVIS_PROVEEDOR`).
+
 **Siguiente, por orden:**
-1. `ChatPanel` / `ChatExpanded` + enganche en `App.tsx` (4 puntos de contacto: tipo
-   `Widget`, `TITULOS`, render en el grid, caso dentro de `<Expanded>`). Se puede
-   desarrollar entero contra `"proveedor": "falso"`, sin modelo.
-2. `lib/acciones.ts` — reproductor interrumpible + tour.
-3. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
-4. **En el portátil (RTX 3060 Laptop, 6 GB):** instalar Ollama, `ollama pull qwen2.5:7b`,
-   y comprobar si el modelo local da el tono. **Es la decisión que condiciona el resto**;
-   si no lo da, se cambia `JARVIS_PROVEEDOR=anthropic` y se compara.
+1. `lib/acciones.ts` — reproductor interrumpible + tour. Engancharlo al *seam* `onAcciones`
+   de `useChat` en `App.tsx` (hoy se descartan). Ejecuta `abrir_panel`→`setAbierto`,
+   `cerrar_panel`, `resaltar`; abortable al escribir.
+2. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
+3. Fijar proveedor tras comparar 3b vs Anthropic, e iterar el personaje (emojis, brevedad).
 
 **Probar el chat sin modelo** (útil en cualquier máquina):
 ```bash

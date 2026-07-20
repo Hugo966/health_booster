@@ -11,6 +11,21 @@ datos de salud y entreno. Trabajamos en español.
   de trabajo y qué está hecho.
 - **`roadmap.md`** — las 4 fases y el principio de no adelantarse.
 
+## Dos equipos de desarrollo (importante)
+
+El proyecto se desarrolla en **dos máquinas**: el portátil de Hugo (RTX 3060 Laptop) y
+un segundo equipo, cada una con su propia sesión de Claude Code. El git es el
+canal de sincronización, así que:
+
+- **Al empezar la sesión: `git pull`** antes de tocar nada.
+- **Al terminar cualquier trabajo: `git commit` + `git push`** (siempre, no acumular).
+- **Al cerrar la sesión, avisar a Hugo** de si hay algo **fuera de git** que necesite
+  traspaso a mano (pendrive, etc.) para retomar en el otro equipo: `.env`, `keep.txt`,
+  `jarvis.db`, `health-boost-*.json`. Precisar cuáles cambiaron y si el otro equipo los
+  necesita de verdad.
+- **El modelo local (Ollama, `qwen2.5:3b`) solo vive en el portátil.** El equipo del
+  trabajo NO lo ejecuta, así que la config del modelo en `.env` no le hace falta.
+
 ## Convenciones
 
 - **Código, comentarios, nombres de variables y UI: en español.**

@@ -8,12 +8,14 @@ import LoadPanel, { LoadExpanded, type Sesion } from "./components/LoadPanel";
 import StrengthTrend, { StrengthExpanded } from "./components/StrengthTrend";
 import WeightTrend, { WeightExpanded } from "./components/WeightTrend";
 import CorrelationHeatmap, { CorrelationExpanded } from "./components/CorrelationHeatmap";
+import ChatPanel, { ChatExpanded } from "./components/ChatPanel";
 import Expanded from "./components/Expanded";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
+import { useChat } from "./lib/chat";
 import { anim, theme } from "./lib/theme";
 
-type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones";
+type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "chat";
 
 const TITULOS: Record<Widget, string> = {
   readiness: "Readiness",
@@ -23,6 +25,7 @@ const TITULOS: Record<Widget, string> = {
   fuerza: "Fuerza",
   peso: "Peso",
   correlaciones: "Correlaciones",
+  chat: "Jarvis",
 };
 
 const ES_WIDGET = (s: string): s is Widget => s in TITULOS;
@@ -57,6 +60,10 @@ export default function App() {
   const [origen, setOrigen] = useState<DOMRect | null>(null);
   const abrir = (w: Widget) => (o?: DOMRect) => { setOrigen(o ?? null); setAbierto(w); };
   const [objetivo, setObjetivo] = useObjetivoPeso();
+  // El hilo del chat vive aquí para que el compacto y el ampliado lo compartan.
+  // Las acciones de UI (abrir_panel, resaltar…) aún no se ejecutan: eso es el
+  // reproductor interrumpible de lib/acciones.ts, el siguiente paso de la fase.
+  const chat = useChat();
   // Secuencia de arranque: tapa la pantalla mientras cargan los datos y se
   // aparta al terminar. Con "reducir movimiento" ni se monta.
   //
@@ -227,6 +234,10 @@ export default function App() {
             />
             <CorrelationHeatmap rows={dd} onExpand={abrir("correlaciones")} />
           </div>
+
+          {/* El chat de Jarvis, a lo ancho: es la pieza central de la Fase 2, no
+              una columna más. Compacto aquí; conversación entera al ampliar. */}
+          <ChatPanel chat={chat} onExpand={abrir("chat")} />
         </div>
       )}
 
@@ -254,6 +265,7 @@ export default function App() {
             <WeightExpanded rows={weightRows} todo={weightAll} objetivo={objetivo} onChangeObjetivo={setObjetivo} />
           )}
           {abierto === "correlaciones" && <CorrelationExpanded rows={dd} />}
+          {abierto === "chat" && <ChatExpanded chat={chat} />}
         </Expanded>
       )}
     </div>
