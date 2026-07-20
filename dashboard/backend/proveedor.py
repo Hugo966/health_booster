@@ -159,6 +159,61 @@ class ProveedorAnthropic:
         return Respuesta(texto=texto, llamadas=llamadas)
 
 
+class ProveedorFalso:
+    """Modelo de mentira, para desarrollar sin Ollama ni API.
+
+    Existe porque el circuito completo (herramientas, acciones de UI, memoria,
+    panel de React) se puede verificar sin que haya un modelo detrás, y hacerlo
+    así evita depurar a la vez la fontanería y el comportamiento del modelo.
+
+    Dos modos:
+      - con `guion`: devuelve esas respuestas en orden. Determinista, para tests.
+      - sin `guion`: heurística tonta por palabras clave, suficiente para ver el
+        circuito moverse a mano.
+    """
+
+    nombre = "falso"
+
+    def __init__(self, guion: list[Respuesta] | None = None):
+        self.guion = list(guion or [])
+        self.recibidos = []  # lo que se le pidió, para poder comprobarlo en tests
+
+    def responder(self, sistema: str, mensajes: list[dict], herramientas=None) -> Respuesta:
+        self.recibidos.append({"sistema": sistema, "mensajes": list(mensajes)})
+        if self.guion:
+            return self.guion.pop(0)
+
+        ultimo = next(
+            (m["content"] for m in reversed(mensajes) if m.get("role") == "user"), ""
+        ).lower()
+
+        # Si acaba de llegar un resultado de herramienta, toca comentar, no pedir más.
+        if ultimo.startswith("[resultado de"):
+            return Respuesta(texto="Ya lo tengo delante. Pinta bien.")
+
+        for panel, palabras in [
+            ("sueno", ("sueño", "sueno", "dormi", "dormí")),
+            ("carga", ("carga", "volumen", "srpe")),
+            ("fuerza", ("fuerza", "banca", "sentadilla", "muerto")),
+            ("peso", ("peso", "kilos", "báscula", "bascula")),
+            ("hrv", ("hrv", "variabilidad")),
+        ]:
+            if any(p in ultimo for p in palabras):
+                return Respuesta(
+                    texto=f"Venga, te abro {panel}.",
+                    llamadas=[Llamada(nombre="abrir_panel", args={"panel": panel})],
+                )
+
+        if "leyendo" in ultimo or "libro" in ultimo:
+            return Respuesta(
+                texto="Anotado, luego te pregunto qué tal va.",
+                llamadas=[Llamada(nombre="recordar",
+                                  args={"tema": "lectura", "texto": ultimo[:120]})],
+            )
+
+        return Respuesta(texto="Aquí sigo. Cuéntame.")
+
+
 def obtener(nombre: str | None = None):
     """Devuelve el proveedor configurado. `nombre` fuerza uno concreto (para comparar)."""
     elegido = (nombre or os.getenv("JARVIS_PROVEEDOR", "ollama")).lower()
@@ -166,4 +221,8 @@ def obtener(nombre: str | None = None):
         return ProveedorAnthropic()
     if elegido == "ollama":
         return ProveedorOllama()
-    raise ValueError(f"JARVIS_PROVEEDOR desconocido: {elegido!r} (usa 'ollama' o 'anthropic')")
+    if elegido == "falso":
+        return ProveedorFalso()
+    raise ValueError(
+        f"JARVIS_PROVEEDOR desconocido: {elegido!r} (usa 'ollama', 'anthropic' o 'falso')"
+    )
