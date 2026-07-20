@@ -26,7 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODELO = os.getenv("OLLAMA_MODELO", "qwen2.5:14b")
+# 7B y no 14B: la RTX 3060 del portátil es la variante Laptop, con 6 GB de VRAM.
+# El default importa porque los .env ya creados no tienen esta variable.
+OLLAMA_MODELO = os.getenv("OLLAMA_MODELO", "qwen2.5:7b")
 ANTHROPIC_MODELO = os.getenv("ANTHROPIC_MODELO", "claude-sonnet-5")
 TIMEOUT = 120  # un modelo local puede tardar bastante en la primera carga
 
