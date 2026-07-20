@@ -4,3 +4,8 @@ gspread>=6.0
 google-auth>=2.30
 pandas>=2.0
 python-dotenv>=1.0
+requests>=2.31          # llamadas a Ollama (venía transitivamente; ahora es explícito)
+
+# Solo si JARVIS_PROVEEDOR=anthropic. El import es perezoso, así que no tenerlo
+# instalado no rompe nada mientras se use el modelo local.
+# anthropic>=0.40

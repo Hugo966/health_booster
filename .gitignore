@@ -2,6 +2,8 @@
 .env
 health-boost-*.json
 keep.txt
+# memoria de Jarvis: conversaciones privadas y lo que sabe de Hugo
+jarvis.db
 
 # --- regenerable ---
 venv/
