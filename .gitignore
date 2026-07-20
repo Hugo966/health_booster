@@ -7,6 +7,8 @@ keep.txt
 venv/
 dashboard/frontend/node_modules/
 dashboard/frontend/dist/
+# caché incremental de tsc: cambia en cada build y difiere entre máquinas
+dashboard/frontend/tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
 entreno_join.csv
