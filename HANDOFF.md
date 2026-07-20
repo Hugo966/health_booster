@@ -225,18 +225,32 @@ La voz va **después**, como capa aparte.
   antigüedad** y los umbrales replican `readinessBand` del frontend. Obsolescencia por
   métrica (peso 10 días, el resto 2): Hugo se pesa semanalmente.
 - `dashboard/backend/personalidad.py` — el personaje. ~834 tokens con memoria y briefing.
-- `dashboard/backend/proveedor.py` — Ollama y Anthropic tras una interfaz común; se cambia
-  con `JARVIS_PROVEEDOR` en `.env`. Normalización probada; Ollama **sin probar de verdad**.
+- `dashboard/backend/proveedor.py` — Ollama, Anthropic y **`ProveedorFalso`** tras una
+  interfaz común; se cambia con `JARVIS_PROVEEDOR` (`ollama|anthropic|falso`) o con el
+  campo `proveedor` del propio POST. Normalización probada; Ollama **sin probar de verdad**.
+- `dashboard/backend/chat.py` + `POST /chat` → `{texto, acciones}`. Herramientas de lectura
+  (`dia`, `ejercicio`, `recordar`) ejecutadas en el backend, y de UI (`abrir_panel`,
+  `cerrar_panel`, `resaltar`) devueltas al navegador. Verificado por HTTP con el proveedor
+  falso: acciones, lectura sobre datos reales y memoria escrita desde la herramienta.
+  Los resultados de herramienta se inyectan como **texto plano** en el hilo, no como
+  bloques `tool_result`: Ollama y Anthropic los formatean distinto y esa era la parte
+  más frágil del proveedor.
 
 **Siguiente, por orden:**
-1. `chat.py` + `POST /chat` con las herramientas (`dia`, `ejercicio`, `recordar`) y las
-   acciones de UI (`abrir_panel`, `resaltar`, `grafico`). Se puede montar y verificar con
-   un **proveedor de mentira** que devuelva respuestas fijas, sin modelo detrás.
-2. `ChatPanel` / `ChatExpanded` + enganche en `App.tsx` (4 puntos de contacto).
-3. Reproductor de acciones interrumpible + tour.
+1. `ChatPanel` / `ChatExpanded` + enganche en `App.tsx` (4 puntos de contacto: tipo
+   `Widget`, `TITULOS`, render en el grid, caso dentro de `<Expanded>`). Se puede
+   desarrollar entero contra `"proveedor": "falso"`, sin modelo.
+2. `lib/acciones.ts` — reproductor interrumpible + tour.
+3. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
 4. **En el portátil (RTX 3060 Laptop, 6 GB):** instalar Ollama, `ollama pull qwen2.5:7b`,
    y comprobar si el modelo local da el tono. **Es la decisión que condiciona el resto**;
    si no lo da, se cambia `JARVIS_PROVEEDOR=anthropic` y se compara.
+
+**Probar el chat sin modelo** (útil en cualquier máquina):
+```bash
+curl -s -X POST http://localhost:8099/chat -H 'Content-Type: application/json' \
+  -d '{"sesion":"t","mensaje":"enseñame el sueño","proveedor":"falso"}'
+```
 
 Ideas del backlog post-v1 en la memoria [[backlog-post-v1]].
 
