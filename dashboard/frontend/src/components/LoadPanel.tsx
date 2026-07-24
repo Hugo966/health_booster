@@ -22,6 +22,7 @@ import { num, type SetRow } from "../lib/api";
 export type Sesion = {
   fecha: string;
   nSeries: number | null;
+  nFallos: number;          // series falladas (0 reps) de la sesión
   rpeSesion: number | null; // RPE de sesión 0-10 (form PM)
   volumen: number;          // tonelaje total (kg·reps·series), secundario
   volBasicos: number | null;
@@ -30,9 +31,18 @@ export type Sesion = {
 
 const VENTANA = 7; // días naturales
 
-/** sRPE de una sesión = RPE sesión × nº series. null si falta el RPE de sesión. */
-const srpe = (s: Sesion): number | null =>
-  s.rpeSesion !== null && s.nSeries !== null ? s.rpeSesion * s.nSeries : null;
+// Un fallo (0 reps) es esfuerzo máximo y fatiga mucho más que una serie normal, así que
+// no puede pasar desapercibido en la carga: cuenta como una serie a RPE 10 multiplicada
+// por este factor. Si algún día se ve que dispara demasiado la carga, bajarlo a 2.
+const FACTOR_FALLO = 3;
+
+/** sRPE de una sesión = RPE sesión × nº series COMPLETADAS + fallos × (10 × FACTOR_FALLO).
+ *  null si falta el RPE de sesión. */
+const srpe = (s: Sesion): number | null => {
+  if (s.rpeSesion === null || s.nSeries === null) return null;
+  const completas = Math.max(0, s.nSeries - s.nFallos);
+  return s.rpeSesion * completas + s.nFallos * 10 * FACTOR_FALLO;
+};
 
 type Banda = { label: string; color: string };
 function banda(v: number, p25: number, p75: number, p90: number): Banda {
@@ -317,7 +327,7 @@ export default function LoadPanel({
             <BarrasSrpe sesiones={rango.slice(-14)} height="100%" />
           </div>
           <div className="mt-1 text-[10px]" style={{ color: theme.muted }}>
-            Suma del sRPE de tus sesiones en los 7 días hasta tu última{ultima ? ` (${fmtDate(ultima)})` : ""} · RPE sesión × series
+            Suma del sRPE de tus sesiones en los 7 días hasta tu última{ultima ? ` (${fmtDate(ultima)})` : ""} · RPE sesión × series · un fallo pesa ×{FACTOR_FALLO}
           </div>
         </>
       )}
@@ -339,8 +349,10 @@ export function LoadExpanded({
       <p className="max-w-3xl text-xs leading-relaxed" style={{ color: theme.muted }}>
         La carga principal es el <b style={{ color: theme.text }}>sRPE</b> = tu RPE de sesión (0-10) × nº de
         series, sumado en los últimos 7 días. Es la medida validada de carga y usa tu RPE, que ya pondera la
-        intensidad como el tonelaje no puede. Debajo, <b style={{ color: theme.text }}>de dónde viene la
-        fatiga</b>: básicos por intensidad, accesorios por series duras, y el combinado de ambos.
+        intensidad como el tonelaje no puede. Un <b style={{ color: theme.alert }}>fallo</b> (0 reps) es esfuerzo
+        máximo, así que cuenta como una serie a RPE 10 × {FACTOR_FALLO}: nunca pasa desapercibido en la carga.
+        Debajo, <b style={{ color: theme.text }}>de dónde viene la fatiga</b>: básicos por intensidad, accesorios
+        por series duras, y el combinado de ambos.
       </p>
 
       {a === null ? (

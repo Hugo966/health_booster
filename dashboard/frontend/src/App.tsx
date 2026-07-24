@@ -141,6 +141,7 @@ export default function App() {
         .map((s) => ({
           fecha: String(s.fecha),
           nSeries: num(s.n_series_total),
+          nFallos: num(s.n_fallos_total) ?? 0,
           rpeSesion: rpeByFecha.get(String(s.fecha)) ?? null,
           volumen: num(s.volumen_total) ?? 0,
           volBasicos: num(s.vol_basicos),

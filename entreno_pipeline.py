@@ -22,9 +22,15 @@ from openpyxl import load_workbook
 PLAN_TAB_RULES = [
     (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      3),
     (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 4),
-    # Offseason (desde 2026-07-20, 6 semanas). Tolera "offseason"/"offseasion" y
-    # separadores sueltos porque la pestaña la escribe Hugo a mano cada semana.
-    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 5),
+    # Offseason (S1-S5): es la PRIMERA etapa de PLANI 2, el plan nuevo. Hugo reinicia
+    # la numeración de bloques con cada plan, así que en su keep esta etapa es
+    # "BLOQUE 1" (no la continuación 3/4/5 de PLANI 1) — el número aquí debe cuadrar
+    # con el del keep o el join se queda sin nombres. Tolera "offseason"/"offseasion"
+    # y separadores sueltos porque la pestaña la escribe a mano cada semana.
+    # PENDIENTE: cuando PLANI 2 añada su etapa de volumen/peaking, sus "BLOQUE 2/3…"
+    # chocarán con los de PLANI 1 (3=Semana, 4=Peaking). Habrá que meter dimensión de
+    # plan; hoy no hace falta porque bloque 1 y 2 están libres.
+    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 1),
 ]
 
 def route_tab(title):
@@ -98,6 +104,10 @@ def rir_to_rpe(r): return max(6.0,min(10.0,10.0-float(r)))
 def snap(r): return min(RPE_KEYS,key=lambda k:abs(k-r))
 def e1rm(w,reps,rpe=None,rir=None):
     if w is None or reps is None: return None,None
+    # 0 reps = intento fallido (no sacó la repetición). Sin rep completada no hay e1RM
+    # que valga: si se dejara pasar, el fallback Epley devolvería el propio peso (200x0
+    # -> "e1RM 200") y se colaría como récord/estrella. Cuenta como fatiga, no como marca.
+    if reps < 1: return None,None
     if rpe is None and rir is not None: rpe=rir_to_rpe(rir)
     if rpe is None: rpe=10.0
     ri=int(round(reps))
@@ -281,7 +291,7 @@ def interpret(nums, anchor, bw, banda, metros):
     return None,None,None,None,'sin_datos'
 
 def parse_keep(text, lookups):
-    rows=[]; bloque=None; week=dia=None; slot=0; exs=[]; cur_fecha=''; dolores={}
+    rows=[]; plani=None; bloque=None; week=dia=None; slot=0; exs=[]; cur_fecha=''; dolores={}
     for line in text.splitlines():
         line=line.strip()
         if not line: continue
@@ -290,7 +300,12 @@ def parse_keep(text, lookups):
         # ejercicios, pero sin filtrarlos se colaban como series fantasma —y "PLANI 2"
         # llegaba a contar como 1 serie, inflando la sRPE de la última sesión.
         if re.fullmatch(r'[-=_*·—\s]+', line): continue
-        if re.match(r'PLANI\b', line, re.I):
+        mpl=re.match(r'PLANI\s*(\d+)', line, re.I)
+        if mpl:
+            # El nº de plan etiqueta el eje de fuerza (P2B1S1). Va en el keep porque Hugo
+            # reinicia bloque/semana con cada plan y sin la P se solaparían microciclos.
+            plani=int(mpl.group(1)); bloque=None; week=dia=None; slot=0; exs=[]; continue
+        if re.match(r'PLANI\b', line, re.I):  # "PLANI" sin número: separador, se ignora igual
             bloque=None; week=dia=None; slot=0; exs=[]; continue
         mb=re.match(r'BLOQUE\s+(\d+)',line,re.I)
         if mb: bloque=int(mb.group(1)); continue
@@ -317,13 +332,20 @@ def parse_keep(text, lookups):
         anchor=next((p['nums'][1] for p in segs if len([n for n in p['nums'] if isinstance(n,float)])==3), None)
         for p in segs:
             ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'])
+            rpe,rir=p['rpe'],p['rir']
             if p['bad_int']: flag=(flag+' int_no_parseable').strip()
             if not has_excel: flag=(flag+' sin_excel').strip()
-            est,met=e1rm(kg,reps,p['rpe'],p['rir']) if (kg is not None and sp is None) else (None,None)
+            # Intento a 0 reps: marca de fallo (el frontend lo pinta distinto y no es récord).
+            # Un fallo es esfuerzo máximo por definición, así que se fija RPE 10: así destaca
+            # en el detalle de fatiga aunque no se anotara el @. El peso extra que un fallo
+            # mete en la carga (sRPE) lo aplica el frontend con su propio factor.
+            if reps == 0:
+                flag=(flag+' fallo').strip(); rpe,rir=10.0,None
+            est,met=e1rm(kg,reps,rpe,rir) if (kg is not None and sp is None) else (None,None)
             vol=round(ns*kg*reps,1) if (kg is not None and reps is not None and ns is not None) else None
-            rows.append(dict(bloque=bloque,semana=week,dia=dia,fecha=cur_fecha,slot=slot,
+            rows.append(dict(plani=plani,bloque=bloque,semana=week,dia=dia,fecha=cur_fecha,slot=slot,
                 ejercicio=name,tipo=block,especial=sp,token=p['raw'],n_series=ns,kg=kg,reps=reps,
-                rpe=p['rpe'],rir=p['rir'],e1rm=est,volumen=vol,nota=p['note'],flag=flag.strip()))
+                rpe=rpe,rir=rir,e1rm=est,volumen=vol,nota=p['note'],flag=flag.strip()))
     df=pd.DataFrame(rows)
     if not df.empty:
         df['dolor_sesion']=df.apply(lambda r: dolores.get((r['bloque'],r['semana'],r['dia']),''), axis=1)

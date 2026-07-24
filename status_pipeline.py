@@ -155,6 +155,9 @@ def build_entreno():
     def agg(g):
         vb = g.loc[g["tipo"] == "básico", "volumen"].sum(min_count=1)
         va = g.loc[g["tipo"] == "accesorio", "volumen"].sum(min_count=1)
+        # Series falladas (0 reps) de la sesión. El frontend las pondera aparte en la
+        # carga (un fallo es esfuerzo máximo y fatiga mucho más que una serie normal).
+        nfallos = g.loc[g["flag"].astype(str).str.contains("fallo", na=False), "n_series"].sum(min_count=1)
         dolor = ""
         if "dolor_sesion" in g:
             vals = g["dolor_sesion"].dropna().astype(str)
@@ -164,6 +167,7 @@ def build_entreno():
             semana=g["semana"].iloc[0], dia=g["dia"].iloc[0], bloque=g["bloque"].iloc[0],
             volumen_total=g["volumen"].sum(min_count=1),
             n_series_total=g["n_series"].sum(min_count=1),
+            n_fallos_total=nfallos,
             mejor_e1rm=g["e1rm"].max(),
             vol_basicos=vb, vol_accesorios=va,
             dolor_sesion_keep=dolor,

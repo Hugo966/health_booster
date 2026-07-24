@@ -18,7 +18,9 @@ un segundo equipo, cada una con su propia sesión de Claude Code. El git es el
 canal de sincronización, así que:
 
 - **Al empezar la sesión: `git pull`** antes de tocar nada.
-- **Al terminar cualquier trabajo: `git commit` + `git push`** (siempre, no acumular).
+- **Commit + push al CERRAR la sesión, no cada cambio suelto.** Hugo prefiere agrupar
+  el trabajo de la sesión en vez de un commit por cada cosa. Pero nunca cerrar (ni
+  cambiar de máquina) sin pushear: lo que no está en `origin/main` no le llega al otro equipo.
 - **Al cerrar la sesión, avisar a Hugo** de si hay algo **fuera de git** que necesite
   traspaso a mano (pendrive, etc.) para retomar en el otro equipo: `.env`, `keep.txt`,
   `jarvis.db`, `health-boost-*.json`. Precisar cuáles cambiaron y si el otro equipo los
@@ -44,7 +46,14 @@ canal de sincronización, así que:
 - **El plan de entreno de Drive mezcla todos los bloques en una hoja**, distinguidos solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
   (bloque, semana). Al empezar un bloque nuevo hay que añadir ahí su patrón, o sus
-  sesiones entran sin nombre de ejercicio. Hoy: `Semana N`→3, `Peaking SN`→4, `Offseason SN`→5.
+  sesiones entran sin nombre de ejercicio. Hugo **reinicia la numeración con cada plan**,
+  así que el número de bloque debe cuadrar con el que él escribe en el keep, no ser
+  correlativo. Hoy: `Semana N`→3 y `Peaking SN`→4 (PLANI 1); `Offseason SN`→1 (PLANI 2,
+  su primera etapa). El **plan** lo marca la cabecera `PLANI N` del keep; `parse_keep` lo
+  captura en la columna `plani` de `entreno_sets`, y el panel de Fuerza etiqueta el eje
+  `P{plani}B{bloque}S{semana}` (P2B1S1) ordenado **por fecha**, no por nº de bloque. Aún
+  pendiente: `rm1` agrupa por (bloque, semana) sin plani, así que ahí sí colisionarían dos
+  planes con el mismo bloque; hoy no pasa (P1 usa 3/4, P2 usa 1).
 - **Intervals llega con retraso, a veces de días, y NO es un fallo.** Si la API devuelve
   filas con los campos a `None`, es que el reloj aún no ha subido; el campo `updated` dice
   cuándo llegó de verdad. Reejecutar el pipeline más tarde lo alinea. No diagnostiques

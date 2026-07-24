@@ -12,6 +12,7 @@ export type DerivedRow = {
 
 // Una serie de entreno_sets: una línea del Keep ya parseada y cruzada con el plan.
 export type SetRow = {
+  plani: number | "";
   bloque: number | "";
   semana: number | "";
   dia: number | "";
@@ -33,6 +34,7 @@ export type SesionRow = {
   dia: number | "";
   volumen_total: number | "";
   n_series_total: number | "";
+  n_fallos_total: number | "";
   vol_basicos: number | "";
   vol_accesorios: number | "";
   [key: string]: unknown;

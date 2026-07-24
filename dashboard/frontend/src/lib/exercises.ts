@@ -40,9 +40,10 @@ export function patron(ejercicio: string): string {
   return "Otros";
 }
 
-// Etiqueta corta del microciclo: "B4S2". Ordenable por bloque*100+semana.
-export function bloqueSemana(bloque: number, semana: number): string {
-  return `B${bloque}S${semana}`;
+// Etiqueta corta del microciclo: "P2B1S1" (plan, bloque, semana). La P desambigua
+// porque Hugo reinicia bloque/semana con cada plan. Sin plani conocido, cae a "B4S2".
+export function bloqueSemana(bloque: number, semana: number, plani?: number | null): string {
+  return `${plani != null ? `P${plani}` : ""}B${bloque}S${semana}`;
 }
 export function bsOrden(bloque: number, semana: number): number {
   return bloque * 100 + semana;
