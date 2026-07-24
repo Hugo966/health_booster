@@ -96,24 +96,38 @@ def fetch_objetivo(oldest, newest):
               "probablemente el reloj aún no ha subido la noche — reejecuta en unos minutos)")
     return df
 
+# Una actividad de Intervals con tiempo 0 = Hugo olvidó registrarla en Zepp: la sesión
+# ocurrió, pero llegó sin duración. Asumimos una sesión media (2 h) en vez de un 0, que
+# se colaría como carga nula y reventaría el sRPE de ese día (y sus correlaciones). El
+# gimnasio no lleva GPS, así que estos ceros son habituales; 2 h es una media razonable.
+DURACION_DEFECTO_MIN = 120.0
+
 def fetch_duraciones(oldest, newest):
-    """Minutos de entreno por fecha (para sRPE), sumando actividades del día."""
+    """Minutos de entreno por fecha (para sRPE), sumando actividades del día. Las
+    actividades con tiempo 0 (registro olvidado) se asumen de DURACION_DEFECTO_MIN,
+    pero solo si ese día no hay ninguna otra con duración real (no se suma encima)."""
     try:
         acts = intervals_get(f"/athlete/{ATHLETE}/activities",
                             {"oldest": oldest, "newest": newest})
     except Exception as e:
         print(f"  (aviso) no pude leer actividades: {e}")
         return pd.DataFrame(columns=["fecha", "duracion_min"])
-    rows = []
+    reales = {}         # fecha -> minutos reales sumados
+    solo_cero = set()   # fechas con actividad, pero de tiempo 0
     for a in acts:
         start = (a.get("start_date_local") or "")[:10]
-        secs  = a.get("moving_time") or a.get("elapsed_time") or 0
-        if start:
-            rows.append((start, secs/60.0))
-    if not rows:
+        if not start:
+            continue
+        secs = a.get("moving_time") or a.get("elapsed_time") or 0
+        if secs:
+            reales[start] = reales.get(start, 0.0) + secs / 60.0
+        else:
+            solo_cero.add(start)
+    for f in solo_cero:
+        reales.setdefault(f, DURACION_DEFECTO_MIN)   # solo si ese día no hubo duración real
+    if not reales:
         return pd.DataFrame(columns=["fecha", "duracion_min"])
-    return (pd.DataFrame(rows, columns=["fecha", "duracion_min"])
-              .groupby("fecha", as_index=False)["duracion_min"].sum().round(1))
+    return pd.DataFrame(sorted(reales.items()), columns=["fecha", "duracion_min"]).round(1)
 
 # ----------------------------------------------------------------------------
 # 2. ENTRENO  (Keep + Excel -> sets -> sesión)
