@@ -285,6 +285,13 @@ def parse_keep(text, lookups):
     for line in text.splitlines():
         line=line.strip()
         if not line: continue
+        # Separadores visuales ("-----", "=====") y cabeceras de plan ("PLANI 2"):
+        # Hugo los usa en el keep para dividir un plan de otro. No son ni bloques ni
+        # ejercicios, pero sin filtrarlos se colaban como series fantasma —y "PLANI 2"
+        # llegaba a contar como 1 serie, inflando la sRPE de la última sesión.
+        if re.fullmatch(r'[-=_*·—\s]+', line): continue
+        if re.match(r'PLANI\b', line, re.I):
+            bloque=None; week=dia=None; slot=0; exs=[]; continue
         mb=re.match(r'BLOQUE\s+(\d+)',line,re.I)
         if mb: bloque=int(mb.group(1)); continue
         h=re.match(r'SEM(\d+)\s*-\s*D[IÍ]A\s*(\d+)',line,re.I)
