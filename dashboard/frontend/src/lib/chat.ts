@@ -11,15 +11,16 @@ export type Accion = { tipo: string; [k: string]: unknown };
 export type Mensaje = { rol: "usuario" | "jarvis"; texto: string; ts: number };
 export type Respuesta = { texto: string; acciones: Accion[] };
 
-// Los modelos que ofrece el selector, con nombre de guerra (Hugo sabe cuál es
-// cuál). El `id` es lo que entiende el backend (`obtener` admite "proveedor:
-// modelo"). "Equilibrado" (Sonnet 5) es el diario: buen tono y —lo decisivo— sí
-// guarda hechos de la vida de Hugo. El 3B local queda fuera del selector: no
-// guardaba nada y el tono flojeaba; sigue disponible por .env si hace falta.
+// Los modelos que ofrece el selector, en escalera ascendente de potencia (y de
+// precio): Estándar < Turbo < Máxima potencia. El orden del array ES el orden de
+// los niveles, así que la posición marca las barras que pinta el selector. El
+// `id` es lo que entiende el backend (`obtener` admite "proveedor:modelo").
+// "Estándar" (Sonnet 5) es el diario y el default. El 3B local queda fuera: no
+// guardaba hechos y el tono flojeaba; sigue disponible por .env si hace falta.
 export const MODELOS = [
-  { id: "anthropic:claude-sonnet-5", label: "Equilibrado" },
-  { id: "anthropic:claude-opus-4-8", label: "Máxima potencia" },
-  { id: "anthropic:claude-fable-5", label: "Creativo" },
+  { id: "anthropic:claude-sonnet-5", label: "Estándar" },
+  { id: "anthropic:claude-opus-4-8", label: "Turbo" },
+  { id: "anthropic:claude-fable-5", label: "Máxima potencia" },
 ] as const;
 export const MODELO_DEF = MODELOS[0].id;
 

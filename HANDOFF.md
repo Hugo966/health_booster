@@ -277,24 +277,40 @@ Ollama ya probado de verdad en el portátil. Hallazgos (medidos con el desglose 
 - **Tope de generación:** `num_predict:128` (a ~14 tok/s del 3b, evita respuestas que se
   disparen). `anthropic>=0.40` instalado y en requirements (import perezoso).
 
-**Comparar 3b vs Anthropic (pendiente, decisión de Hugo — quiere probar los dos):**
-- **Local 3b (default ahora):** `./run.sh --no-pipeline`. ~3s, privado, gratis.
-  **SOLO en el portátil**: el otro equipo no tiene Ollama, así que este lado de la
-  comparación NO se puede probar allí (ver `CLAUDE.md`, "Dos equipos"). En el otro equipo solo
-  se puede evaluar Anthropic (o el frontend contra `"proveedor":"falso"`).
-- **Anthropic:** en `.env` añadir `ANTHROPIC_API_KEY=sk-ant-…` y `JARVIS_PROVEEDOR=anthropic`,
-  reiniciar. ~1-2s y mejor tono, pero las conversaciones de salud salen de casa. El SDK ya
-  está. Alternativa sin reiniciar: mandar `"proveedor":"anthropic"` en el POST (o
-  `VITE_JARVIS_PROVEEDOR`). Nota: el chat necesita `.env` con las credenciales de Google
-  (GOOGLE_SA_JSON, SHEET_ID) para el briefing; si el otro equipo no las tiene, hay
-  que traspasarlas a mano (están fuera de git).
+**Proveedor decidido — comparación hecha (2026-07-25):**
+Mismo guion contra 3B local, Sonnet 5 y Opus 4.8 con `dashboard/backend/comparar.py` (reproduce
+un guion fijo contra cada modelo con BD temporal aislada y reporta tiempo, tokens y coste).
+- **El 3B NO guarda hechos** (no llama a `recordar`): la memoria de largo plazo —el hito de la
+  fase— no funciona con él. Sonnet y Opus sí. Verificado contando filas en `hechos` tras "estoy
+  leyendo Dune": 3B=0, Sonnet=1. Además el 3B tira al informe y al dato inventado.
+- Tono: Opus > Sonnet >> 3B, pero Sonnet muy cerca de Opus y en la prueba hasta más correcto
+  (Opus se inventó continuidad). Tiempo: Sonnet ~3.6s, Opus ~3.4s, 3B ~7s (con arranque frío).
+  Coste aprox: Sonnet ~$0.007/turno (~$6/mes a 30 msg/día), Opus ~$0.021/turno (~$19/mes), 3B 0.
+- **Decisión: Anthropic `claude-sonnet-5` por defecto** (`JARVIS_PROVEEDOR=anthropic` en `.env`).
+  Ventaja extra: Anthropic corre en las DOS máquinas (el 3B solo en el portátil). Coste real de
+  ir a la nube: las conversaciones de salud salen de casa (riesgo #5 asumido). El 3B sigue
+  disponible por `.env` si algún día manda la privacidad.
+
+**Hecho también (2026-07-25):**
+- **Fecha en el prompt** (`personalidad.py`): se inyecta "hoy es <día en lenguaje natural>" arriba
+  del sistema. El 3B entraba en bucle preguntando qué día era (no anclaba la fecha ISO enterrada en
+  el briefing) y confundía el aviso de "reloj sin sincronizar" (que es solo para datos de salud
+  viejos) con no saber la fecha. Verificado en vivo con los 3 modelos.
+- **Uso de tokens por llamada** (`proveedor.py`, `chat.py`) para medir coste; `obtener()` admite
+  `"proveedor:modelo"` para forzar un modelo suelto (lo usan el arnés y el selector).
+- **Selector de modelo en la UI** (`lib/chat.ts`, `ChatPanel.tsx`): tres niveles ascendentes con
+  barras y color — Estándar (Sonnet, verde, default) < Turbo (Opus, naranja) < Máxima potencia
+  (Fable, rojo). Se recuerda en localStorage y se manda por mensaje. El 3B ya no aparece.
 
 **Siguiente, por orden:**
 1. `lib/acciones.ts` — reproductor interrumpible + tour. Engancharlo al *seam* `onAcciones`
    de `useChat` en `App.tsx` (hoy se descartan). Ejecuta `abrir_panel`→`setAbierto`,
    `cerrar_panel`, `resaltar`; abortable al escribir.
-2. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
-3. Fijar proveedor tras comparar 3b vs Anthropic, e iterar el personaje (emojis, brevedad).
+2. **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a
+   mano. El hilo se queda en SQLite; los hechos pasan a Markdown. Todo va por la interfaz de
+   `memoria.py` (`recordar`/`hechos_relevantes`), así que el cambio queda acotado al módulo.
+3. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
+4. Iterar el personaje (emojis, brevedad) ahora que el proveedor por defecto es Sonnet.
 
 **Probar el chat sin modelo** (útil en cualquier máquina):
 ```bash

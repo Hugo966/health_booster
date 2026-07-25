@@ -86,36 +86,52 @@ function ListaMensajes({
   );
 }
 
-// Selector de modelo: pills segmentadas con el glow cian del tema (el activo se
-// ilumina). data-no-expand: tocarlo no debe ampliar la tarjeta. El backend
-// entiende el `id` tal cual (obtener admite "proveedor:modelo"), así que cambiar
-// de modelo es solo mandar otro string en el siguiente mensaje.
+// Un color por nivel (verde → naranja → rojo), como un medidor de potencia: cada
+// escalón "cuesta" más. El activo se pinta con su color; el inactivo, apagado.
+const NIVELES = [
+  { c: "#34e07a", bg: "rgba(52,224,122,0.12)", glow: "0 0 12px rgba(52,224,122,0.45)" },
+  { c: "#ff9f43", bg: "rgba(255,159,67,0.12)", glow: "0 0 12px rgba(255,159,67,0.45)" },
+  { c: "#ff5c5c", bg: "rgba(255,92,92,0.12)", glow: "0 0 12px rgba(255,92,92,0.45)" },
+];
+
+// Barras de "potencia" tipo señal: el nivel (posición en MODELOS) enciende las N
+// primeras de tres, para que el selector se lea como una escalera, no como sabores.
+function Barras({ nivel, color }: { nivel: number; color: string }) {
+  return (
+    <span className="inline-flex items-end gap-[2px]" style={{ height: 8 }}>
+      {[3, 5, 7].map((h, i) => (
+        <span
+          key={i}
+          style={{ width: 2, height: h, borderRadius: 1, background: color, opacity: i < nivel ? 1 : 0.25 }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// Selector de modelo: pills segmentadas con barras de nivel a la izquierda; el
+// activo se ilumina con el color de su nivel. data-no-expand: tocarlo no debe
+// ampliar la tarjeta. El backend entiende el `id` tal cual (obtener admite
+// "proveedor:modelo"), así que cambiar de modelo es solo mandar otro string.
 function SelectorModelo({ valor, onChange }: { valor: string; onChange: (p: string) => void }) {
   return (
     <div data-no-expand className="mb-2 flex flex-wrap justify-end gap-1.5">
-      {MODELOS.map((m) => {
+      {MODELOS.map((m, i) => {
         const activo = m.id === valor;
+        const n = NIVELES[i] ?? NIVELES[NIVELES.length - 1];
         return (
           <button
             key={m.id}
             onClick={() => onChange(m.id)}
             title={`Cambiar a ${m.label}`}
-            className="font-display rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.12em] transition-all duration-200"
+            className="font-display flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.12em] transition-all duration-200"
             style={
               activo
-                ? {
-                    color: theme.accent,
-                    border: `1px solid ${theme.accent}`,
-                    background: "rgba(0,212,255,0.10)",
-                    boxShadow: "0 0 12px rgba(0,212,255,0.35)",
-                  }
-                : {
-                    color: theme.muted,
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    background: "transparent",
-                  }
+                ? { color: n.c, border: `1px solid ${n.c}`, background: n.bg, boxShadow: n.glow }
+                : { color: theme.muted, border: "1px solid rgba(255,255,255,0.10)", background: "transparent" }
             }
           >
+            <Barras nivel={i + 1} color={activo ? n.c : theme.muted} />
             {m.label}
           </button>
         );
