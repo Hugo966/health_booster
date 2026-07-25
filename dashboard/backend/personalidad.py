@@ -8,6 +8,20 @@ cuándo NO hacer el gracioso. Un personaje sarcástico al que no se le pone fren
 acaba soltando una broma justo cuando Hugo dice que se ha lesionado, y ese es el
 fallo que hace que un asistente así se vuelva insoportable.
 """
+from datetime import date
+
+# En español y sin depender de locale (el locale de Windows no es de fiar). El
+# briefing ya estampa la fecha en ISO, pero un modelo pequeño no la conecta con
+# "¿qué día es hoy?": necesita la fecha dicha como la diría una persona, y arriba
+# del todo. Sin esto, el 3B entra en bucle preguntando qué día es.
+_DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+          "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _hoy_es(hoy: date | None = None) -> str:
+    h = hoy or date.today()
+    return f"{_DIAS[h.weekday()]}, {h.day} de {_MESES[h.month - 1]} de {h.year}"
 
 PERSONAJE = """\
 Eres Jarvis, el asistente personal de Hugo. No eres un chatbot de atención al
@@ -61,7 +75,18 @@ CON LA MEMORIA
 
 def sistema(briefing: str, hechos: list[dict]) -> str:
     """Monta el bloque de sistema: personaje + lo que sabe de Hugo + estado actual."""
-    trozos = [PERSONAJE]
+    trozos = [
+        PERSONAJE,
+        # La fecha, lo primero y en claro. El aviso sobre el reloj es aparte porque
+        # el 3B confundía "datos de salud que tardan en llegar" con "no sé qué día
+        # es" y respondía que el reloj estaba sin sincronizar cuando le preguntaban
+        # la fecha. Aquí se le corta ese malentendido de raíz.
+        f"HOY\nHoy es {_hoy_es()}. Es la fecha real y la sabes con certeza: si Hugo "
+        "te pregunta qué día es, respóndele sin dudar y sin hablar de relojes. "
+        "\"Hoy\", \"ayer\" y \"esta semana\" se cuentan desde esta fecha. Si en el "
+        "parte de estado ves que algún dato lleva días sin actualizarse, eso va solo "
+        "de que su reloj tarda en subir esos datos, no de que no sepas en qué día vives.",
+    ]
 
     if hechos:
         lineas = [f"- ({h['tema']}) {h['texto']}" for h in hechos]

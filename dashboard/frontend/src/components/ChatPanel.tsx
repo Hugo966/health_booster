@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Panel from "./Panel";
 import { theme } from "../lib/theme";
+import { MODELOS } from "../lib/chat";
 import type { Chat, Mensaje } from "../lib/chat";
 
 // El chat de Jarvis: compacto (ChatPanel, una tarjeta más del grid) y ampliado
@@ -85,6 +86,44 @@ function ListaMensajes({
   );
 }
 
+// Selector de modelo: pills segmentadas con el glow cian del tema (el activo se
+// ilumina). data-no-expand: tocarlo no debe ampliar la tarjeta. El backend
+// entiende el `id` tal cual (obtener admite "proveedor:modelo"), así que cambiar
+// de modelo es solo mandar otro string en el siguiente mensaje.
+function SelectorModelo({ valor, onChange }: { valor: string; onChange: (p: string) => void }) {
+  return (
+    <div data-no-expand className="mb-2 flex flex-wrap justify-end gap-1.5">
+      {MODELOS.map((m) => {
+        const activo = m.id === valor;
+        return (
+          <button
+            key={m.id}
+            onClick={() => onChange(m.id)}
+            title={`Cambiar a ${m.label}`}
+            className="font-display rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.12em] transition-all duration-200"
+            style={
+              activo
+                ? {
+                    color: theme.accent,
+                    border: `1px solid ${theme.accent}`,
+                    background: "rgba(0,212,255,0.10)",
+                    boxShadow: "0 0 12px rgba(0,212,255,0.35)",
+                  }
+                : {
+                    color: theme.muted,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "transparent",
+                  }
+            }
+          >
+            {m.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // --- entrada ----------------------------------------------------------------
 
 // data-no-expand: pinchar o escribir aquí no debe ampliar la tarjeta (trampa 1
@@ -152,6 +191,7 @@ export default function ChatPanel({ chat, onExpand }: { chat: Chat; onExpand: (o
           hay ResponsiveContainer, pero conviene que la tarjeta case en altura
           con Fuerza/Peso/Correlaciones de su fila. */}
       <div className="flex flex-col" style={{ height: 263 }}>
+        <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
         <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />
         <Entrada enviando={chat.enviando} onEnviar={chat.enviar} />
       </div>
@@ -165,6 +205,7 @@ export default function ChatPanel({ chat, onExpand }: { chat: Chat; onExpand: (o
 export function ChatExpanded({ chat }: { chat: Chat }) {
   return (
     <div className="mx-auto flex h-[72vh] min-h-0 w-full max-w-3xl flex-col">
+      <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
       <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />
       <Entrada enviando={chat.enviando} onEnviar={chat.enviar} autofocus />
     </div>

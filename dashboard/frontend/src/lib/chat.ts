@@ -11,13 +11,38 @@ export type Accion = { tipo: string; [k: string]: unknown };
 export type Mensaje = { rol: "usuario" | "jarvis"; texto: string; ts: number };
 export type Respuesta = { texto: string; acciones: Accion[] };
 
-// Proveedor forzado desde el entorno: con VITE_JARVIS_PROVEEDOR=falso se
-// desarrolla el frontend entero sin un modelo detrás. Sin definir, el backend
-// usa su propia configuración (JARVIS_PROVEEDOR).
-const PROVEEDOR = import.meta.env.VITE_JARVIS_PROVEEDOR as string | undefined;
+// Los modelos que ofrece el selector, con nombre de guerra (Hugo sabe cuál es
+// cuál). El `id` es lo que entiende el backend (`obtener` admite "proveedor:
+// modelo"). "Equilibrado" (Sonnet 5) es el diario: buen tono y —lo decisivo— sí
+// guarda hechos de la vida de Hugo. El 3B local queda fuera del selector: no
+// guardaba nada y el tono flojeaba; sigue disponible por .env si hace falta.
+export const MODELOS = [
+  { id: "anthropic:claude-sonnet-5", label: "Equilibrado" },
+  { id: "anthropic:claude-opus-4-8", label: "Máxima potencia" },
+  { id: "anthropic:claude-fable-5", label: "Creativo" },
+] as const;
+export const MODELO_DEF = MODELOS[0].id;
+
+// Override de entorno (VITE_JARVIS_PROVEEDOR=falso desarrolla el frontend sin
+// modelo). Sirve solo de valor inicial: manda la elección del selector.
+const PROVEEDOR_ENV = import.meta.env.VITE_JARVIS_PROVEEDOR as string | undefined;
 
 const KEY_SESION = "jarvis.chat.sesion";
 const KEY_HIST = "jarvis.chat.historial";
+const KEY_PROV = "jarvis.chat.proveedor";
+
+function proveedorInicial(): string {
+  try {
+    // Solo se acepta lo guardado si sigue siendo una opción del selector: así una
+    // elección vieja (p.ej. el 3B, ya retirado) no deja el chat en un modelo
+    // fantasma sin pill que lo marque.
+    const guardado = localStorage.getItem(KEY_PROV);
+    if (guardado && MODELOS.some((m) => m.id === guardado)) return guardado;
+  } catch {
+    /* modo privado: no hay preferencia guardada */
+  }
+  return PROVEEDOR_ENV || MODELO_DEF;
+}
 // Recorta lo que se guarda en el navegador; el contexto real lo lleva el backend
 // (memoria.hilo_reciente), así que aquí basta con lo que se pinta en pantalla.
 const MAX_HIST = 100;
@@ -53,11 +78,11 @@ function cargar(): Mensaje[] {
   }
 }
 
-async function pedir(sesion: string, mensaje: string): Promise<Respuesta> {
+async function pedir(sesion: string, mensaje: string, proveedor: string): Promise<Respuesta> {
   const r = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sesion, mensaje, ...(PROVEEDOR ? { proveedor: PROVEEDOR } : {}) }),
+    body: JSON.stringify({ sesion, mensaje, ...(proveedor ? { proveedor } : {}) }),
   });
   if (!r.ok) throw new Error(`El chat respondió ${r.status}`);
   const j = await r.json();
@@ -72,6 +97,8 @@ export type Chat = {
   enviando: boolean;
   error: string | null;
   enviar: (texto: string) => void;
+  proveedor: string;
+  setProveedor: (p: string) => void;
 };
 
 export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
@@ -79,6 +106,20 @@ export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
   const [mensajes, setMensajes] = useState<Mensaje[]>(cargar);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proveedor, setProveedorState] = useState<string>(proveedorInicial);
+
+  // El proveedor se lee en `enviar` desde una ref para no recrear el callback al
+  // cambiar de modelo a media conversación.
+  const provRef = useRef(proveedor);
+  const setProveedor = useCallback((p: string) => {
+    setProveedorState(p);
+    provRef.current = p;
+    try {
+      localStorage.setItem(KEY_PROV, p);
+    } catch {
+      /* modo privado: no se recuerda el modelo entre recargas */
+    }
+  }, []);
 
   // El callback de acciones se guarda en una ref para que `enviar` no se recree
   // cuando App pase una función distinta en cada render.
@@ -103,7 +144,7 @@ export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
       setMensajes((prev) => [...prev, { rol: "usuario", texto: limpio, ts: Date.now() }]);
       setEnviando(true);
       try {
-        const r = await pedir(sesion.current, limpio);
+        const r = await pedir(sesion.current, limpio, provRef.current);
         if (r.texto) {
           setMensajes((prev) => [...prev, { rol: "jarvis", texto: r.texto, ts: Date.now() }]);
         }
@@ -117,5 +158,5 @@ export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
     [enviando],
   );
 
-  return { mensajes, enviando, error, enviar };
+  return { mensajes, enviando, error, enviar, proveedor, setProveedor };
 }

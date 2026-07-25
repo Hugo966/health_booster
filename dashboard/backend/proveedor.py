@@ -47,6 +47,9 @@ class Respuesta:
     """Forma común de respuesta, venga de quien venga."""
     texto: str = ""
     llamadas: list[Llamada] = field(default_factory=list)
+    # Tokens de la llamada, para poder comparar coste entre proveedores. Claves:
+    # in / out / cache_read / cache_write. Vacío si el proveedor no los reporta.
+    uso: dict = field(default_factory=dict)
 
 
 def _rescatar_llamadas_texto(texto: str, nombres: list[str]) -> tuple[str, list[Llamada]]:
@@ -133,7 +136,8 @@ class ProveedorOllama:
 
         r = requests.post(f"{OLLAMA_URL}/api/chat", json=cuerpo, timeout=TIMEOUT)
         r.raise_for_status()
-        msg = r.json().get("message", {})
+        data = r.json()
+        msg = data.get("message", {})
 
         llamadas = []
         for c in msg.get("tool_calls") or []:
@@ -154,7 +158,10 @@ class ProveedorOllama:
             texto, extra = _rescatar_llamadas_texto(texto, [h["nombre"] for h in herramientas])
             llamadas.extend(extra)
 
-        return Respuesta(texto=texto, llamadas=llamadas)
+        uso = {"in": data.get("prompt_eval_count", 0) or 0,
+               "out": data.get("eval_count", 0) or 0,
+               "cache_read": 0, "cache_write": 0}
+        return Respuesta(texto=texto, llamadas=llamadas, uso=uso)
 
 
 class ProveedorAnthropic:
@@ -212,7 +219,14 @@ class ProveedorAnthropic:
             elif bloque.type == "tool_use":
                 llamadas.append(Llamada(nombre=bloque.name, args=bloque.input, id=bloque.id))
 
-        return Respuesta(texto=texto, llamadas=llamadas)
+        u = msg.usage
+        uso = {
+            "in": getattr(u, "input_tokens", 0) or 0,
+            "out": getattr(u, "output_tokens", 0) or 0,
+            "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+            "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
+        }
+        return Respuesta(texto=texto, llamadas=llamadas, uso=uso)
 
 
 class ProveedorFalso:
@@ -286,14 +300,21 @@ def precalentar():
 
 
 def obtener(nombre: str | None = None):
-    """Devuelve el proveedor configurado. `nombre` fuerza uno concreto (para comparar)."""
-    elegido = (nombre or os.getenv("JARVIS_PROVEEDOR", "ollama")).lower()
-    if elegido == "anthropic":
-        return ProveedorAnthropic()
-    if elegido == "ollama":
-        return ProveedorOllama()
-    if elegido == "falso":
+    """Devuelve el proveedor configurado. `nombre` fuerza uno concreto (para comparar).
+
+    Admite `proveedor:modelo` (p.ej. 'anthropic:claude-opus-4-8') para fijar el
+    modelo sin tocar el .env — así el arnés de comparación puede lanzar varios
+    modelos del mismo proveedor en una tanda.
+    """
+    spec = (nombre or os.getenv("JARVIS_PROVEEDOR", "ollama")).lower()
+    base, _, modelo = spec.partition(":")
+    modelo = modelo or None
+    if base == "anthropic":
+        return ProveedorAnthropic(modelo)
+    if base == "ollama":
+        return ProveedorOllama(modelo)
+    if base == "falso":
         return ProveedorFalso()
     raise ValueError(
-        f"JARVIS_PROVEEDOR desconocido: {elegido!r} (usa 'ollama', 'anthropic' o 'falso')"
+        f"JARVIS_PROVEEDOR desconocido: {base!r} (usa 'ollama', 'anthropic' o 'falso')"
     )

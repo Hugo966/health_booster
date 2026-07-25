@@ -172,8 +172,11 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) ->
     ]
 
     acciones, texto = [], ""
+    uso = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
     for _ in range(MAX_VUELTAS):
         r = prov.responder(sistema, mensajes, HERRAMIENTAS)
+        for k in uso:
+            uso[k] += r.uso.get(k, 0)
         if r.texto:
             texto = (texto + "\n" + r.texto).strip() if texto else r.texto
 
@@ -201,4 +204,4 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) ->
 
     if texto:
         memoria.guardar_mensaje(sesion, "jarvis", texto)
-    return {"texto": texto, "acciones": acciones}
+    return {"texto": texto, "acciones": acciones, "uso": uso}
