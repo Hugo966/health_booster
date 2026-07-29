@@ -3,6 +3,8 @@ import Panel from "./Panel";
 import { theme } from "../lib/theme";
 import { MODELOS } from "../lib/chat";
 import type { Chat, Mensaje } from "../lib/chat";
+import type { Voz } from "../lib/voz";
+import Presencia, { type EstadoPresencia } from "./Presencia";
 
 // El chat de Jarvis: compacto (ChatPanel, una tarjeta más del grid) y ampliado
 // (ChatExpanded, la conversación entera en el overlay). Los dos leen el mismo
@@ -140,11 +142,46 @@ function SelectorModelo({ valor, onChange }: { valor: string; onChange: (p: stri
   );
 }
 
+// --- presencia (orbe de voz) ------------------------------------------------
+
+// Qué forma muestra el orbe: manda la voz (off/dormido/escuchando/hablando) y,
+// mientras se espera la respuesta del backend, "pensando" (venga de voz o de teclado).
+function estadoPresencia(voz: Voz | undefined, enviando: boolean): EstadoPresencia {
+  if (voz?.soportado && voz.estado === "hablando") return "hablando";
+  if (enviando) return "pensando";
+  if (voz?.soportado && (voz.estado === "dormido" || voz.estado === "escuchando")) return voz.estado;
+  return "off";
+}
+
+const LEYENDA: Record<EstadoPresencia, string> = {
+  off: "Toca el orbe para activar la voz",
+  dormido: "Escuchando… di «Jarvis»",
+  escuchando: "Te escucho…",
+  pensando: "Pensando…",
+  hablando: "Hablando…",
+};
+
+// El orbe + su leyenda. Un clic enciende/apaga la escucha (o corta si está hablando).
+function Orbe({ voz, enviando, size }: { voz?: Voz; enviando: boolean; size: number }) {
+  const est = estadoPresencia(voz, enviando);
+  const onToggle = voz?.soportado
+    ? () => (voz.estado === "hablando" ? voz.parar() : voz.alternar())
+    : undefined;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <Presencia estado={est} onToggle={onToggle} size={size} />
+      <div className="text-[11px]" style={{ color: theme.muted }}>
+        {voz?.soportado === false ? "Voz no disponible (usa Chrome)" : LEYENDA[est]}
+      </div>
+    </div>
+  );
+}
+
 // --- entrada ----------------------------------------------------------------
 
 // data-no-expand: pinchar o escribir aquí no debe ampliar la tarjeta (trampa 1
 // del plan: el Panel amplía al clicar su fondo).
-function Entrada({ enviando, onEnviar, autofocus }: { enviando: boolean; onEnviar: (t: string) => void; autofocus?: boolean }) {
+function Entrada({ enviando, onEnviar, voz, autofocus }: { enviando: boolean; onEnviar: (t: string) => void; voz?: Voz; autofocus?: boolean }) {
   const [texto, setTexto] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -155,6 +192,7 @@ function Entrada({ enviando, onEnviar, autofocus }: { enviando: boolean; onEnvia
   const mandar = () => {
     const t = texto.trim();
     if (!t || enviando) return;
+    if (voz?.estado === "hablando") voz.parar(); // barge-in: al escribir, córtale
     onEnviar(t);
     setTexto("");
   };
@@ -200,16 +238,19 @@ function FlechaEnviar() {
 
 // --- las dos vistas ---------------------------------------------------------
 
-export default function ChatPanel({ chat, onExpand }: { chat: Chat; onExpand: (origin?: DOMRect) => void }) {
+export default function ChatPanel({ chat, voz, onExpand }: { chat: Chat; voz?: Voz; onExpand: (origin?: DOMRect) => void }) {
   return (
     <Panel title="Jarvis" onExpand={onExpand}>
-      {/* Altura fija en px, como el resto de paneles compactos (ver §8): aquí no
-          hay ResponsiveContainer, pero conviene que la tarjeta case en altura
-          con Fuerza/Peso/Correlaciones de su fila. */}
+      {/* Altura fija en px, como el resto de paneles compactos (ver §8). Voz-first: el
+          orbe es el protagonista; la caja de texto queda de respaldo. El historial se
+          ve en la vista ampliada. */}
       <div className="flex flex-col" style={{ height: 263 }}>
         <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
-        <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />
-        <Entrada enviando={chat.enviando} onEnviar={chat.enviar} />
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <Orbe voz={voz} enviando={chat.enviando} size={150} />
+        </div>
+        {chat.error && <div className="mb-1 text-center text-[11px]" style={{ color: theme.alert }}>{chat.error}</div>}
+        <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} />
       </div>
     </Panel>
   );
@@ -218,12 +259,16 @@ export default function ChatPanel({ chat, onExpand }: { chat: Chat; onExpand: (o
 // Altura de viewport fija (no h-full en %): dentro del flex-1 de Expanded, un
 // height:100% no resuelve y la entrada se pegaría arriba. min-h-0 en la lista le
 // da su propio contexto de scroll (trampa 2 del plan: Expanded es overflow-y-auto).
-export function ChatExpanded({ chat }: { chat: Chat }) {
+export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
   return (
     <div className="mx-auto flex h-[72vh] min-h-0 w-full max-w-3xl flex-col">
+      {/* El orbe preside; debajo, el historial escrito de respaldo. */}
+      <div className="mb-3 flex justify-center">
+        <Orbe voz={voz} enviando={chat.enviando} size={128} />
+      </div>
       <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
       <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />
-      <Entrada enviando={chat.enviando} onEnviar={chat.enviar} autofocus />
+      <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} autofocus />
     </div>
   );
 }

@@ -302,15 +302,49 @@ un guion fijo contra cada modelo con BD temporal aislada y reporta tiempo, token
   barras y color — Estándar (Sonnet, verde, default) < Turbo (Opus, naranja) < Máxima potencia
   (Fable, rojo). Se recuerda en localStorage y se manda por mensaje. El 3B ya no aparece.
 
-**Siguiente, por orden:**
-1. `lib/acciones.ts` — reproductor interrumpible + tour. Engancharlo al *seam* `onAcciones`
-   de `useChat` en `App.tsx` (hoy se descartan). Ejecuta `abrir_panel`→`setAbierto`,
-   `cerrar_panel`, `resaltar`; abortable al escribir.
-2. **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a
-   mano. El hilo se queda en SQLite; los hechos pasan a Markdown. Todo va por la interfaz de
-   `memoria.py` (`recordar`/`hechos_relevantes`), así que el cambio queda acotado al módulo.
-3. Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc`.
-4. Iterar el personaje (emojis, brevedad) ahora que el proveedor por defecto es Sonnet.
+**CAPA DE VOZ — arrancada (2026-07-29), SIN COMMITEAR. GIRO a voz-first.**
+Cambio de visión con Hugo: **nada de botón de micro ni de caja de chat como interfaz.**
+Jarvis **siempre escuchando** su nombre; lo llamas ("Jarvis…") y "sale": te habla y te
+mueve los paneles. Una **"presencia"** (orbe) sustituye al chat; **el chat de texto se
+queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
+- `components/Presencia.tsx` (nuevo) — orbe en **Canvas 2D** (sin librerías) con 4 formas
+  por estado que **morfean** suave: esfera (dormido/off) · radar (escuchando) · giroscopio
+  (pensando) · barras de ecualizador (hablando). Respeta `prefers-reduced-motion`. Look
+  aprobado por Hugo.
+- `lib/voz.ts` (nuevo) — motor de voz. **v1 con Web Speech** (gratis, Chrome, sin claves):
+  wake-word con **abanico de variantes** (`/\b(?:ll|j|y|h)?ar[vb]i[sz]?\b/i` →
+  jarvis/yarvis/llarvis/jarvi/jarbis…, porque en `es-ES` la J suena "y"/"ll"), STT del
+  comando, TTS `speechSynthesis`. Máquina de estados off→dormido→escuchando→hablando con
+  **anti-eco** (silencia el mic mientras habla). Expone `useVoz({onComando})`.
+- `lib/acciones.ts` (nuevo, MÍNIMO) — reproductor: `abrir_panel`/`cerrar_panel` vía el hash.
+  `resaltar`/gráficos/tours aún no (no-op). Sirve también al chat escrito. Enganchado al
+  *seam* `onAcciones` en `App.tsx` (antes se descartaban).
+- `lib/chat.ts` (editado) — nuevo callback `onRespuesta(texto)` para que la voz lea solo las
+  respuestas nuevas. `ChatPanel.tsx`/`App.tsx`/`index.css` editados: el orbe preside el panel
+  y es el control de voz (clic = on/off; si habla, corta).
+- **Verificado aquí (sobremesa):** `npm run build` limpio; captura del dashboard y del panel
+  con el orbe OK; `/chat` con `"proveedor":"falso"` devuelve `abrir_panel(sueno)`. El micro
+  NO se pudo probar (headless sin micro): lo prueba Hugo en el portátil.
+
+**Siguiente, por orden (en el PORTÁTIL — necesita micro, GPU y la key):**
+1. **Probar la voz de verdad** en Chrome del portátil con `VITE_JARVIS_PROVEEDOR=falso`:
+   activar el orbe, dar permiso de micro, decir "Jarvis, muéstrame el sueño" → estados del
+   orbe + abre panel + TTS. Validar que el abanico engancha "yarvis"/"llarvis".
+2. **Wake-word Porcupine** (decidido): detección on-device de "Jarvis" (Web Speech continuo es
+   flaky y manda audio a Google sin parar). Necesita `VITE_PICOVOICE_KEY` (gratis). OJO: el
+   keyword de fábrica es inglés; quizá entrenar uno con la pronunciación española de Hugo.
+   Detector encapsulado en `voz.ts` → swap acotado.
+3. **Cerebro Claude real:** poner `ANTHROPIC_API_KEY` en el `.env` del portátil (no viaja por
+   git; Hugo la trae a mano) y probar la conversación de verdad (Sonnet 5 por defecto).
+4. **Voz "Jarvis" de verdad:** backend TTS intercambiable (solo se toca `voz.ts`). Con la GPU
+   libre (el cerebro va a la nube), **XTTS local** para clonar timbre grave/cálido, o nube
+   barata (OpenAI onyx dirigible). Se elige por oído con muestras.
+
+**Otros pendientes (no de voz):**
+- **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a
+  mano. El hilo se queda en SQLite; los hechos pasan a Markdown. Acotado a `memoria.py`.
+- Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc` (el reproductor completo/tour).
+- Iterar el personaje (emojis, brevedad) ahora que el proveedor por defecto es Sonnet.
 
 **Probar el chat sin modelo** (útil en cualquier máquina):
 ```bash

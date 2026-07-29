@@ -54,6 +54,20 @@ body {
   box-shadow: 0 0 18px rgba(0, 212, 255, 0.3);
 }
 
+/* Pulso del botón de voz cuando escucha o habla. El glow usa currentColor, así que
+   toma el color del estado (verde escuchando, ámbar hablando). Con "reducir
+   movimiento" se apaga y queda el color fijo como indicador. */
+.jarvis-pulso {
+  animation: jarvisPulso 1.4s ease-in-out infinite;
+}
+@keyframes jarvisPulso {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+  50% { box-shadow: 0 0 11px 1px currentColor; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-pulso { animation: none; }
+}
+
 /* segmentos de un selector (rango, categoría, subir/bajar) */
 .jarvis-seg {
   padding: 5px 11px;

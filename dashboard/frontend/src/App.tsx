@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchData, num, type SheetData } from "./lib/api";
 import Arranque from "./components/Arranque";
 import Readiness, { ReadinessExpanded } from "./components/Readiness";
@@ -12,7 +12,9 @@ import ChatPanel, { ChatExpanded } from "./components/ChatPanel";
 import Expanded from "./components/Expanded";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
-import { useChat } from "./lib/chat";
+import { useChat, type Chat } from "./lib/chat";
+import { useVoz } from "./lib/voz";
+import { reproducir } from "./lib/acciones";
 import { anim, theme } from "./lib/theme";
 
 type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "chat";
@@ -61,9 +63,18 @@ export default function App() {
   const abrir = (w: Widget) => (o?: DOMRect) => { setOrigen(o ?? null); setAbierto(w); };
   const [objetivo, setObjetivo] = useObjetivoPeso();
   // El hilo del chat vive aquí para que el compacto y el ampliado lo compartan.
-  // Las acciones de UI (abrir_panel, resaltar…) aún no se ejecutan: eso es el
-  // reproductor interrumpible de lib/acciones.ts, el siguiente paso de la fase.
-  const chat = useChat();
+  // Chat y voz se necesitan mutuamente (la voz manda comandos al chat; el chat le
+  // pasa la respuesta para leerla), así que el chat se referencia por ref para
+  // romper el círculo: la voz llama a chatRef, el chat llama a voz.decir.
+  const chatRef = useRef<Chat | null>(null);
+  const voz = useVoz({ onComando: (texto) => chatRef.current?.enviar(texto) });
+  const chat = useChat(
+    // Acciones de UI: v1 solo navegación de paneles (abrir/cerrar), vía el hash.
+    (acciones) => reproducir(acciones, { abrir: (p) => setAbierto(p as Widget), cerrar: () => setAbierto(null) }),
+    // Respuesta nueva de Jarvis -> la voz la lee (si está activa).
+    (texto) => voz.decir(texto),
+  );
+  chatRef.current = chat;
   // Secuencia de arranque: tapa la pantalla mientras cargan los datos y se
   // aparta al terminar. Con "reducir movimiento" ni se monta.
   //
@@ -238,7 +249,7 @@ export default function App() {
 
           {/* El chat de Jarvis, a lo ancho: es la pieza central de la Fase 2, no
               una columna más. Compacto aquí; conversación entera al ampliar. */}
-          <ChatPanel chat={chat} onExpand={abrir("chat")} />
+          <ChatPanel chat={chat} voz={voz} onExpand={abrir("chat")} />
         </div>
       )}
 
@@ -266,7 +277,7 @@ export default function App() {
             <WeightExpanded rows={weightRows} todo={weightAll} objetivo={objetivo} onChangeObjetivo={setObjetivo} />
           )}
           {abierto === "correlaciones" && <CorrelationExpanded rows={dd} />}
-          {abierto === "chat" && <ChatExpanded chat={chat} />}
+          {abierto === "chat" && <ChatExpanded chat={chat} voz={voz} />}
         </Expanded>
       )}
     </div>

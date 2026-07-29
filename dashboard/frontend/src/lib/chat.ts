@@ -102,7 +102,12 @@ export type Chat = {
   setProveedor: (p: string) => void;
 };
 
-export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
+export function useChat(
+  onAcciones?: (acciones: Accion[]) => void,
+  // Se dispara con el texto de CADA respuesta nueva de Jarvis (no el historial al
+  // recargar). Lo usa la capa de voz para leerlo en alto; opcional.
+  onRespuesta?: (texto: string) => void,
+): Chat {
   const sesion = useRef(idSesion());
   const [mensajes, setMensajes] = useState<Mensaje[]>(cargar);
   const [enviando, setEnviando] = useState(false);
@@ -125,9 +130,11 @@ export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
   // El callback de acciones se guarda en una ref para que `enviar` no se recree
   // cuando App pase una función distinta en cada render.
   const accionesRef = useRef(onAcciones);
+  const respuestaRef = useRef(onRespuesta);
   useEffect(() => {
     accionesRef.current = onAcciones;
-  }, [onAcciones]);
+    respuestaRef.current = onRespuesta;
+  }, [onAcciones, onRespuesta]);
 
   useEffect(() => {
     try {
@@ -148,6 +155,7 @@ export function useChat(onAcciones?: (acciones: Accion[]) => void): Chat {
         const r = await pedir(sesion.current, limpio, provRef.current);
         if (r.texto) {
           setMensajes((prev) => [...prev, { rol: "jarvis", texto: r.texto, ts: Date.now() }]);
+          respuestaRef.current?.(r.texto);   // que la voz lo lea (si está activa)
         }
         if (r.acciones.length) accionesRef.current?.(r.acciones);
       } catch (e) {
