@@ -161,15 +161,22 @@ const LEYENDA: Record<EstadoPresencia, string> = {
   hablando: "Hablando…",
 };
 
+// Nivel de potencia (0/1/2) = posición del modelo activo en MODELOS (Estándar/Turbo/Máx).
+// Tiñe la energía y el aro del orbe, no su color de estado.
+function potenciaDe(proveedor: string): number {
+  const i = MODELOS.findIndex((m) => m.id === proveedor);
+  return i < 0 ? 0 : i;
+}
+
 // El orbe + su leyenda. Un clic enciende/apaga la escucha (o corta si está hablando).
-function Orbe({ voz, enviando, size }: { voz?: Voz; enviando: boolean; size: number }) {
+function Orbe({ voz, enviando, potencia, size }: { voz?: Voz; enviando: boolean; potencia: number; size: number }) {
   const est = estadoPresencia(voz, enviando);
   const onToggle = voz?.soportado
     ? () => (voz.estado === "hablando" ? voz.parar() : voz.alternar())
     : undefined;
   return (
     <div className="flex flex-col items-center gap-1">
-      <Presencia estado={est} onToggle={onToggle} size={size} />
+      <Presencia estado={est} potencia={potencia} onToggle={onToggle} size={size} />
       <div className="text-[11px]" style={{ color: theme.muted }}>
         {voz?.soportado === false ? "Voz no disponible (usa Chrome)" : LEYENDA[est]}
       </div>
@@ -247,7 +254,7 @@ export default function ChatPanel({ chat, voz, onExpand }: { chat: Chat; voz?: V
       <div className="flex flex-col" style={{ height: 263 }}>
         <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <Orbe voz={voz} enviando={chat.enviando} size={150} />
+          <Orbe voz={voz} enviando={chat.enviando} potencia={potenciaDe(chat.proveedor)} size={150} />
         </div>
         {chat.error && <div className="mb-1 text-center text-[11px]" style={{ color: theme.alert }}>{chat.error}</div>}
         <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} />
@@ -264,7 +271,7 @@ export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
     <div className="mx-auto flex h-[72vh] min-h-0 w-full max-w-3xl flex-col">
       {/* El orbe preside; debajo, el historial escrito de respaldo. */}
       <div className="mb-3 flex justify-center">
-        <Orbe voz={voz} enviando={chat.enviando} size={128} />
+        <Orbe voz={voz} enviando={chat.enviando} potencia={potenciaDe(chat.proveedor)} size={128} />
       </div>
       <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
       <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />

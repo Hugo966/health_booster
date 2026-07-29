@@ -309,8 +309,13 @@ mueve los paneles. Una **"presencia"** (orbe) sustituye al chat; **el chat de te
 queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
 - `components/Presencia.tsx` (nuevo) — orbe en **Canvas 2D** (sin librerías) con 4 formas
   por estado que **morfean** suave: esfera (dormido/off) · radar (escuchando) · giroscopio
-  (pensando) · barras de ecualizador (hablando). Respeta `prefers-reduced-motion`. Look
-  aprobado por Hugo.
+  (pensando) · barras de ecualizador (hablando). Respeta `prefers-reduced-motion`.
+  **La potencia del modelo (0 Estándar / 1 Turbo / 2 Máxima, prop `potencia` desde
+  `ChatPanel.potenciaDe(chat.proveedor)`) NO cambia el color** —eso lo marca el estado, por
+  consistencia— sino que se expresa como energía (más rápido/glow/partículas), un
+  aro-medidor tenue en el color del nivel, y un glow de fondo que brilla más con la potencia.
+  Barras de "hablando" con amplitud comprimida (no chillan en Máxima). Look y ajustes
+  aprobados por Hugo en maqueta.
 - `lib/voz.ts` (nuevo) — motor de voz. **v1 con Web Speech** (gratis, Chrome, sin claves):
   wake-word con **abanico de variantes** (`/\b(?:ll|j|y|h)?ar[vb]i[sz]?\b/i` →
   jarvis/yarvis/llarvis/jarvi/jarbis…, porque en `es-ES` la J suena "y"/"ll"), STT del
