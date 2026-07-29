@@ -292,6 +292,22 @@ def interpret(nums, anchor, bw, banda, metros):
 
 def parse_keep(text, lookups):
     rows=[]; plani=None; bloque=None; week=dia=None; slot=0; exs=[]; cur_fecha=''; dolores={}
+
+    def flush_no_hechos():
+        # Si en una sesión Hugo registró MENOS ejercicios de los que el plan tenía,
+        # es que la cortó por tiempo: se asume que no hizo los ÚLTIMOS que le tocaban.
+        # Se anotan como 'no_hecho' (sin datos: no suman carga ni e1RM ni series) para
+        # que la sesión incompleta conste. Solo si registró al menos uno (slot>0): una
+        # sesión aún sin nada apuntado no es "no hecha", es que todavía no la ha metido.
+        if week is None or not exs or slot <= 0 or slot >= len(exs):
+            return
+        for i in range(slot, len(exs)):
+            e = exs[i]
+            rows.append(dict(plani=plani, bloque=bloque, semana=week, dia=dia, fecha=cur_fecha,
+                slot=i + 1, ejercicio=e['name'], tipo=e['block'], especial=None, token='',
+                n_series=None, kg=None, reps=None, rpe=None, rir=None, e1rm=None, volumen=None,
+                nota='', flag='no_hecho'))
+
     for line in text.splitlines():
         line=line.strip()
         if not line: continue
@@ -304,13 +320,18 @@ def parse_keep(text, lookups):
         if mpl:
             # El nº de plan etiqueta el eje de fuerza (P2B1S1). Va en el keep porque Hugo
             # reinicia bloque/semana con cada plan y sin la P se solaparían microciclos.
+            flush_no_hechos()
             plani=int(mpl.group(1)); bloque=None; week=dia=None; slot=0; exs=[]; continue
         if re.match(r'PLANI\b', line, re.I):  # "PLANI" sin número: separador, se ignora igual
+            flush_no_hechos()
             bloque=None; week=dia=None; slot=0; exs=[]; continue
         mb=re.match(r'BLOQUE\s+(\d+)',line,re.I)
-        if mb: bloque=int(mb.group(1)); continue
+        if mb:
+            flush_no_hechos()
+            bloque=int(mb.group(1)); week=dia=None; slot=0; exs=[]; continue
         h=re.match(r'SEM(\d+)\s*-\s*D[IÍ]A\s*(\d+)',line,re.I)
         if h:
+            flush_no_hechos()   # cierra la sesión anterior antes de empezar la nueva
             week,dia=h.group(1),h.group(2); slot=0
             ex=re.search(r'-\s*(\d{4}-\d{2}-\d{2})',line); cur_fecha=ex.group(1) if ex else ''
             exs=lookups.get(bloque,{}).get((week,dia),[]); continue
@@ -320,6 +341,10 @@ def parse_keep(text, lookups):
             txt=re.sub(r'^\s*dolor(?:es)?\s*(?:de\s*)?(?:sesi[oó]n)?\s*:?\s*','',line,flags=re.I).strip()
             dolores[(bloque,week,dia)] = txt or line
             continue
+        # Línea sin ningún número: nota suelta ("Hora y media de entreno tu"), no un
+        # ejercicio. Se ignora para no crear filas fantasma ni descuadrar la cuenta de
+        # ejercicios (de la que depende detectar los 'no hechos').
+        if not re.search(r'\d', line): continue
         slot+=1
         info=exs[slot-1] if slot-1 < len(exs) else None
         name=info['name'] if info else None; block=info['block'] if info else None; bw=info['bw'] if info else None
@@ -346,6 +371,7 @@ def parse_keep(text, lookups):
             rows.append(dict(plani=plani,bloque=bloque,semana=week,dia=dia,fecha=cur_fecha,slot=slot,
                 ejercicio=name,tipo=block,especial=sp,token=p['raw'],n_series=ns,kg=kg,reps=reps,
                 rpe=rpe,rir=rir,e1rm=est,volumen=vol,nota=p['note'],flag=flag.strip()))
+    flush_no_hechos()   # última sesión del fichero
     df=pd.DataFrame(rows)
     if not df.empty:
         df['dolor_sesion']=df.apply(lambda r: dolores.get((r['bloque'],r['semana'],r['dia']),''), axis=1)
