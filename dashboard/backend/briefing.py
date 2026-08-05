@@ -226,6 +226,23 @@ def generar() -> str:
             f"{u.get('semana')} ({u.get('fecha')})"
         )
 
+    # Notas de los formularios AM/PM: texto libre de Hugo (cómo se sintió, lesiones,
+    # vida, contexto…). Dan mucha información que los números no capturan, así que se le
+    # pasan a Jarvis. Solo las que tienen algo escrito, las más recientes.
+    notas = []
+    for row in dd:
+        f = str(row.get("fecha", ""))
+        trozos = [
+            f"{etq}: {v.strip()}"
+            for campo, etq in (("notas_am", "AM"), ("notas_pm", "PM"), ("dolor_sesion_nota", "dolor"))
+            for v in [str(row.get(campo, "") or "")]
+            if v.strip()
+        ]
+        if trozos:
+            notas.append(f"- {f} · " + " · ".join(trozos))
+    if notas:
+        partes += ["", "Notas recientes de Hugo (texto libre de sus formularios):"] + notas[-8:]
+
     # Aviso de frescura, para que no opine sobre datos viejos como si fueran de hoy
     viejos = [
         n

@@ -9,6 +9,7 @@ import StrengthTrend, { StrengthExpanded } from "./components/StrengthTrend";
 import WeightTrend, { WeightExpanded } from "./components/WeightTrend";
 import CorrelationHeatmap, { CorrelationExpanded } from "./components/CorrelationHeatmap";
 import ChatPanel, { ChatExpanded } from "./components/ChatPanel";
+import NotasPanel, { NotasExpanded } from "./components/NotasPanel";
 import Expanded from "./components/Expanded";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
@@ -17,7 +18,7 @@ import { useVoz } from "./lib/voz";
 import { reproducir } from "./lib/acciones";
 import { anim, theme } from "./lib/theme";
 
-type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "chat";
+type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "notas" | "chat";
 
 const TITULOS: Record<Widget, string> = {
   readiness: "Readiness",
@@ -27,6 +28,7 @@ const TITULOS: Record<Widget, string> = {
   fuerza: "Fuerza",
   peso: "Peso",
   correlaciones: "Correlaciones",
+  notas: "Notas",
   chat: "Jarvis",
 };
 
@@ -247,6 +249,9 @@ export default function App() {
             <CorrelationHeatmap rows={dd} onExpand={abrir("correlaciones")} />
           </div>
 
+          {/* Notas: texto libre de los formularios, a lo ancho (puede ser largo). */}
+          <NotasPanel rows={data.derived_diario} onExpand={abrir("notas")} />
+
           {/* El chat de Jarvis, a lo ancho: es la pieza central de la Fase 2, no
               una columna más. Compacto aquí; conversación entera al ampliar. */}
           <ChatPanel chat={chat} voz={voz} onExpand={abrir("chat")} />
@@ -277,6 +282,7 @@ export default function App() {
             <WeightExpanded rows={weightRows} todo={weightAll} objetivo={objetivo} onChangeObjetivo={setObjetivo} />
           )}
           {abierto === "correlaciones" && <CorrelationExpanded rows={dd} />}
+          {abierto === "notas" && <NotasExpanded rows={data.derived_diario} />}
           {abierto === "chat" && <ChatExpanded chat={chat} voz={voz} />}
         </Expanded>
       )}

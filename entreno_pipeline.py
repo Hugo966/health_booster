@@ -242,9 +242,22 @@ def parse_segment(seg):
     s=re.sub(r'(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)',
              lambda m: f"{round((float(m.group(1))+float(m.group(2)))/2,2):g}", s)
     s=re.sub(r'RIR\w*',' ',s,flags=re.I)
-    # banda / goma (cualquier color)
-    banda=bool(re.search(r'\b(banda|goma)\w*',s,re.I))
-    if banda: s=re.sub(r'\b(?:banda|goma)_?[a-záéíóúü]+','BANDA',s,flags=re.I)
+    # Cargas que NO son kg: banda por color, y discos/caja como etiqueta (dificultad, no
+    # peso). Se extraen ENTERAS —aunque vayan pegadas tras "Nx" sin separador, por eso sin
+    # \b— y se sacan del texto para que el nº de series no acabe leído como kg. La etiqueta
+    # va a la nota. (La banda incluye la 'x' final en el match; se recorta de la etiqueta.)
+    carga=None
+    mb=re.search(r'(?:banda|goma)[a-záéíóúüñ_x]*', s, re.I)
+    banda=bool(mb)
+    if mb:
+        carga=re.sub(r'x+$','',mb.group(0)).replace('_',' ').strip()
+        s=re.sub(r'(?:banda|goma)[a-záéíóúüñ_x]*',' ',s,flags=re.I)
+    md=re.search(r'(\d+)\s*_?\s*discos?', s, re.I)
+    if md:
+        carga=f"{md.group(1)} discos"; s=re.sub(r'\d+\s*_?\s*discos?',' ',s,flags=re.I)
+    elif re.search(r'\bcajas?\b', s, re.I):
+        carga='caja'; s=re.sub(r'\bcajas?\b',' ',s,flags=re.I)
+    if carga: note.append(carga)
     # distancia (metros) — toma la primera ocurrencia
     metros=re.search(r'(\d+)\s*m\b',s)
     if metros: note.append(f"{metros.group(1)}m")
@@ -263,30 +276,34 @@ def parse_segment(seg):
         else: words.append(tok)
     if words: note.append(' '.join(words))
     return dict(raw=raw, nums=nums, rpe=corr if corr is not None else rpe, rir=rir,
-                bad_int=bad_int, banda=banda, metros=(int(metros.group(1)) if metros else None),
+                bad_int=bad_int, banda=banda, carga=carga,
+                metros=(int(metros.group(1)) if metros else None),
                 had_secs=had_secs, note=' | '.join(n for n in note if n))
 
-def interpret(nums, anchor, bw, banda, metros):
+def interpret(nums, anchor, bw, banda, metros, carga=None):
     numeric=[n for n in nums if isinstance(n,float)]; has_secs='SECS' in nums
-    if banda or 'BANDA' in nums:
+    # Cargas que NO son kg (banda por color, discos/caja como dificultad): los números son
+    # series y reps, nunca peso. La etiqueta ya va en la nota. Series se omite si es 1.
+    if banda or carga or 'BANDA' in nums:
+        esp = 'banda' if banda else 'carga'
         if metros is not None or has_secs:
-            return (numeric[0] if numeric else 1),None,None,'banda',''
-        if len(numeric)>=2: return numeric[0],None,numeric[-1],'banda',''
-        if len(numeric)==1: return 1,None,numeric[0],'banda',''
-        return 1,None,None,'banda','banda_rara'
+            return (numeric[0] if numeric else 1),None,None,esp,''
+        if len(numeric)>=2: return numeric[0],None,numeric[-1],esp,''
+        if len(numeric)==1: return 1,None,numeric[0],esp,''
+        return 1,None,None,esp,'carga_rara'
     if metros is not None:
-        return (numeric[0] if numeric else 1),None,None,'distancia','distancia_m'
+        # Farmer walks y demás por distancia: guarda series + PESO cargado + metros (en nota).
+        ns=numeric[0] if numeric else 1
+        kg=numeric[1] if len(numeric)>=2 else None
+        return ns,kg,None,'distancia','distancia_m'
     if has_secs:
         if len(numeric)>=2: return numeric[0],None,numeric[1],'tempo',''
         return (numeric[0] if numeric else 1),None,None,'isometrico',''
+    # Convención de Hugo: 3 números = series × peso × reps; 2 números = peso × reps
+    # (1 serie; el peso se escribe siempre, 0 incluido para peso corporal); 1 = solo reps.
+    # `anchor`/`bw` ya no hacen falta: la notación es inequívoca.
     if len(numeric)==3: return numeric[0],numeric[1],numeric[2],None,''
-    if len(numeric)==2:
-        a,b=numeric
-        if bw is True: return a,None,b,None,''
-        if bw is False: return 1,a,b,None,''
-        if anchor is not None and a==anchor: return 1,a,b,None,''
-        if a>=10: return 1,a,b,None,'AMB?peso'
-        return a,None,b,None,'AMB?corporal'
+    if len(numeric)==2: return 1,numeric[0],numeric[1],None,''
     if len(numeric)==1: return 1,None,numeric[0],None,'incompleto'
     return None,None,None,None,'sin_datos'
 
@@ -356,7 +373,7 @@ def parse_keep(text, lookups):
         segs=[parse_segment(t) for t in re.split(r'\s+-\s*|\s*-\s+', line)]; segs=[p for p in segs if p]
         anchor=next((p['nums'][1] for p in segs if len([n for n in p['nums'] if isinstance(n,float)])==3), None)
         for p in segs:
-            ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'])
+            ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'],p.get('carga'))
             rpe,rir=p['rpe'],p['rir']
             if p['bad_int']: flag=(flag+' int_no_parseable').strip()
             if not has_excel: flag=(flag+' sin_excel').strip()

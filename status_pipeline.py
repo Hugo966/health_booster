@@ -255,9 +255,10 @@ def consolidate(am, pm, peso, objetivo, sesion, duraciones):
     # Se arrastra si algún día aparece; hasta entonces, la mezcla de latencia y
     # despertares se ve como el hueco entre tiempo en cama y horas dormidas.
     am_cols = ["fecha","sueno_calidad","sensacion_am","animo","estres","molestias_nivel",
-               "cafeina_ayer_mg","alcohol_ayer","hora_acostarse","hora_despertar","latencia_min"]
+               "cafeina_ayer_mg","alcohol_ayer","hora_acostarse","hora_despertar","latencia_min",
+               "notas_am"]
     pm_cols = ["fecha","energia","sensacion_global","cafeina_hoy_mg","rpd_sesion",
-               "dolor_sesion_zona","dolor_sesion_nota"]
+               "dolor_sesion_zona","dolor_sesion_nota","notas_pm"]
     df = base.merge(am[[c for c in am_cols if c in am]], on="fecha", how="left") \
              .merge(pm[[c for c in pm_cols if c in pm]], on="fecha", how="left") \
              .merge(objetivo, on="fecha", how="left") \
