@@ -341,11 +341,53 @@ queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
    Detector encapsulado en `voz.ts` → swap acotado.
 3. **Cerebro Claude real:** poner `ANTHROPIC_API_KEY` en el `.env` del portátil (no viaja por
    git; Hugo la trae a mano) y probar la conversación de verdad (Sonnet 5 por defecto).
-4. **Voz "Jarvis" de verdad:** backend TTS intercambiable (solo se toca `voz.ts`). Con la GPU
-   libre (el cerebro va a la nube), **XTTS local** para clonar timbre grave/cálido, o nube
-   barata (OpenAI onyx dirigible). Se elige por oído con muestras.
+4. **Voz "Jarvis" de verdad — TTS local con Qwen3-TTS clonado (EN CURSO, 2026-08-09).**
+   Se descartó XTTS: se usa **Qwen3-TTS** (open, Apache-2.0). Todo lo pesado vive en
+   `E:\jarvis_tts\` (venv, modelos, caché) porque **C: se quedó sin espacio**; el código va
+   en `dashboard/tts/` (repo). **Solo portátil** (GPU): el otro equipo cae a la voz del navegador.
+   - **Modelos** (a E:, ~4 GB c/u): `Qwen3-TTS-12Hz-1.7B-CustomVoice` (9 voces de catálogo,
+     `generate_custom_voice`) y `Qwen3-TTS-12Hz-1.7B-Base` (el que CLONA, `generate_voice_clone`).
+     El Base se bajó con `snapshot_download(local_dir=...)` a `E:\jarvis_tts\models\qwen3-base`
+     para esquivar el **WinError 1314** (symlinks de HF fallan en Windows sin modo desarrollador).
+   - **Voz elegida: Jarvis del doblaje español de Iron Man, CLONADO.** Las 9 de catálogo no
+     daban el acento (Hugo las descartó). Pipeline montado en `dashboard/tts/`:
+     `prueba.py` (audición catálogo), `clonar.py` (clonación). La referencia se sacó de un
+     vídeo de YouTube (yt-dlp), se **aisló la voz con Demucs** (quita música/fondo) y se
+     recortó a ~28 s limpios (`E:\jarvis_tts\ref\jarvis_ref.wav`).
+   - **Ajustes que funcionaron:** modo **con transcripción** (`x_vector_only_mode=False`,
+     `ref_text` transcrito con faster-whisper) para que NO suene robótico; **gravedad −1
+     semitono con rubberband de ffmpeg** (`formant=preserved`) — librosa metía un "enlatado"
+     metálico, rubberband no. Aprobado por Hugo: timbre y gravedad OK.
+   - **Latencia:** ~1.6–1.9× tiempo real (varía; el primer gen tras cargar se dispara a ~4×).
+     Para uso en vivo hay que atacarla: respuestas cortas, **streaming**, o el Base de **0.6B**.
+   - **INTEGRACIÓN HECHA (2026-08-09):** `dashboard/tts/servidor.py` (FastAPI, puerto **8123**)
+     carga el modelo + prompt al arrancar y expone `POST /voz {texto}` → WAV (con la gravedad
+     -1 rubberband ya aplicada). `voz.ts` `decir()` reescrito: pide el audio a `TTS_URL`
+     (`VITE_TTS_URL`, default `http://localhost:8123`), lo reproduce con un `<audio>`, y **cae a
+     `speechSynthesis`** si el servicio no responde (otro equipo / apagado). `parar()` corta también
+     ese audio (barge-in). Bucle ya cerrado en `App.tsx` (chat.onRespuesta → voz.decir).
+     Arrancar el servicio: `HF_HOME=E:/jarvis_tts/hf_cache
+     E:/jarvis_tts/venv/Scripts/python.exe -m uvicorn servidor:app --port 8123` (desde
+     `dashboard/tts/`, sandbox off).
+   - **Probado en vivo por Hugo (2026-08-09):** la voz clonada suena por el chat ("bien,
+     mejorable"). **BUG arreglado:** ffmpeg escribía el WAV a tubería (`pipe:1`) y dejaba el
+     tamaño RIFF en `0xFFFFFFFF`; el navegador tardaba **>1 min** en reproducir (buffering).
+     Ahora ffmpeg escribe a fichero temporal (cabecera correcta) → reproduce al instante.
+   - **QUÉ FALTA / MEJORAR (por prioridad):**
+     1. **Latencia de generación** (lo gordo): ~5 s frase corta, ~10 s media (en caliente; el
+        1er gen tras cargar ~17 s). Para uso en vivo hay que **streaming** (Qwen3-TTS lo
+        soporta; empezar a sonar con el primer trozo) o el Base **0.6B**. Sin esto, Jarvis
+        tarda ~5-10 s en empezar a hablar tras responder.
+     2. **Calidad de voz** "mejorable" (Hugo) — afinar (¿más referencia?, ¿otros ajustes?).
+     3. Re-verificar en el navegador que con el fix del WAV ya suena rápido (quedó a medias al
+        irse Hugo; el fix está aplicado pero el servicio corría con la versión vieja).
 
 **Otros pendientes (no de voz):**
+- **Acento: sigue seseando (latino), Hugo lo quiere castellano.** Qwen3-TTS NO tiene parámetro
+  de dialecto y sesea la "z"/"c" por defecto; el truco ortográfico (escribir "z") NO lo arregla.
+  Único arreglo real: **fine-tune/LoRA** con datos en castellano, o voces pre-entrenadas ES
+  (`github.com/alblez/qwen3-tts-spanish-voices`, pero pierden el timbre Jarvis). **Decisión de
+  Hugo (2026-08-09): dejarlo así por ahora**, convivir con el seseo; mejora futura.
 - **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a
   mano. El hilo se queda en SQLite; los hechos pasan a Markdown. Acotado a `memoria.py`.
 - Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc` (el reproductor completo/tour).

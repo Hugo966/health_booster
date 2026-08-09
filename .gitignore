@@ -7,6 +7,10 @@ jarvis.db
 
 # --- regenerable ---
 venv/
+# Servicio TTS local (solo portátil): audio generado y cachés pesadas
+dashboard/tts/muestras/*.wav
+dashboard/frontend/public/muestras/*.wav
+*.pyc
 dashboard/frontend/node_modules/
 dashboard/frontend/dist/
 # caché incremental de tsc: cambia en cada build y difiere entre máquinas

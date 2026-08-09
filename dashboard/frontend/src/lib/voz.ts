@@ -23,6 +23,11 @@ const WAKE = /\b(?:ll|j|y|h)?ar[vb]i[sz]?\b/gi;
 // reconocimiento que pudiera traer la propia voz de Jarvis (evita auto-disparo).
 const GRACIA_MS = 700;
 
+// Servicio TTS local con la voz CLONADA de Jarvis (dashboard/tts/servidor.py, solo
+// portátil con GPU). Si no responde —otro equipo, o servicio apagado— la voz
+// cae al `speechSynthesis` del navegador. Se puede apuntar a otro host con VITE_TTS_URL.
+const TTS_URL = (import.meta.env.VITE_TTS_URL as string | undefined) ?? "http://localhost:8123";
+
 function CtorRec(): any {
   return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 }
@@ -198,17 +203,29 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     }
   }, [irA, relanzar]);
 
-  const decir = useCallback(
-    (texto: string) => {
-      if (!activaRef.current || !soportado) return; // solo lee en voz alta con la voz activa
-      const limpio = texto.replace(/\s+/g, " ").trim();
-      if (!limpio) return;
+  // El audio de la voz clonada que esté sonando (para poder cortarlo en barge-in).
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pararAudio = useCallback(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    audioRef.current = null;
+    try {
+      a.pause();
+    } catch {
+      /* ya parado */
+    }
+    if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
+  }, []);
+
+  // Respaldo: la voz del navegador (speechSynthesis). Se usa si el servicio TTS no
+  // está disponible. Es la de antes; ahora es el plan B, no la principal.
+  const decirNavegador = useCallback(
+    (limpio: string) => {
       try {
         window.speechSynthesis.cancel();
       } catch {
         /* nada que cancelar */
       }
-      irA("hablando");
       const u = new SpeechSynthesisUtterance(limpio);
       u.lang = "es-ES";
       const v = vozEspanola();
@@ -221,7 +238,47 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
         finHabla();
       }
     },
-    [soportado, irA, finHabla],
+    [finHabla],
+  );
+
+  const decir = useCallback(
+    (texto: string) => {
+      if (!activaRef.current || !soportado) return; // solo lee en voz alta con la voz activa
+      const limpio = texto.replace(/\s+/g, " ").trim();
+      if (!limpio) return;
+      // Callar lo anterior y pasar a "hablando" YA: así el mic queda mudo durante la
+      // generación (que tarda unos segundos), no solo mientras suena (anti-eco).
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* nada que cancelar */
+      }
+      pararAudio();
+      irA("hablando");
+      // Voz clonada del servicio; si falla (no está levantado), voz del navegador.
+      fetch(`${TTS_URL}/voz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: limpio }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.blob();
+        })
+        .then((blob) => {
+          // Si mientras generaba se canceló (barge-in) o se apagó, no reproducir.
+          if (estadoRef.current !== "hablando" || !activaRef.current) return;
+          const a = new Audio(URL.createObjectURL(blob));
+          audioRef.current = a;
+          a.onended = finHabla;
+          a.onerror = () => finHabla();
+          a.play().catch(() => finHabla());
+        })
+        .catch(() => {
+          if (estadoRef.current === "hablando" && activaRef.current) decirNavegador(limpio);
+        });
+    },
+    [soportado, irA, finHabla, pararAudio, decirNavegador],
   );
 
   const parar = useCallback(() => {
@@ -230,10 +287,11 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     } catch {
       /* nada que cancelar */
     }
+    pararAudio();
     finHabla();
-  }, [finHabla]);
+  }, [finHabla, pararAudio]);
 
-  // Al desmontar: soltar micro y síntesis.
+  // Al desmontar: soltar micro, síntesis y el audio clonado que estuviera sonando.
   useEffect(() => {
     return () => {
       try {
@@ -241,13 +299,14 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       } catch {
         /* */
       }
+      pararAudio();
       try {
         recRef.current?.stop();
       } catch {
         /* */
       }
     };
-  }, []);
+  }, [pararAudio]);
 
   return { soportado, vozActiva, estado, alternar, parar, decir };
 }

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jarvis · Audición de voces</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 24px; background: #0a0e14; color: #e6edf3;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 18px; letter-spacing: .1em; color: #00d4ff; text-transform: uppercase; }
+  p { color: #8b98a5; font-size: 13px; line-height: 1.5; }
+  .frase {
+    width: 100%; box-sizing: border-box; margin: 12px 0 20px; padding: 10px 12px;
+    background: #111823; border: 1px solid #223; border-radius: 8px; color: #e6edf3; font-size: 14px;
+  }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #1b2430; font-size: 13px; }
+  th { color: #8b98a5; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+  tr.es { background: rgba(0,212,255,0.06); }
+  tr.es td:first-child::before { content: "★ "; color: #00d4ff; }
+  button {
+    cursor: pointer; border: 1px solid #00d4ff; background: rgba(0,212,255,0.12); color: #00d4ff;
+    border-radius: 6px; padding: 5px 12px; font-size: 12px;
+  }
+  button:hover { background: rgba(0,212,255,0.22); }
+  .tag { font-size: 10px; color: #8b98a5; }
+  code { color: #ffb454; }
+  #vacio { color: #ff6b6b; }
+</style>
+</head>
+<body>
+  <h1>Jarvis · Audición de voces</h1>
+  <p>
+    Estas son las voces de <b>este</b> Chrome. Las españolas van marcadas con ★ y resaltadas.
+    Cambia la frase si quieres, y dale a <b>Escuchar</b> en cada una para comparar el timbre.
+    Apúntame el <b>nombre exacto</b> de la que más te guste (columna Nombre) y la dejo fija en Jarvis.
+  </p>
+  <input id="frase" class="frase"
+         value="Hola Hugo, soy Jarvis. Hoy has dormido ocho horas, nada mal. La media de la semana anda un poco floja." />
+  <div id="vacio"></div>
+  <table>
+    <thead><tr><th>Nombre</th><th>Idioma</th><th>Tipo</th><th></th></tr></thead>
+    <tbody id="lista"></tbody>
+  </table>
+
+<script>
+  const lista = document.getElementById("lista");
+  const inputFrase = document.getElementById("frase");
+  const vacio = document.getElementById("vacio");
+
+  function pintar() {
+    const voces = window.speechSynthesis.getVoices();
+    lista.innerHTML = "";
+    if (!voces.length) {
+      vacio.textContent = "El navegador aún no ha cargado las voces. Espera un segundo o recarga.";
+      return;
+    }
+    vacio.textContent = "";
+    // Español primero, luego el resto; dentro, por nombre.
+    const es = v => /^es(-|_)/i.test(v.lang);
+    voces.sort((a, b) => (es(b) - es(a)) || a.name.localeCompare(b.name));
+    for (const v of voces) {
+      const tr = document.createElement("tr");
+      if (es(v)) tr.className = "es";
+      const tipo = v.localService ? "local (SO)" : "online (nube)";
+      tr.innerHTML =
+        `<td>${v.name}</td><td>${v.lang}</td><td class="tag">${tipo}</td>`;
+      const td = document.createElement("td");
+      const b = document.createElement("button");
+      b.textContent = "▶ Escuchar";
+      b.onclick = () => {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(inputFrase.value);
+        u.voice = v; u.lang = v.lang;
+        window.speechSynthesis.speak(u);
+      };
+      td.appendChild(b);
+      tr.appendChild(td);
+      lista.appendChild(tr);
+    }
+  }
+
+  pintar();
+  // getVoices() suele llegar vacío en la primera llamada hasta este evento.
+  window.speechSynthesis.onvoiceschanged = pintar;
+</script>
+</body>
+</html>

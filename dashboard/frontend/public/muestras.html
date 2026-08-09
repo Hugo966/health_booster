@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jarvis · Muestras Qwen3-TTS</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; background: #0a0e14; color: #e6edf3;
+         font-family: system-ui, "Segoe UI", sans-serif; max-width: 720px; }
+  h1 { font-size: 18px; letter-spacing: .1em; color: #00d4ff; text-transform: uppercase; }
+  p { color: #8b98a5; font-size: 13px; line-height: 1.6; }
+  .frase { background: #111823; border: 1px solid #223; border-radius: 8px;
+           padding: 10px 12px; font-size: 13px; color: #cbd5e1; margin: 12px 0 20px; }
+  .voz { background: #111823; border: 1px solid #1b2430; border-radius: 10px;
+         padding: 14px 16px; margin-bottom: 12px; }
+  .voz h2 { font-size: 15px; margin: 0 0 8px; color: #e6edf3; }
+  audio { width: 100%; }
+  .nota { font-size: 12px; color: #ffb454; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>Jarvis · Muestras de voz (Qwen3-TTS)</h1>
+  <p>
+    Las 5 voces masculinas del catálogo, diciendo la misma frase en español. Escúchalas
+    y dime cuál te gusta más — <b>o si ninguna da el pego</b> (acento raro, suena a inglés),
+    que entonces vamos a clonar tu Jarvis de Iron Man.
+  </p>
+  <div class="frase">
+    «Hola Hugo, ¿qué tal tío? Hoy estás de puta madre, tío, revienta ese entreno,
+    bien clarito, lo tienes hecho.»
+  </div>
+
+  <div class="voz"><h2>Uncle_Fu</h2><audio controls preload="none" src="/muestras/jarvis_Uncle_Fu.wav"></audio></div>
+  <div class="voz"><h2>Dylan</h2><audio controls preload="none" src="/muestras/jarvis_Dylan.wav"></audio></div>
+  <div class="voz"><h2>Eric</h2><audio controls preload="none" src="/muestras/jarvis_Eric.wav"></audio></div>
+  <div class="voz"><h2>Ryan</h2><audio controls preload="none" src="/muestras/jarvis_Ryan.wav"></audio></div>
+  <div class="voz"><h2>Aiden</h2><audio controls preload="none" src="/muestras/jarvis_Aiden.wav"></audio></div>
+
+  <p class="nota">
+    Aviso: estas son voces de catálogo, no clonadas. Es normal que el acento tire a latino
+    o se les escape alguna palabra con deje inglés. La voz «Jarvis» de verdad sale de clonar.
+  </p>
+</body>
+</html>
