@@ -75,10 +75,12 @@ feels like talking to someone.
 | :---: | :---: |
 | ![Jarvis thinking](docs/jarvis-orbe.png) | ![Jarvis conversation](docs/jarvis-chat.png) |
 
-*Unedited output. Note what it does in the second one: it refuses to invent a number it
-doesn't have ("you haven't logged a session since July, and I'm not making anything up"),
-drops the banter the moment a shoulder gets mentioned, and ties the pain back to the
-training load it can actually see.*
+*Unedited output. Watch the second one. It owns the gap in the data rather than inventing
+around it — "your last logged session is 16 July, so you've gone nearly a month without
+entering anything, however much you've been sweating". It drops the banter the moment a
+sore shoulder comes up and asks a useful follow-up instead. And it closes by putting the
+real numbers together: readiness at 73 and rising, but a 4620 sRPE week on half an hour
+less sleep than he needs, most nights.*
 
 **Everything below is measured, not estimated.** The same long reply, end to end:
 
