@@ -30,9 +30,15 @@ canal de sincronización, así que:
 
 ## Convenciones
 
-- **Código, comentarios, nombres de variables y UI: en español.**
+- **Código, comentarios, nombres de variables y UI: en español.** Decisión firme de Hugo
+  (2026-08-15): es su herramienta y la personalidad de Jarvis vive en español. No hay que
+  volver a plantearlo.
 - **Mensajes de commit: en inglés.** El histórico mezcla ambos idiomas, así que mirar
   `git log` para deducirlo lleva a error.
+- **El `README.md` va en INGLÉS.** Es la carta de presentación: Hugo quiere que lo lean
+  empresas que trabajan en inglés. El resto de documentación (HANDOFF, roadmap, `docs/`)
+  es interna y se queda en español. Al terminar algo grande, contarlo en el README **con
+  las cifras medidas** — es lo que de verdad se lee.
 - Los comentarios explican **por qué**, no qué hace el código.
 
 ## Cosas que cuesta redescubrir
