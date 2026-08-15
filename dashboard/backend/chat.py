@@ -191,6 +191,20 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) ->
             else:
                 lecturas.append(ll)
 
+        # Acción de UI y ni una palabra: el modelo suele emitir `abrir_panel` a secas.
+        # Si cortáramos aquí, Hugo vería abrirse el panel y a Jarvis mudo (ni burbuja ni
+        # voz). Se le confirma que ya está hecho para que dé UNA vuelta más y lo comente.
+        if not lecturas and not texto:
+            mensajes.append({"role": "assistant", "content": r.texto or ""})
+            hechas = ", ".join(a["tipo"] for a in acciones) or "ninguna"
+            mensajes.append({
+                "role": "user",
+                "content": f"[hecho: {hechas}. El panel ya está abierto en su pantalla. "
+                           f"Comenta ahora lo que ve, en una o dos frases. No vuelvas a "
+                           f"llamar a la herramienta.]",
+            })
+            continue
+
         if not lecturas:
             break
 
@@ -202,6 +216,16 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) ->
                 "content": f"[resultado de {ll.nombre}({args})]: {_ejecutar_lectura(ll)}",
             })
 
+    # Al pedirle que comente una acción de UI, a veces vuelve a llamar a la herramienta
+    # en esa vuelta extra y el panel se abriría dos veces. Se quitan las repetidas,
+    # conservando el orden (un tour guiado sí puede abrir varios paneles distintos).
+    vistas, unicas = set(), []
+    for a in acciones:
+        clave = json.dumps(a, sort_keys=True, ensure_ascii=False)
+        if clave not in vistas:
+            vistas.add(clave)
+            unicas.append(a)
+
     if texto:
         memoria.guardar_mensaje(sesion, "jarvis", texto)
-    return {"texto": texto, "acciones": acciones, "uso": uso}
+    return {"texto": texto, "acciones": unicas, "uso": uso}

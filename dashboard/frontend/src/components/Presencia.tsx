@@ -7,8 +7,8 @@ import { useEffect, useRef } from "react";
 //
 // Estados (la FORMA y el COLOR los marca el estado, consistentes):
 //   off        -> voz apagada (esfera gris tenue; clic para activar)
-//   dormido    -> escuchando "Jarvis", en reposo (esfera cian apagada)
-//   escuchando -> capturando el comando (HUD radar)
+//   dormido    -> reposo: solo oye "Jarvis" (esfera cian apagada)
+//   escuchando -> activo: escucha todo, conversación abierta (HUD radar)
 //   pensando   -> esperando a Claude (giroscopio) — lo deriva el panel de chat.enviando
 //   hablando   -> leyendo la respuesta (barras de ecualizador)
 //
@@ -382,8 +382,20 @@ export default function Presencia({
       ref={cvRef}
       onClick={onToggle}
       role="button"
-      aria-label={estado === "off" ? "Activar la voz de Jarvis" : "Voz de Jarvis activa (toca para apagar)"}
-      title={estado === "off" ? "Toca para activar la voz — luego llámalo diciendo «Jarvis»" : "Voz activa · di «Jarvis»"}
+      aria-label={
+        estado === "off"
+          ? "Activar la voz de Jarvis"
+          : estado === "escuchando"
+            ? "Jarvis te escucha (toca para ponerlo en reposo)"
+            : "Jarvis en reposo (toca o di «Jarvis» para hablar)"
+      }
+      title={
+        estado === "off"
+          ? "Toca para activar la voz"
+          : estado === "escuchando"
+            ? "Te escucho · toca para poner en reposo"
+            : "En reposo · toca o di «Jarvis» para hablar"
+      }
       style={{ width: size, height: size, cursor: onToggle ? "pointer" : "default", display: "block" }}
     />
   );

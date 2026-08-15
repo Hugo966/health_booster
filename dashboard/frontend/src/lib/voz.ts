@@ -7,12 +7,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // sustituibles: v1 con Web Speech del navegador (gratis, sin deps, Chrome). La voz
 // "Jarvis" de verdad (XTTS/nube) se enchufa después cambiando solo `decir`.
 //
-// Máquina de estados:
-//   off        -> voz apagada, no escucha nada
-//   dormido    -> escucha pasiva, esperando oír "Jarvis"
-//   escuchando -> oyó "Jarvis", capturando el comando
-//   hablando   -> leyendo la respuesta (se ignora la escucha: anti-eco)
-export type EstadoVoz = "off" | "dormido" | "escuchando" | "hablando";
+// Máquina de estados (rediseñada a petición de Hugo — comportamiento tipo Jarvis):
+//   off      -> voz apagada, micro cerrado. Solo el estado inicial; el orbe no vuelve aquí.
+//   reposo   -> el micro sigue vivo pero SOLO reacciona a "Jarvis" (Hugo lo llama
+//               "desactivado": no capta tu charla normal, pero te oye si lo llamas).
+//   activo   -> conversación: capta TODO lo que dices sin decir "Jarvis", y tras
+//               contestar SE QUEDA aquí (sigue escuchando).
+//   hablando -> leyendo la respuesta (se ignora la escucha: anti-eco).
+// El orbe alterna activo <-> reposo; "Jarvis" en reposo salta a activo.
+export type EstadoVoz = "off" | "reposo" | "activo" | "hablando";
 
 // Abanico de cómo puede sonar/transcribirse "Jarvis" en español: la J suena "y"/"ll"
 // (jarvis, yarvis, llarvis) y el reconocedor confunde v/b, y a veces se come la "s"
@@ -27,6 +30,11 @@ const GRACIA_MS = 700;
 // portátil con GPU). Si no responde —otro equipo, o servicio apagado— la voz
 // cae al `speechSynthesis` del navegador. Se puede apuntar a otro host con VITE_TTS_URL.
 const TTS_URL = (import.meta.env.VITE_TTS_URL as string | undefined) ?? "http://localhost:8123";
+
+// WAV mudo (cabecera sin muestras): sirve para "estrenar" el elemento de audio dentro
+// del clic que enciende la voz y que el navegador le dé permiso para sonar después.
+const SILENCIO =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=";
 
 function CtorRec(): any {
   return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -61,6 +69,23 @@ function vozEspanola(): SpeechSynthesisVoice | null {
   }
 }
 
+// Trocea la respuesta en frases para generarlas y reproducirlas EN CADENA: así se oye
+// la primera enseguida mientras se generan las siguientes, y cada trozo corto evita el
+// precipicio de latencia del TTS (con textos largos la caché de atención se sale de los
+// 6 GB de VRAM y Windows derrama a RAM → 10x más lento). Los fragmentos muy cortos se
+// pegan a la frase anterior para no soltar microclips.
+function partir(texto: string): string[] {
+  const frases = texto.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) ?? [texto];
+  const out: string[] = [];
+  for (const f of frases) {
+    const s = f.trim();
+    if (!s) continue;
+    if (out.length && s.length < 25) out[out.length - 1] += " " + s;
+    else out.push(s);
+  }
+  return out.length ? out : [texto];
+}
+
 export type Voz = {
   soportado: boolean;
   vozActiva: boolean;
@@ -80,12 +105,32 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const recRef = useRef<any>(null);
   const activaRef = useRef(false);
   const estadoRef = useRef<EstadoVoz>("off");
-  const despiertoRef = useRef(false);
   const ignorarHastaRef = useRef(0);
   const comandoRef = useRef(onComando);
   useEffect(() => {
     comandoRef.current = onComando;
   }, [onComando]);
+
+  // UN ÚNICO elemento de audio para toda la sesión, "desbloqueado" en el clic que
+  // enciende la voz. Antes se creaba un `new Audio()` por frase y Chrome bloqueaba la
+  // reproducción cuando no había un gesto del usuario reciente: dentro de un panel la
+  // respuesta se generaba (el servicio devolvía 200) pero no sonaba hasta que Hugo
+  // pulsaba para salir, y entonces soltaba lo pendiente de golpe. Reutilizar el elemento
+  // que ya tiene permiso lo evita.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  const asegurarAudio = useCallback(() => {
+    if (!audioRef.current) audioRef.current = new Audio();
+    return audioRef.current;
+  }, []);
+
+  const soltarUrl = useCallback(() => {
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
+  }, []);
 
   const irA = useCallback((e: EstadoVoz) => {
     estadoRef.current = e;
@@ -118,14 +163,15 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       if (!res || !res.isFinal) return;
       const texto = String(res[0]?.transcript ?? "").trim();
       if (!texto) return;
-      const { comando, despertar } = extraer(texto, despiertoRef.current);
+      // En "activo" cualquier frase es un comando (sin wake word); en "reposo" solo
+      // cuenta si oye "Jarvis" (con o sin comando detrás). Al captar algo, pasa a
+      // activo y se queda ahí: la conversación sigue abierta.
+      const { comando, despertar } = extraer(texto, estadoRef.current === "activo");
       if (comando) {
-        despiertoRef.current = false;
-        irA("dormido");
+        irA("activo");
         comandoRef.current(comando);
       } else if (despertar) {
-        despiertoRef.current = true;
-        irA("escuchando");
+        irA("activo");
       }
     };
 
@@ -147,12 +193,24 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     return r;
   }, [soportado, irA, relanzar]);
 
+  // Encender = entrar directo en "activo": Hugo quiere que al activar el orbe le
+  // escuche ya, sin tener que decir "Jarvis".
   const encender = useCallback(() => {
     if (!soportado) return;
     activaRef.current = true;
-    despiertoRef.current = false;
     setVozActiva(true);
     asegurarRec();
+    // Este `encender` sale SIEMPRE de un clic en el orbe, así que es el único momento
+    // garantizado con gesto del usuario: se reproduce un WAV mudo para que el navegador
+    // dé permiso permanente a este elemento. Sin esto, las respuestas dentro de un panel
+    // no sonaban hasta el siguiente clic.
+    try {
+      const a = asegurarAudio();
+      a.src = SILENCIO;
+      void a.play().catch(() => {});
+    } catch {
+      /* si el navegador no deja, quedará el respaldo de speechSynthesis */
+    }
     // Carga perezosa del catálogo de voces (algunos navegadores lo traen vacío
     // hasta el primer acceso / evento onvoiceschanged).
     try {
@@ -160,13 +218,15 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     } catch {
       /* sin síntesis: seguirá funcionando la escucha */
     }
-    irA("dormido");
+    irA("activo");
     relanzar();
   }, [soportado, asegurarRec, irA, relanzar]);
 
+  // Apagado total: micro cerrado, no oye ni "Jarvis". Hoy solo se llega aquí si el
+  // navegador niega el permiso de micro (ver onerror) o al desmontar; el orbe alterna
+  // activo/reposo y no vuelve nunca a "off".
   const apagar = useCallback(() => {
     activaRef.current = false;
-    despiertoRef.current = false;
     setVozActiva(false);
     try {
       window.speechSynthesis.cancel();
@@ -188,34 +248,49 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     apagarRef.current = apagar;
   }, [apagar]);
 
+  // El orbe alterna: off -> activo (encender), activo -> reposo (Hugo lo "desactiva":
+  // deja de captar su charla pero sigue oyendo "Jarvis"), reposo -> activo. No vuelve a
+  // "off": el reposo mantiene el micro vivo para el wake word, así "Jarvis" siempre le
+  // despierta. Si algún día se quiere un mute duro, iría aquí (p.ej. pulsación larga).
   const alternar = useCallback(() => {
-    if (activaRef.current) apagar();
-    else encender();
-  }, [apagar, encender]);
+    if (!soportado) return;
+    const e = estadoRef.current;
+    if (e === "off") encender();
+    else if (e === "activo") irA("reposo"); // no paramos el reconocedor: sigue oyendo "Jarvis"
+    else {
+      irA("activo");
+      relanzar();
+    }
+  }, [soportado, encender, irA, relanzar]);
 
   const finHabla = useCallback(() => {
     ignorarHastaRef.current = Date.now() + GRACIA_MS;
     if (activaRef.current) {
-      irA("dormido");
+      irA("activo"); // tras contestar se queda escuchando (Hugo)
       relanzar();
     } else {
       irA("off");
     }
   }, [irA, relanzar]);
 
-  // El audio de la voz clonada que esté sonando (para poder cortarlo en barge-in).
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Turno de habla: cada `decir` incrementa este contador. La tubería de frases lleva
+  // su propio número y se aborta en cuanto deja de ser el turno vigente (barge-in,
+  // apagado o una respuesta nueva). Así no se pisan dos respuestas.
+  const turnoRef = useRef(0);
+  // Corta lo que suene, pero CONSERVA el elemento (perdería el permiso de sonar).
   const pararAudio = useCallback(() => {
     const a = audioRef.current;
     if (!a) return;
-    audioRef.current = null;
+    a.onended = null;
+    a.onerror = null;
+    a.onpause = null; // se limpia antes de pausar: si no, dispara el fin del turno
     try {
       a.pause();
     } catch {
       /* ya parado */
     }
-    if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
-  }, []);
+    soltarUrl();
+  }, [soltarUrl]);
 
   // Respaldo: la voz del navegador (speechSynthesis). Se usa si el servicio TTS no
   // está disponible. Es la de antes; ahora es el plan B, no la principal.
@@ -241,13 +316,52 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     [finHabla],
   );
 
+  // Pide al servicio TTS el audio de un trozo. Devuelve null si el turno ya caducó.
+  const generar = useCallback(async (texto: string, turno: number): Promise<Blob | null> => {
+    const r = await fetch(`${TTS_URL}/voz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const blob = await r.blob();
+    return turnoRef.current === turno ? blob : null;
+  }, []);
+
+  // Reproduce un blob y resuelve cuando termina (o si se corta / falla). El `pause` de
+  // barge-in también lo resuelve, para que la cadena no se quede colgada.
+  const reproducir = useCallback(
+    (blob: Blob, turno: number): Promise<void> => {
+      return new Promise((resolve) => {
+        if (turnoRef.current !== turno) return resolve();
+        const a = asegurarAudio();
+        soltarUrl(); // suelta el blob de la frase anterior
+        const url = URL.createObjectURL(blob);
+        urlRef.current = url;
+        let hecho = false;
+        const fin = () => {
+          if (hecho) return;
+          hecho = true;
+          resolve();
+        };
+        a.onended = fin;
+        a.onerror = fin;
+        a.onpause = fin; // barge-in: pararAudio() pausa -> resuelve y la cadena corta
+        a.src = url;
+        a.play().catch(fin);
+      });
+    },
+    [asegurarAudio, soltarUrl],
+  );
+
   const decir = useCallback(
     (texto: string) => {
       if (!activaRef.current || !soportado) return; // solo lee en voz alta con la voz activa
       const limpio = texto.replace(/\s+/g, " ").trim();
       if (!limpio) return;
-      // Callar lo anterior y pasar a "hablando" YA: así el mic queda mudo durante la
-      // generación (que tarda unos segundos), no solo mientras suena (anti-eco).
+      // Nuevo turno: invalida cualquier tubería anterior. Callar lo previo y pasar a
+      // "hablando" YA, así el mic queda mudo durante toda la generación (anti-eco).
+      const turno = ++turnoRef.current;
       try {
         window.speechSynthesis.cancel();
       } catch {
@@ -255,33 +369,40 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       }
       pararAudio();
       irA("hablando");
-      // Voz clonada del servicio; si falla (no está levantado), voz del navegador.
-      fetch(`${TTS_URL}/voz`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texto: limpio }),
-      })
-        .then((r) => {
-          if (!r.ok) throw new Error(String(r.status));
-          return r.blob();
-        })
-        .then((blob) => {
-          // Si mientras generaba se canceló (barge-in) o se apagó, no reproducir.
-          if (estadoRef.current !== "hablando" || !activaRef.current) return;
-          const a = new Audio(URL.createObjectURL(blob));
-          audioRef.current = a;
-          a.onended = finHabla;
-          a.onerror = () => finHabla();
-          a.play().catch(() => finHabla());
-        })
-        .catch(() => {
-          if (estadoRef.current === "hablando" && activaRef.current) decirNavegador(limpio);
-        });
+
+      // Tubería: se genera el primer trozo y, mientras suena, se va generando el
+      // siguiente (el servidor procesa de uno en uno, así que basta con ir 1 por
+      // delante). Cada trozo corto se mantiene en el régimen rápido del TTS.
+      const trozos = partir(limpio);
+      let siguiente = generar(trozos[0], turno);
+      (async () => {
+        for (let i = 0; i < trozos.length; i++) {
+          let blob: Blob | null;
+          try {
+            blob = await siguiente;
+          } catch {
+            // Falla el servicio (apagado, otro equipo…): plan B, voz del
+            // navegador, pero solo si aún es nuestro turno y no habíamos empezado a sonar.
+            if (i === 0 && turnoRef.current === turno && activaRef.current) decirNavegador(limpio);
+            return;
+          }
+          if (turnoRef.current !== turno || !activaRef.current || !blob) return;
+          // Arranca la generación del siguiente ANTES de ponerse a reproducir este.
+          siguiente =
+            i + 1 < trozos.length
+              ? generar(trozos[i + 1], turno).catch(() => null)
+              : Promise.resolve(null);
+          await reproducir(blob, turno);
+          if (turnoRef.current !== turno) return; // barge-in mientras sonaba
+        }
+        finHabla();
+      })();
     },
-    [soportado, irA, finHabla, pararAudio, decirNavegador],
+    [soportado, irA, finHabla, pararAudio, decirNavegador, generar, reproducir],
   );
 
   const parar = useCallback(() => {
+    turnoRef.current++; // invalida la tubería de frases en curso
     try {
       window.speechSynthesis.cancel();
     } catch {

@@ -164,6 +164,34 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-08-15 (voz + bugs de conversación)
+1. **Voz resuelta con ElevenLabs v3** (ver §9.4 para el detalle completo): nuevo servicio
+   `dashboard/tts/servidor_voz.py` con respaldo XTTS perezoso. Qwen3-TTS descartado por
+   lento (113 s vs 1,4 s en la misma frase).
+2. **Etiquetas de intención** (`[sarcastic]`…): Jarvis las escribe (`personalidad.py`), se
+   mandan al TTS y se filtran al pintar el chat y en los motores que no las entienden.
+3. **Máquina de estados de la voz rediseñada** (`voz.ts`) a petición de Hugo: `activo`
+   (escucha TODO sin decir "Jarvis" y **sigue escuchando tras responder**) ↔ `reposo` (el
+   micro sigue vivo pero solo reacciona a "Jarvis"). El orbe alterna entre esos dos y ya no
+   vuelve a `off`; el reposo NECESITA el micro abierto para oír la palabra clave.
+   El orbe pinta `activo`→radar y `reposo`→esfera tenue.
+4. **BUG: Jarvis abría el panel y se quedaba mudo.** `chat.py` cortaba el bucle
+   (`if not lecturas: break`) cuando la única salida era una acción de UI, y el modelo suele
+   emitir `abrir_panel` **sin texto** → `texto:""` → ni burbuja ni voz. Ahora se le devuelve
+   el turno para que comente lo que abrió, con **deduplicado de acciones** (en esa vuelta
+   extra a veces repetía la llamada y el panel se abría dos veces). Cuesta una llamada más
+   al modelo en esos casos.
+5. **BUG: dentro de un panel no sonaba la respuesta hasta salir.** El servicio devolvía
+   200 OK, así que no era generación: se creaba un `new Audio()` **por frase** y Chrome
+   bloquea elementos nuevos sin gesto reciente del usuario; al pulsar para salir, ese clic
+   lo desbloqueaba y soltaba lo pendiente. Ahora hay **un único elemento de audio**,
+   estrenado con un WAV mudo dentro del clic que enciende el orbe.
+6. **Troceo por frases** en `voz.ts` (`partir`): se genera y reproduce frase a frase, con
+   la siguiente generándose mientras suena la actual. Nació para esquivar el precipicio de
+   Qwen; con ElevenLabs sigue siendo útil (baja el tiempo hasta la primera palabra).
+
+### Sesión anterior (paneles y parser)
 1. **Carga**: reescrito a sRPE (antes tonelaje). `DetalleFatiga` en 3 tabs con línea de
    referencia del RPE de sesión. Quitados ejemplos concretos ("170×1", label "secundario").
    Aclarado que el nº sRPE del panel = suma de sRPE de los últimos 7 días.
@@ -183,10 +211,14 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
    (tiempo_en_cama_h, eficiencia_sueno, latencia_min).
 
 ## 7. Configuración
-- **Puertos**: backend `8099`, frontend `5173` (Vite).
+- **Puertos**: backend `8099`, frontend `5173` (Vite), **servicio de voz `8123`**.
 - **`.env` (raíz)** — claves: `INTERVALS_API_KEY`, `INTERVALS_ATHLETE_ID`, `GOOGLE_SA_JSON`,
   `SHEET_ID`, `KEEP_TXT`, `DRIVE_EXCEL_ID`. Opcionales del pipeline:
   `INTERVALS_REINTENTOS` (def. 3), `INTERVALS_ESPERA_S` (def. 8).
+  Chat: `JARVIS_PROVEEDOR`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODELO`, `OLLAMA_MODELO`.
+  **Voz**: `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, y opcionales `ELEVENLABS_MODELO`
+  (def. `eleven_v3`; `eleven_flash_v2_5` = mitad de precio pero plano),
+  `ELEVENLABS_STABILITY` (def. 0.0 = *Creative*), `ELEVENLABS_SPEED` (solo v2/Flash).
 - **Python**: `venv/` en la raíz. `requirements.txt`: pandas>=2.0, openpyxl>=3.1,
   requests>=2.31, gspread>=6.0, google-auth>=2.30, python-dotenv>=1.0.
 - **Frontend deps**: react 18.3, recharts 2.12.7, vite 5, tailwind 3.4, typescript 5.5.
@@ -341,7 +373,45 @@ queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
    Detector encapsulado en `voz.ts` → swap acotado.
 3. **Cerebro Claude real:** poner `ANTHROPIC_API_KEY` en el `.env` del portátil (no viaja por
    git; Hugo la trae a mano) y probar la conversación de verdad (Sonnet 5 por defecto).
-4. **Voz "Jarvis" de verdad — TTS local con Qwen3-TTS clonado (EN CURSO, 2026-08-09).**
+4. **✅ VOZ RESUELTA (2026-08-15): ElevenLabs v3 en la nube + XTTS local de respaldo.**
+   Tras medir tres motores, **Qwen3-TTS quedó descartado** y la voz funciona a gusto de Hugo.
+   Lo de abajo (Qwen) se conserva solo como historial de por qué se descartó.
+   - **Cadena de voz:** `voz.ts` → `:8123` → **ElevenLabs** → *si falla* **XTTS local** →
+     *si falla* voz del navegador. Servicio: **`dashboard/tts/servidor_voz.py`** (es el bueno;
+     `servidor.py` (Qwen) y `servidor_xtts.py` quedan como piezas sueltas).
+     Arranque: `HF_HOME=E:/jarvis_tts/hf_cache COQUI_TOS_AGREED=1
+     E:/jarvis_tts/venv_xtts/Scripts/python.exe -m uvicorn servidor_voz:app --port 8123`.
+   - **Por qué la nube:** en la 3060 de 6 GB, la misma respuesta larga tardaba **113 s**
+     (Qwen 1.7B) / **30 s** (Qwen 0.6B) / **6,3 s** (XTTS) / **1,4 s** (ElevenLabs). Hugo pedía
+     ≤4-5 s y **cero huecos** entre frases; solo la nube lo cumple. El precipicio de Qwen era
+     desbordar la VRAM con textos largos (caché de atención → derrame a RAM, 12x).
+   - **Modelo `eleven_v3`, NO Flash v2.5.** Flash es más rápido y barato pero **plano**: la
+     ironía de Jarvis se perdía. v3 es expresivo y entiende **etiquetas inline**.
+   - **Etiquetas de intención (la clave del tono):** Jarvis escribe `[sarcastic]`,
+     `[mischievously]`, `[laughs]`, `[sighs]`, `[curious]`, `[excited]` en su respuesta
+     (instruido en `personalidad.py`, máx. 1 por respuesta y nunca al bajar el tono). Se
+     **mandan al TTS** pero **se filtran al pintar** el chat (`sinEtiquetas` en `ChatPanel.tsx`)
+     y antes de XTTS/Flash (`_sin_etiquetas` en `servidor_voz.py`), que las leerían en alto.
+     Hugo: *"gana muchísimo con sarcastic, es una locura, justo lo que quiero"*.
+   - **Voz:** creada con **Voice Design** (describir la voz en texto), NO clonada. Se evitó
+     clonar el doblaje de Iron Man: la referencia eran 28 s con ruido (piden 1-2 min limpios)
+     y el checkbox de consentimiento de ElevenLabs no aplica a la voz de un actor real.
+     `ELEVENLABS_VOICE_ID` en el `.env`.
+   - **Coste:** PAYG (sin suscripción), saldo prepago de $5 que caduca a 12 meses.
+     v3 = $0,10/1k caracteres ≈ **2 céntimos por respuesta** ≈ $6-12/mes a su ritmo. El
+     prepago ES el tope de gasto: sin auto-recarga, el riesgo máximo es lo cargado.
+     Volver a Flash (mitad de precio, sin expresividad) = `ELEVENLABS_MODELO` en el `.env`.
+   - **Ajustes:** `stability=0.0` (preset *Creative*, el que responde a la intención;
+     *Robust* suena estable pero monótono). `speed` solo lo aceptan v2/Flash — v3 da 422.
+   - **XTTS de respaldo:** se carga **perezosamente**, solo la primera vez que la nube falla,
+     para no ocupar 2,2 GB de VRAM en balde. venv propio `E:/jarvis_tts/venv_xtts`
+     (coqui-tts + **transformers 4.57.x**: con 5.x rompe y con <4.57 también).
+     Modelo en `E:/jarvis_tts/models/xtts-v2`.
+   - **QUÉ FALTA:** el timbre "quizás grave de más" (Hugo lo aparcó para más adelante).
+
+   <details><summary>Historial: por qué se descartó Qwen3-TTS (2026-08-09)</summary>
+
+   **Voz "Jarvis" de verdad — TTS local con Qwen3-TTS clonado.**
    Se descartó XTTS: se usa **Qwen3-TTS** (open, Apache-2.0). Todo lo pesado vive en
    `E:\jarvis_tts\` (venv, modelos, caché) porque **C: se quedó sin espacio**; el código va
    en `dashboard/tts/` (repo). **Solo portátil** (GPU): el otro equipo cae a la voz del navegador.
@@ -381,13 +451,13 @@ queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
      2. **Calidad de voz** "mejorable" (Hugo) — afinar (¿más referencia?, ¿otros ajustes?).
      3. Re-verificar en el navegador que con el fix del WAV ya suena rápido (quedó a medias al
         irse Hugo; el fix está aplicado pero el servicio corría con la versión vieja).
+   - **Seseo (latino) irresoluble en Qwen:** no tiene parámetro de dialecto y el truco
+     ortográfico no funciona; solo fine-tune/LoRA. Fue una de las razones de irse a la nube
+     (ElevenLabs da castellano nativo).
+
+   </details>
 
 **Otros pendientes (no de voz):**
-- **Acento: sigue seseando (latino), Hugo lo quiere castellano.** Qwen3-TTS NO tiene parámetro
-  de dialecto y sesea la "z"/"c" por defecto; el truco ortográfico (escribir "z") NO lo arregla.
-  Único arreglo real: **fine-tune/LoRA** con datos en castellano, o voces pre-entrenadas ES
-  (`github.com/alblez/qwen3-tts-spanish-voices`, pero pierden el timbre Jarvis). **Decisión de
-  Hugo (2026-08-09): dejarlo así por ahora**, convivir con el seseo; mejora futura.
 - **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a
   mano. El hilo se queda en SQLite; los hechos pasan a Markdown. Acotado a `memoria.py`.
 - Resaltado (`data-jarvis="..."` + glow) y `GraficoAdHoc` (el reproductor completo/tour).

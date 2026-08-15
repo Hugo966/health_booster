@@ -15,6 +15,13 @@ const SALUDO = "Pregúntame cómo te ve hoy, pídele que te abra un panel, o cu�
 
 // --- burbujas ---------------------------------------------------------------
 
+// Jarvis marca la intención con etiquetas tipo [sarcastic] para que el TTS (ElevenLabs
+// v3) no lea la ironía en plano. Son instrucciones para la voz, no texto: se mandan al
+// servicio de voz tal cual, pero aquí se quitan al pintar. Solo minúsculas ASCII entre
+// corchetes, para no cargarse nada que Hugo o Jarvis escriban entre corchetes de verdad.
+const ETIQUETAS_VOZ = /\[[a-z][a-z ]{1,20}\]\s*/g;
+const sinEtiquetas = (t: string) => t.replace(ETIQUETAS_VOZ, "").trim();
+
 function Burbuja({ m }: { m: Mensaje }) {
   const mio = m.rol === "usuario";
   return (
@@ -27,7 +34,7 @@ function Burbuja({ m }: { m: Mensaje }) {
             : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", color: theme.text }
         }
       >
-        {m.texto}
+        {mio ? m.texto : sinEtiquetas(m.texto)}
       </div>
     </div>
   );
@@ -144,19 +151,22 @@ function SelectorModelo({ valor, onChange }: { valor: string; onChange: (p: stri
 
 // --- presencia (orbe de voz) ------------------------------------------------
 
-// Qué forma muestra el orbe: manda la voz (off/dormido/escuchando/hablando) y,
-// mientras se espera la respuesta del backend, "pensando" (venga de voz o de teclado).
+// Qué forma muestra el orbe: manda la voz y, mientras se espera la respuesta del
+// backend, "pensando" (venga de voz o de teclado). El estado de voz "activo"
+// (conversación, escucha todo) se pinta como el radar "escuchando"; "reposo" (solo
+// wake word) como la esfera tenue "dormido".
 function estadoPresencia(voz: Voz | undefined, enviando: boolean): EstadoPresencia {
   if (voz?.soportado && voz.estado === "hablando") return "hablando";
   if (enviando) return "pensando";
-  if (voz?.soportado && (voz.estado === "dormido" || voz.estado === "escuchando")) return voz.estado;
+  if (voz?.soportado && voz.estado === "activo") return "escuchando";
+  if (voz?.soportado && voz.estado === "reposo") return "dormido";
   return "off";
 }
 
 const LEYENDA: Record<EstadoPresencia, string> = {
   off: "Toca el orbe para activar la voz",
-  dormido: "Escuchando… di «Jarvis»",
-  escuchando: "Te escucho…",
+  dormido: "En reposo · di «Jarvis» para hablar",
+  escuchando: "Te escucho, habla",
   pensando: "Pensando…",
   hablando: "Hablando…",
 };

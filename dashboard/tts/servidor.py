@@ -17,6 +17,7 @@ Arrancar (desde el venv de E:, con el modelo en E:):
 Se elige puerto 8123 para no chocar con el backend (8099), el frontend (5173) ni Ollama.
 """
 import io
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,8 +29,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from qwen_tts import Qwen3TTSModel
 
-# Todo lo pesado en E: (C: sin espacio). El Base es la variante que clona.
-MODELO = r"E:/jarvis_tts/models/qwen3-base"
+# Todo lo pesado en E: (C: sin espacio). El Base es la variante que clona. Se puede
+# alternar 1.7B <-> 0.6B con JARVIS_TTS_MODELO sin tocar código: el 0.6B (2,5 GB) cabe
+# holgado en los 6 GB de VRAM y no derrama a RAM con textos largos → mucho más rápido,
+# a cambio de algo menos de calidad. Por defecto el 1.7B (mejor voz).
+MODELO = os.environ.get("JARVIS_TTS_MODELO", r"E:/jarvis_tts/models/qwen3-base")
 REF_AUDIO = r"E:/jarvis_tts/ref/jarvis_ref.wav"
 # Transcripción de la referencia (mejora la fluidez; sacada con faster-whisper y
 # corregida). Sin esto el clon sale robótico (modo x-vector solo).
