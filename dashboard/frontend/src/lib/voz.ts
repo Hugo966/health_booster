@@ -86,13 +86,35 @@ function partir(texto: string): string[] {
   return out.length ? out : [texto];
 }
 
+// Habla "en directo": el chat va empujando frases según el modelo las escribe y aquí
+// se generan y encadenan en orden. Cerrar avisa de que ya no vienen más.
+// Qué muletilla pega con lo que acaba de decir Hugo; lo decide Haiku en el backend.
+// "nada" = ninguna (saludos y frases sueltas: un "déjame que lo mire" ahí es ridículo).
+export type TipoMuletilla = "consulta" | "neutra" | "nada" | "segunda";
+
+// Silencio entre la primera muletilla y la de continuación. Pegadas sonaban a atropello.
+// 2,5 s no es raro: quien dice "mmm, déjame pensar" se queda callado un rato. Y cuanto
+// más larga, más veces llega la respuesta real mientras tanto y la segunda no hace falta.
+const PAUSA_MULETILLA_MS = 2500;
+
+export type Habla = {
+  // Qué pool de muletillas toca ("consulta" / "neutra") lo decide el enrutado en el
+  // backend y llega ~1 s después de abrir el turno, así que se arranca aquí, no al
+  // abrir. Cadena vacía = ninguna (saludos, que ya vienen con respuesta propia).
+  muletilla: (tipo: string) => void;
+  empujar: (frase: string) => void;
+  cerrar: () => void;
+};
+
 export type Voz = {
   soportado: boolean;
   vozActiva: boolean;
   estado: EstadoVoz;
+  sonando: boolean;             // hay voz saliendo AHORA (no solo turno abierto)
   alternar: () => void;         // enciende / apaga el modo voz
   parar: () => void;            // corta lo que esté diciendo (barge-in)
   decir: (texto: string) => void; // lee un texto en alto (lo llama el chat)
+  hablar: () => Habla;          // abre un turno al que ir empujando frases sueltas
 };
 
 export function useVoz({ onComando }: { onComando: (texto: string) => void }): Voz {
@@ -101,6 +123,11 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
 
   const [vozActiva, setVozActiva] = useState(false);
   const [estado, setEstado] = useState<EstadoVoz>("off");
+  // ¿Está SONANDO audio ahora mismo? Va aparte de `estado` a propósito: el estado pasa
+  // a "hablando" en cuanto se abre el turno (así el micro queda mudo durante toda la
+  // generación y no se oye a sí mismo), pero el orbe no debe ponerse a "hablando" hasta
+  // que de verdad salga voz — hasta entonces sigue "pensando".
+  const [sonando, setSonando] = useState(false);
 
   const recRef = useRef<any>(null);
   const activaRef = useRef(false);
@@ -279,6 +306,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const turnoRef = useRef(0);
   // Corta lo que suene, pero CONSERVA el elemento (perdería el permiso de sonar).
   const pararAudio = useCallback(() => {
+    setSonando(false);
     const a = audioRef.current;
     if (!a) return;
     a.onended = null;
@@ -317,11 +345,12 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   );
 
   // Pide al servicio TTS el audio de un trozo. Devuelve null si el turno ya caducó.
-  const generar = useCallback(async (texto: string, turno: number): Promise<Blob | null> => {
+  const generar = useCallback(async (texto: string, turno: number,
+                                     rapido = false): Promise<Blob | null> => {
     const r = await fetch(`${TTS_URL}/voz`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto }),
+      body: JSON.stringify({ texto, rapido }),
     });
     if (!r.ok) throw new Error(String(r.status));
     const blob = await r.blob();
@@ -342,8 +371,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
         const fin = () => {
           if (hecho) return;
           hecho = true;
+          setSonando(false);
           resolve();
         };
+        a.onplaying = () => setSonando(true); // ahora sí: el orbe pasa a "hablando"
         a.onended = fin;
         a.onerror = fin;
         a.onpause = fin; // barge-in: pararAudio() pausa -> resuelve y la cadena corta
@@ -401,6 +432,109 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     [soportado, irA, finHabla, pararAudio, decirNavegador, generar, reproducir],
   );
 
+  // Turno de habla incremental: el chat empuja frases conforme llegan del modelo. Cada
+  // una se manda a generar EN CUANTO llega (así se solapa con lo que esté sonando) pero
+  // se reproducen en orden, encadenadas. Es lo que permite que Jarvis empiece a hablar
+  // con la primera frase en vez de esperar a que termine de redactar.
+  const hablar = useCallback((): Habla => {
+    const mudo: Habla = { muletilla: () => {}, empujar: () => {}, cerrar: () => {} };
+    if (!activaRef.current || !soportado) return mudo;
+    const turno = ++turnoRef.current;
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      /* nada que cancelar */
+    }
+    pararAudio();
+    irA("hablando");
+
+    // Muletilla ("déjame ver…"): ya generada y cacheada en el servicio, así que suena
+    // al instante y tapa los ~9 s que v3 tarda en tener lista la primera frase de verdad.
+    // Se encadena como una frase más: el orden se respeta y el barge-in la corta igual.
+    let primeraLista = false; // ¿ya tenemos audio real esperando?
+    let ultimaMuletilla = "";
+
+    const pedirMuletilla = async (tipo: TipoMuletilla): Promise<Blob | null> => {
+      try {
+        const r = await fetch(
+          `${TTS_URL}/muletilla?tipo=${tipo}&evitar=${encodeURIComponent(ultimaMuletilla)}`,
+        );
+        if (!r.ok || r.status === 204) return null;
+        ultimaMuletilla = r.headers.get("X-Muletilla") ?? "";
+        return await r.blob();
+      } catch {
+        return null;
+      }
+    };
+
+    let cadena: Promise<void> = Promise.resolve();
+    // Las generaciones también van en fila: como MUCHO una en vuelo. Lanzarlas todas a
+    // la vez hacía que ElevenLabs las encolara por límite de concurrencia y la primera
+    // —la única que importa para empezar a hablar— pasaba de 3,5 s a 5,8 s.
+    let ultimaGen: Promise<Blob | null> = Promise.resolve(null);
+    let vivas = 0;
+    let cerrado = false;
+    const quizaFin = () => {
+      if (cerrado && vivas === 0 && turnoRef.current === turno) finHabla();
+    };
+
+    return {
+      muletilla(tipo: string) {
+        // Vacío (saludos, que ya llevan respuesta propia) o respuesta ya lista: callarse.
+        if (!tipo || primeraLista || turnoRef.current !== turno) return;
+        cadena = cadena.then(async () => {
+          if (primeraLista || turnoRef.current !== turno) return;
+          // Pregrabadas y generadas con v3: suenan al instante Y con la ironía del
+          // personaje. Escribirlas a medida quedaba más pegado al contexto, pero había
+          // que sintetizarlas en Flash para llegar a tiempo y salían planas.
+          const b = await pedirMuletilla(tipo as TipoMuletilla);
+          if (b && turnoRef.current === turno) await reproducir(b, turno);
+          // Si al acabar aún no hay audio real, se encadena otra: el silencio es lo que
+          // le hace creer a Hugo que ya ha terminado y ponerse a hablar encima. Pero va
+          // del pool "segunda" (cortas, de continuación: "mmm… a ver") y tras una PAUSA
+          // — pegadas y repitiendo el mismo "déjame que mire" sonaban redundantes.
+          if (!primeraLista && turnoRef.current === turno) {
+            await new Promise((r) => setTimeout(r, PAUSA_MULETILLA_MS));
+            // La pausa además da margen: si la respuesta real llega mientras, no hace falta.
+            if (!primeraLista && turnoRef.current === turno) {
+              const b2 = await pedirMuletilla("segunda");
+              if (b2 && !primeraLista && turnoRef.current === turno) {
+                await reproducir(b2, turno);
+              }
+            }
+          }
+        });
+      },
+      empujar(frase: string) {
+        const limpio = frase.replace(/\s+/g, " ").trim();
+        if (!limpio || turnoRef.current !== turno) return;
+        vivas++;
+        const gen = ultimaGen
+          .then(() => generar(limpio, turno))
+          .then((b) => {
+            primeraLista = true; // ya hay audio real: no encadenar más muletillas
+            return b;
+          })
+          .catch(() => null);
+        ultimaGen = gen;
+        const seguir = async () => {
+          const blob = await gen;
+          if (turnoRef.current !== turno || !blob) return;
+          await reproducir(blob, turno);
+        };
+        const contar = () => {
+          vivas--;
+          quizaFin();
+        };
+        cadena = cadena.then(seguir).then(contar, contar);
+      },
+      cerrar() {
+        cerrado = true;
+        quizaFin();
+      },
+    };
+  }, [soportado, irA, pararAudio, finHabla, generar, reproducir]);
+
   const parar = useCallback(() => {
     turnoRef.current++; // invalida la tubería de frases en curso
     try {
@@ -429,5 +563,5 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     };
   }, [pararAudio]);
 
-  return { soportado, vozActiva, estado, alternar, parar, decir };
+  return { soportado, vozActiva, estado, sonando, alternar, parar, decir, hablar };
 }

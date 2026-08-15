@@ -88,6 +88,19 @@ def hilo_reciente(sesion: str, n: int = 20) -> list[dict]:
     return [dict(f) for f in reversed(filas)]
 
 
+def hilo_con_id(sesion: str, n: int = 40) -> list[dict]:
+    """Como `hilo_reciente` pero con `id` y `ts`. Lo usa la UI para enterarse de lo que
+    se habla por el micro (dashboard/escucha), que entra por el backend sin pasar por el
+    navegador: sin esto, esas burbujas no aparecían nunca en pantalla."""
+    with _conn() as con:
+        filas = con.execute(
+            "SELECT id, ts, rol, texto FROM conversaciones WHERE sesion = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (sesion, n),
+        ).fetchall()
+    return [dict(f) for f in reversed(filas)]
+
+
 # --- lo que sabe de Hugo -----------------------------------------------------
 
 def recordar(tema: str, texto: str) -> int:

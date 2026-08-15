@@ -20,10 +20,13 @@ Config (en el `.env` de la raíz del proyecto, que no va a git):
     ELEVENLABS_API_KEY=sk_...
     ELEVENLABS_VOICE_ID=wtCLyr4fALNxeekzlMyQ
 """
+import hashlib
 import io
 import os
+import random
 import re
 import sys
+import threading
 from pathlib import Path
 
 import requests
@@ -50,6 +53,8 @@ VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "wtCLyr4fALNxeekzlMyQ").strip()
 # inline tipo [sarcastic]. Cuesta el doble ($0,10/1k caracteres), que a su volumen son
 # ~5 $/mes más. Si algún día prima la velocidad, aquí se vuelve a eleven_flash_v2_5.
 MODELO_11 = os.environ.get("ELEVENLABS_MODELO", "eleven_v3")
+# Para las muletillas: plano pero instantáneo (~0,8 s frente a los ~3,5 s de v3).
+MODELO_RAPIDO = os.environ.get("ELEVENLABS_MODELO_RAPIDO", "eleven_flash_v2_5")
 # stability: en v3 son presets — 0.0 Creative / 0.5 Natural / 1.0 Robust. Creative es el
 # que responde a la intención y a las etiquetas; Robust suena estable pero monótono.
 ESTABILIDAD = float(os.environ.get("ELEVENLABS_STABILITY", "0.0"))
@@ -64,6 +69,9 @@ REF_AUDIO = os.environ.get("JARVIS_REF_AUDIO", r"E:/jarvis_tts/ref/jarvis_ref.wa
 app = FastAPI(title="Jarvis Voz")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    # Sin exponerla, el navegador no puede leer qué muletilla sonó y repetiría la misma
+    # al encadenar la segunda.
+    expose_headers=["X-Muletilla"],
 )
 
 _xtts: dict = {}  # se rellena solo si hay que tirar del respaldo
@@ -79,12 +87,16 @@ def _sin_etiquetas(texto: str) -> str:
     return ETIQUETAS.sub("", texto).strip()
 
 
-def _de_elevenlabs(texto: str) -> bytes:
+def _de_elevenlabs(texto: str, rapido: bool = False) -> bytes:
     """Pide el audio a ElevenLabs. Lanza si no hay clave o la API falla, para que el
     llamante caiga al respaldo."""
     if not API_KEY:
         raise RuntimeError("sin ELEVENLABS_API_KEY")
-    es_v3 = MODELO_11.startswith("eleven_v3")
+    # `rapido`: Flash en vez de v3. v3 tiene un suelo de ~3,5 s por petición, que para la
+    # respuesta buena compensa (es donde vive la ironía) pero para una coletilla de
+    # relleno la haría inútil: cuando sonara, ya estaría lista la respuesta de verdad.
+    modelo = MODELO_RAPIDO if rapido else MODELO_11
+    es_v3 = modelo.startswith("eleven_v3")
     ajustes = {"stability": ESTABILIDAD, "similarity_boost": 0.75}
     # `speed` solo lo aceptan los modelos v2/Flash; v3 lo rechaza con 422.
     if not es_v3:
@@ -93,7 +105,7 @@ def _de_elevenlabs(texto: str) -> bytes:
     r = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/stream",
         headers={"xi-api-key": API_KEY, "Content-Type": "application/json"},
-        json={"text": texto, "model_id": MODELO_11, "voice_settings": ajustes},
+        json={"text": texto, "model_id": modelo, "voice_settings": ajustes},
         timeout=TIMEOUT_S,
     )
     if r.status_code != 200:
@@ -146,14 +158,151 @@ def _de_xtts(texto: str) -> bytes:
     return buf.getvalue()
 
 
+# --- muletillas ---------------------------------------------------------------
+# v3 tiene un suelo de ~3,5 s por petición, así que entre que Hugo termina de hablar y
+# Jarvis suelta la primera frase real pasan ~9 s de silencio incómodo. Se tapa con una
+# muletilla ("déjame ver…") que suena AL INSTANTE mientras se genera la respuesta de
+# verdad. No hace falta generarlas en vivo: son fijas, así que se generan una vez y se
+# guardan en disco (coste único de céntimos, latencia cero a partir de ahí).
+# Duran ~3-4 s a propósito: es lo que hay que cubrir hasta la primera frase real.
+MULETILLAS_DIR = Path(os.environ.get("JARVIS_MULETILLAS", r"E:/jarvis_tts/muletillas"))
+# Largas a propósito (~4-5 s de audio): tienen que cubrir hasta que la primera frase
+# real esté generada. Con muletillas de 2 s quedaba un silencio de 7 s detrás.
+#
+# DOS POOLS, porque la muletilla tiene que pegar con lo que Hugo acaba de decir: soltar
+# "déjame que lo mire" después de un "hola" queda absurdo. `consulta` es para cuando
+# pregunta por sus datos (ahí sí hay algo que mirar) y `neutra` sirve para cualquier
+# otra cosa. A los saludos NO se les pone muletilla: eso lo decide el frontend.
+# Se generan con v3 y CON etiquetas ([sarcastic]…) a propósito: una muletilla plana
+# detrás de una respuesta con retintín desentona muchísimo (Hugo). Como el coste se paga
+# una sola vez, aquí sí sale a cuenta el modelo caro. Y hay ~20 por pool para que tarde
+# mucho en repetirse: es lo que compensa que no mencionen lo que acabas de decir.
+MULETILLAS: dict[str, list[str]] = {
+    "consulta": [
+        "[curious] Déjame que mire eso un segundo, que tus datos y yo tenemos una relación complicada.",
+        "A ver qué tenemos por aquí… dame un momento, que estoy rebuscando entre tus números.",
+        "Espera, que lo estoy mirando. No te muevas, que esto tarda menos de lo que parece.",
+        "[curious] Buena pregunta. Déjame revisarlo bien antes de soltarte cualquier tontería.",
+        "Un segundo, que saco los datos y te digo algo con sentido.",
+        "Vale, déjame ver qué dicen tus números, que para algo me los aprendo.",
+        "[sarcastic] Ay, madre. Déjame mirar esto antes de darte un disgusto.",
+        "Dame un segundo, que estoy cruzando datos como un poseso.",
+        "Espera que lo compruebo, no vaya a inventarme algo y luego me la líes.",
+        "[mischievously] Uy, esto promete. Déjame mirarlo con calma.",
+        "A ver, que consulto tus registros antes de opinar.",
+        "Un momento, que no quiero decirte una burrada sin mirarlo.",
+        "[curious] Vamos a ver qué me cuentan tus datos de esto.",
+        "Déjame un segundo, que estoy sacando los números.",
+        "Espera, que me asomo a tus registros y te digo.",
+        "Dame un segundo. Prefiero mirarlo que soltarte lo primero que se me ocurra.",
+        "[sarcastic] Menuda pregunta. Déjame revisar antes de contestarte.",
+        "Voy a mirarlo bien, dame un momento.",
+        "A ver… estoy repasando lo que tengo apuntado.",
+        "Un segundito, que compruebo una cosa.",
+    ],
+    "neutra": [
+        "Mmm, déjame pensarlo un segundo, que no quiero soltarte lo primero que se me ocurra.",
+        "A ver, dame un momento y le doy una vuelta a eso.",
+        "Espera un segundo, que estoy ordenando las ideas.",
+        "[curious] Vaya, eso merece que me lo piense un poco.",
+        "Mmm… déjame procesar eso un momento.",
+        "Joder, dame un segundo para pensarlo bien.",
+        "[curious] Interesante. Espera que le dé una vuelta.",
+        "Uy, eso da para pensarlo. Un segundo.",
+        "A ver cómo te digo esto… dame un momento.",
+        "Mmm, buena esa. Déjame pensar.",
+        "Espera, que quiero contestarte bien a eso.",
+        "[mischievously] Vaya, vaya. Déjame darle una vuelta.",
+        "Dame un segundo, que le estoy dando vueltas.",
+        "Mmm… vale, déjame ordenar esto.",
+        "Un momento, que me lo pienso.",
+        "A ver, dame un segundo para procesarlo.",
+        "[curious] Eso no me lo esperaba. Espera un poco.",
+        "Déjame pensarlo, que no quiero meter la pata.",
+        "Mmm, espera un segundo que lo proceso.",
+        "Vale, dame un momento para eso.",
+    ],
+    # Para encadenar cuando la primera se queda corta. Cortas y de CONTINUACIÓN: repetir
+    # otro "déjame que mire eso" sonaba redundante (Hugo). Empiezan con un "mmm" o un
+    # "a ver" para que enganchen con lo anterior en vez de arrancar de cero.
+    "segunda": [
+        "Mmm… a ver.",
+        "Un segundo más, que ya casi lo tengo.",
+        "Mmm, casi está.",
+        "A ver… ya voy.",
+        "Espera, que ya te digo.",
+        "Mmm… un momento.",
+        "Ya casi.",
+        "Un poco más…",
+        "Mmm, sí… espera.",
+        "Casi lo tengo.",
+        "A ver… ya.",
+        "Espera, ya.",
+    ],
+}
+TODAS_MULETILLAS = [f for lista in MULETILLAS.values() for f in lista]
+
+
+def _ruta_muletilla(frase: str) -> Path:
+    """Nombre por hash del texto: al cambiar una frase se genera sola con otro nombre y
+    la vieja queda huérfana (unos KB), sin tener que borrar nada a mano."""
+    return MULETILLAS_DIR / f"m_{hashlib.sha1(frase.encode('utf-8')).hexdigest()[:8]}.mp3"
+
+
+def _muletillas_hechas(tipo: str | None = None) -> list[Path]:
+    frases = MULETILLAS.get(tipo, []) if tipo else TODAS_MULETILLAS
+    return [p for p in map(_ruta_muletilla, frases) if p.exists() and p.stat().st_size > 1000]
+
+
+def _preparar_muletillas():
+    """Genera las que falten y las deja en disco. Corre en segundo plano al arrancar
+    para no retrasar el servicio; si no hay clave, simplemente no habrá muletillas."""
+    try:
+        MULETILLAS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"[muletillas] no puedo crear {MULETILLAS_DIR}: {e}")
+        return
+    for frase in TODAS_MULETILLAS:
+        destino = _ruta_muletilla(frase)
+        if destino.exists() and destino.stat().st_size > 1000:
+            continue
+        try:
+            destino.write_bytes(_de_elevenlabs(frase))
+            print(f"[muletillas] generada {destino.name}: {frase!r}")
+        except Exception as e:
+            print(f"[muletillas] falló {destino.name}: {e}")
+            return  # sin clave o sin saldo: no insistir con las demás
+
+
 class Peticion(BaseModel):
     texto: str
+    # Muletillas: prioriza velocidad sobre expresividad (Flash en vez de v3).
+    rapido: bool = False
+
+
+@app.on_event("startup")
+def _arranque():
+    threading.Thread(target=_preparar_muletillas, daemon=True).start()
 
 
 @app.get("/salud")
 def salud():
     return {"listo": True, "elevenlabs": bool(API_KEY), "voz": VOICE_ID,
-            "xtts_cargado": "modelo" in _xtts}
+            "xtts_cargado": "modelo" in _xtts, "muletillas": len(_muletillas_hechas())}
+
+
+@app.get("/muletilla")
+def muletilla(tipo: str = "neutra", evitar: str = ""):
+    """Una muletilla al azar del pool pedido, ya generada. Suena mientras se cocina la
+    respuesta real. `evitar` es el nombre de la que acaba de sonar, para no repetirla
+    cuando hay que encadenar una segunda."""
+    hechas = _muletillas_hechas(tipo) or _muletillas_hechas()
+    if not hechas:
+        return Response(status_code=204)  # aún no están: el frontend sigue sin ellas
+    opciones = [p for p in hechas if p.name != evitar] or hechas
+    elegida = random.choice(opciones)
+    return Response(content=elegida.read_bytes(), media_type="audio/mpeg",
+                    headers={"X-Muletilla": elegida.name})
 
 
 @app.post("/voz")
@@ -162,7 +311,7 @@ def voz(p: Peticion):
     if not texto:
         return Response(status_code=204)
     try:
-        return Response(content=_de_elevenlabs(texto), media_type="audio/mpeg")
+        return Response(content=_de_elevenlabs(texto, p.rapido), media_type="audio/mpeg")
     except Exception as e:
         print(f"[voz] ElevenLabs falló ({e}); tiro del respaldo local.")
         return Response(content=_de_xtts(texto), media_type="audio/wav")

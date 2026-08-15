@@ -192,7 +192,7 @@ class ProveedorAnthropic:
             for h in hs
         ]
 
-    def responder(self, sistema: str, mensajes: list[dict], herramientas=None) -> Respuesta:
+    def _kwargs(self, sistema: str, mensajes: list[dict], herramientas=None) -> dict:
         kwargs = {
             "model": self.modelo,
             "max_tokens": 1024,
@@ -209,9 +209,24 @@ class ProveedorAnthropic:
         }
         if herramientas:
             kwargs["tools"] = self._herramientas(herramientas)
+        return kwargs
 
-        msg = self.cliente.messages.create(**kwargs)
+    def responder(self, sistema: str, mensajes: list[dict], herramientas=None) -> Respuesta:
+        return self._leer(self.cliente.messages.create(**self._kwargs(sistema, mensajes, herramientas)))
 
+    def responder_stream(self, sistema: str, mensajes: list[dict], herramientas=None,
+                         al_texto=None) -> Respuesta:
+        """Igual que `responder`, pero va llamando a `al_texto(trozo)` mientras el modelo
+        escribe. El resultado final es el mismo; lo que cambia es que quien llama puede
+        empezar a HABLAR con la primera frase en vez de esperar al último token. La
+        latencia percibida la marca la longitud de la respuesta, no el prompt."""
+        with self.cliente.messages.stream(**self._kwargs(sistema, mensajes, herramientas)) as flujo:
+            if al_texto:
+                for trozo in flujo.text_stream:
+                    al_texto(trozo)
+            return self._leer(flujo.get_final_message())
+
+    def _leer(self, msg) -> Respuesta:
         texto, llamadas = "", []
         for bloque in msg.content:
             if bloque.type == "text":

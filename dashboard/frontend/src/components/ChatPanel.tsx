@@ -55,42 +55,46 @@ function Pensando() {
   );
 }
 
-function ListaMensajes({
+// Las burbujas sin contenedor de scroll propio: así el ampliado puede meterlas dentro
+// de SU scroll (el que hace encoger el orbe) sin anidar dos áreas desplazables.
+function Mensajes({
   mensajes,
   enviando,
   error,
   vacio,
+  autoScroll = true,
 }: {
   mensajes: Mensaje[];
   enviando: boolean;
   error: string | null;
   vacio: string;
+  autoScroll?: boolean;
 }) {
   const finRef = useRef<HTMLDivElement>(null);
-  // Pegado abajo al llegar mensajes nuevos o mientras "piensa".
+  // Pegado abajo al llegar mensajes nuevos o mientras "piensa". En el ampliado se
+  // desactiva: ahí el scroll lo manda Hugo (arriba está el estado, abajo el chat) y
+  // saltar al final solo le arrancaría la vista del orbe.
   useLayoutEffect(() => {
-    finRef.current?.scrollIntoView({ block: "end" });
-  }, [mensajes.length, enviando]);
+    if (autoScroll) finRef.current?.scrollIntoView({ block: "end" });
+  }, [mensajes.length, enviando, autoScroll]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-      <div className="flex flex-col gap-2.5">
-        {mensajes.length === 0 && !enviando && (
-          <div className="text-[13px]" style={{ color: theme.muted }}>
-            {vacio}
-          </div>
-        )}
-        {mensajes.map((m, i) => (
-          <Burbuja key={m.ts + "-" + i} m={m} />
-        ))}
-        {enviando && <Pensando />}
-        {error && (
-          <div className="text-[12px]" style={{ color: theme.alert }}>
-            {error}
-          </div>
-        )}
-        <div ref={finRef} />
-      </div>
+    <div className="flex flex-col gap-2.5">
+      {mensajes.length === 0 && !enviando && (
+        <div className="text-[13px]" style={{ color: theme.muted }}>
+          {vacio}
+        </div>
+      )}
+      {mensajes.map((m, i) => (
+        <Burbuja key={m.ts + "-" + i} m={m} />
+      ))}
+      {enviando && <Pensando />}
+      {error && (
+        <div className="text-[12px]" style={{ color: theme.alert }}>
+          {error}
+        </div>
+      )}
+      <div ref={finRef} />
     </div>
   );
 }
@@ -156,8 +160,10 @@ function SelectorModelo({ valor, onChange }: { valor: string; onChange: (p: stri
 // (conversación, escucha todo) se pinta como el radar "escuchando"; "reposo" (solo
 // wake word) como la esfera tenue "dormido".
 function estadoPresencia(voz: Voz | undefined, enviando: boolean): EstadoPresencia {
-  if (voz?.soportado && voz.estado === "hablando") return "hablando";
-  if (enviando) return "pensando";
+  // "hablando" solo cuando SALE voz, no cuando se abre el turno: entre medias todavía
+  // está generando, y ahí lo honesto es seguir mostrando "pensando".
+  if (voz?.soportado && voz.sonando) return "hablando";
+  if (enviando || voz?.estado === "hablando") return "pensando";
   if (voz?.soportado && voz.estado === "activo") return "escuchando";
   if (voz?.soportado && voz.estado === "reposo") return "dormido";
   return "off";
@@ -273,19 +279,92 @@ export default function ChatPanel({ chat, voz, onExpand }: { chat: Chat; voz?: V
   );
 }
 
+// Vista ampliada, "voz primero": px de scroll en los que el orbe pasa de presidir la
+// pantalla a quedarse arriba, sus dos tamaños y la altura (en vh) de su zona. El orbe
+// NO va dentro del recuadro azul: preside fuera, y solo el hilo escrito va en la caja.
+const RECORRIDO = 260;
+const ORBE_GRANDE = 260;
+const ORBE_CHICO = 168;
+// % del alto que ocupa la zona del orbe. Las dos zonas SE REPARTEN el alto (no se
+// superponen): al entrar el orbe se lo queda todo y la caja mide 0 —el chat ni se ve—;
+// al bajar, el orbe cede hasta ~1/3 y la caja crece con el resto.
+const ZONA_GRANDE = 100;
+const ZONA_CHICA = 38;
+
 // Altura de viewport fija (no h-full en %): dentro del flex-1 de Expanded, un
 // height:100% no resuelve y la entrada se pegaría arriba. min-h-0 en la lista le
 // da su propio contexto de scroll (trampa 2 del plan: Expanded es overflow-y-auto).
 export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
+  // Al entrar NO se ve el chat escrito: solo el estado del agente, a lo grande y
+  // centrado (hablar con él es lo normal; leer el hilo es lo excepcional). Al bajar,
+  // el orbe encoge y el historial sube. `p` es el progreso 0→1 de ese scroll.
+  const contRef = useRef<HTMLDivElement>(null);
+  const cajaRef = useRef<HTMLDivElement>(null);
+  const [p, setP] = useState(0);
+  const pRef = useRef(0);
+
+  // La rueda gobierna el reparto: primero encoge el orbe y despliega la caja, y solo
+  // cuando ya está desplegada (p=1) el hilo scrollea por su cuenta. Al revés, si la
+  // caja está arriba del todo, seguir subiendo devuelve el orbe a pantalla completa.
+  // Hace falta listener manual con {passive:false} para poder frenar el scroll nativo.
+  useEffect(() => {
+    const cont = contRef.current;
+    if (!cont) return;
+    const alRodar = (e: WheelEvent) => {
+      const caja = cajaRef.current;
+      const arriba = !caja || caja.scrollTop <= 0;
+      const bajando = e.deltaY > 0;
+      if ((bajando && pRef.current < 1) || (!bajando && pRef.current > 0 && arriba)) {
+        e.preventDefault();
+        const nuevo = Math.min(1, Math.max(0, pRef.current + e.deltaY / RECORRIDO));
+        pRef.current = nuevo;
+        setP(nuevo);
+      }
+    };
+    cont.addEventListener("wheel", alRodar, { passive: false });
+    return () => cont.removeEventListener("wheel", alRodar);
+  }, []);
+
+  const tam = Math.round(ORBE_GRANDE + (ORBE_CHICO - ORBE_GRANDE) * p);
+  const zona = ZONA_GRANDE + (ZONA_CHICA - ZONA_GRANDE) * p;
+
   return (
-    <div className="mx-auto flex h-[72vh] min-h-0 w-full max-w-3xl flex-col">
-      {/* El orbe preside; debajo, el historial escrito de respaldo. */}
-      <div className="mb-3 flex justify-center">
-        <Orbe voz={voz} enviando={chat.enviando} potencia={potenciaDe(chat.proveedor)} size={128} />
+    <div ref={contRef} className="mx-auto flex h-[80vh] min-h-0 w-full max-w-3xl flex-col">
+      {/* Zona del orbe: FUERA de la caja azul y con su propio espacio reservado. */}
+      <div
+        className="flex shrink-0 flex-col items-center justify-center overflow-hidden"
+        style={{ height: `${zona}%` }}
+      >
+        <Orbe voz={voz} enviando={chat.enviando} potencia={potenciaDe(chat.proveedor)} size={tam} />
+        <div style={{ opacity: p }} className="mt-2 w-full max-w-md">
+          <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
+        </div>
       </div>
-      <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
-      <ListaMensajes mensajes={chat.mensajes} enviando={chat.enviando} error={chat.error} vacio={SALUDO} />
-      <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} autofocus />
+      {/* La caja azul: solo el hilo escrito. Mide 0 al entrar, así el chat ni asoma. */}
+      <div
+        ref={cajaRef}
+        className="min-h-0 flex-1 overflow-y-auto rounded-2xl"
+        style={{
+          background: "linear-gradient(180deg, #101a2e 0%, #0c1220 100%)",
+          border: p > 0.02 ? "1px solid rgba(0,212,255,0.16)" : "none",
+          boxShadow: p > 0.02 ? "0 0 50px rgba(0,212,255,0.07), 0 20px 60px rgba(0,0,0,0.6)" : "none",
+          padding: p > 0.02 ? "20px" : 0,
+          opacity: p,
+        }}
+      >
+        <Mensajes
+          mensajes={chat.mensajes}
+          enviando={chat.enviando}
+          error={chat.error}
+          vacio={SALUDO}
+          // Solo se baja solo cuando el hilo ya está desplegado. Con el orbe presidiendo
+          // no se toca el scroll (arrancaría la vista), pero si Hugo está mirando el
+          // chat, un mensaje nuevo tiene que entrar en pantalla: si no, escribe o habla
+          // y parece que su burbuja no ha llegado.
+          autoScroll={p > 0.9}
+        />
+      </div>
+      <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} />
     </div>
   );
 }

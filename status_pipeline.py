@@ -28,6 +28,16 @@ import gspread
 
 import entreno_pipeline as ep   # el parser que ya validamos
 
+# La consola de Windows va en cp1252 y los símbolos de los mensajes (✓, …) la revientan
+# con UnicodeEncodeError. No es cosmético: petaba en el print del PRIMER write_tab, así
+# que las 4 pestañas siguientes —derived_diario incluida— no llegaban a escribirse y los
+# datos se quedaban congelados sin más aviso que un traceback al final.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 load_dotenv()
 API_KEY  = os.getenv("INTERVALS_API_KEY")
 ATHLETE  = os.getenv("INTERVALS_ATHLETE_ID")
@@ -45,13 +55,25 @@ def intervals_get(path, params=None):
     r.raise_for_status()
     return r.json()
 
-# Intervals crea la fila del día antes de tener los datos de la noche, así que un
-# primer fetch puede traer HRV/sueño vacíos aunque el reloj ya haya sincronizado.
-# Si falta el HRV de AYER (que debería existir), se reintenta unas veces con una
-# espera corta. Sube estos números si ves que sigue haciendo falta (el refetch es
-# siempre igual o mejor: Intervals solo añade datos, no los borra).
-INTERVALS_REINTENTOS = 3
-INTERVALS_ESPERA_S = 8
+# POR QUÉ HAY QUE ESPERAR TANTO (y por qué antes "había que ejecutarlo dos veces"):
+# Intervals no guarda el HRV al momento — lo va a buscar al proveedor (Zepp) de forma
+# PEREZOSA, cuando alguien refresca su web. Una petición a la API dispara esa
+# sincronización pero devuelve lo que había: los datos aparecen minutos después. Está
+# reportado en su foro (t/hrv-not-available-from-the-api-without-ui-refresh/128220) y
+# NO hay endpoint público para forzarla, así que la única vía es esperar y reintentar.
+#
+# De ahí el presupuesto de ~5 minutos con esperas crecientes: con los 3 intentos de 8 s
+# de antes (24 s en total) casi nunca llegaba, y hacía falta una segunda ejecución.
+# El refetch es siempre igual o mejor: Intervals solo añade datos, no los borra.
+#
+# OJO: el HRV del propio día NO llega nunca (va con un día de retraso, es normal). Por
+# eso lo que se espera es el de AYER; ver _falta_hrv_de_ayer.
+# La primera espera es de UN MINUTO, no de unos segundos: la sincronización de Intervals
+# nunca aterriza en 20 s, así que reintentar antes solo gasta peticiones y da un falso
+# "sigue sin datos". Mejor esperar de verdad la primera vez y crecer desde ahí.
+INTERVALS_REINTENTOS = int(os.getenv("INTERVALS_REINTENTOS", "6"))
+INTERVALS_ESPERA_S = int(os.getenv("INTERVALS_ESPERA_S", "60"))        # primera espera
+INTERVALS_ESPERA_MAX_S = int(os.getenv("INTERVALS_ESPERA_MAX_S", "300"))  # tope total
 
 def _wellness_once(oldest, newest):
     data = intervals_get(f"/athlete/{ATHLETE}/wellness",
@@ -66,6 +88,11 @@ def _wellness_once(oldest, newest):
             sueno_horas = round(secs/3600, 2) if secs else None,
             sueno_score = d.get("sleepScore"),
             pasos       = d.get("steps"),
+            # Cuándo dice Intervals que tocó esa fila. Es el único dato que distingue
+            # "el reloj aún no ha subido la noche" de "nos ha servido una respuesta
+            # cacheada": si `updated` es viejo, el dato no existe; si es reciente pero
+            # no lo vemos, es que nos han dado caché. Ver _diag() y el aviso de abajo.
+            _updated    = d.get("updated"),
         ))
     df = pd.DataFrame(rows)
     if df.empty:
@@ -79,22 +106,51 @@ def _falta_hrv_de_ayer(df):
     prev = df[df["fecha"] < str(dt.date.today())]
     return not prev.empty and pd.isna(prev.iloc[-1]["hrv_rmssd"])
 
+def _diag(df):
+    """Resumen de una respuesta de Intervals: hasta dónde llega el HRV y cuándo dice la
+    propia API que se tocaron esas filas."""
+    if df.empty:
+        return "sin filas"
+    con = df[df["hrv_rmssd"].notna()]
+    ult = con.iloc[-1]["fecha"] if not con.empty else "(ninguna)"
+    upd = str(df["_updated"].dropna().max())[:19] if "_updated" in df else "?"
+    return f"HRV hasta {ult} | updated más reciente {upd}"
+
+
 def fetch_objetivo(oldest, newest):
     """Wellness diario: HRV rMSSD, FC reposo, sueño, pasos. Reintenta si Intervals
-    aún no ha rellenado el HRV de ayer (ver INTERVALS_REINTENTOS)."""
+    aún no ha rellenado el HRV de ayer (ver INTERVALS_REINTENTOS).
+
+    Hugo tiene la sensación de que "siempre hay que ejecutarlo dos veces". Por eso cada
+    intento imprime hasta dónde llega el HRV y el `updated` más reciente: si en el primer
+    intento el `updated` ya es de hace horas pero el HRV no aparece, es que la API nos
+    está sirviendo caché (y entonces habría que atacar eso). Si el `updated` va cambiando
+    entre intentos, es el reloj subiendo tarde y no hay nada que arreglar."""
     df = _wellness_once(oldest, newest)
-    for intento in range(1, INTERVALS_REINTENTOS + 1):
+    print(f"   [intervals] intento 1: {_diag(df)}")
+
+    # Esta primera petición es la que dispara la sincronización de Intervals con el
+    # proveedor. A partir de aquí solo cabe esperar a que aterrice, con esperas cada vez
+    # más largas para no machacar la API (su límite es 2500 peticiones/15 min).
+    espera, gastado = INTERVALS_ESPERA_S, 0
+    for intento in range(2, INTERVALS_REINTENTOS + 2):
         if not _falta_hrv_de_ayer(df):
             break
+        if gastado + espera > INTERVALS_ESPERA_MAX_S:
+            break
         ultimo = df[df["fecha"] < str(dt.date.today())].iloc[-1]["fecha"]
-        print(f"   (Intervals: HRV de {ultimo} aún vacío; reintento "
-              f"{intento}/{INTERVALS_REINTENTOS} en {INTERVALS_ESPERA_S}s…)")
-        time.sleep(INTERVALS_ESPERA_S)
+        print(f"   (HRV de {ultimo} aún vacío. Su sincronización es perezosa y la "
+              f"acabamos de disparar: esperando {espera}s…)")
+        time.sleep(espera)
+        gastado += espera
         df = _wellness_once(oldest, newest)
+        print(f"   [intervals] intento {intento} (t+{gastado}s): {_diag(df)}")
+        espera = min(int(espera * 1.6), 120)
+
     if _falta_hrv_de_ayer(df):
-        print("   (Intervals: sigue sin HRV de ayer tras los reintentos; "
-              "probablemente el reloj aún no ha subido la noche — reejecuta en unos minutos)")
-    return df
+        print(f"   (Tras {gastado}s sigue sin HRV de ayer. Aquí ya no es la caché: el "
+              f"reloj no ha subido la noche todavía. Reejecuta más tarde.)")
+    return df.drop(columns=["_updated"], errors="ignore")
 
 # Una actividad de Intervals con tiempo 0 = Hugo olvidó registrarla en Zepp: la sesión
 # ocurrió, pero llegó sin duración. Asumimos una sesión media (2 h) en vez de un 0, que

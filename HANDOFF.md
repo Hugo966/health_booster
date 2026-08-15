@@ -191,6 +191,59 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
    la siguiente generándose mientras suena la actual. Nació para esquivar el precipicio de
    Qwen; con ElevenLabs sigue siendo útil (baja el tiempo hasta la primera palabra).
 
+### Sesión 2026-08-15, 2ª parte (latencia, escuchador local y datos)
+
+7. **Streaming de la respuesta (SSE).** Nuevo `POST /chat/stream`: el backend suelta el
+   texto según Sonnet lo escribe y el navegador manda cada frase COMPLETA al TTS, así
+   Jarvis empieza a hablar sin esperar a que termine de redactar. `proveedor.responder_stream`
+   + `chat.responder(al_texto=…)`; el turno corre en un hilo y se comunica por cola porque
+   el SDK es síncrono. La caché de prompt ya funcionaba (4007 tokens leídos de caché): lo
+   que marca la latencia es **cuánto escribe**, no el prompt.
+8. **Routing de consultas** (`chat.enrutar`, Haiku). Va PRIMERO y solo, antes de tocar a
+   Sonnet, por dos motivos medidos: un "hola" no necesita a Sonnet ni el parte de estado
+   (lo despacha Haiku), y lanzado EN PARALELO con Sonnet la llamada pasaba de 0,7 s a
+   2,9 s (se pisan en el mismo proceso). Devuelve o la respuesta corta ya escrita
+   (`responder_rapido`, que guarda el intercambio en el hilo) o qué pool de muletillas toca.
+9. **Muletillas** ("déjame que mire eso…") para tapar el silencio mientras se cocina la
+   respuesta. Idea de Hugo. Van **pregrabadas y generadas con v3** (~20 por pool, en
+   `E:/jarvis_tts/muletillas`, nombradas por hash del texto → cambiar una frase la
+   regenera sola). Se probó a escribirlas a medida con Haiku: quedaban más pegadas al
+   contexto pero había que sintetizarlas en Flash para llegar a tiempo y **salían planas,
+   desentonando con la ironía del resto**. Pools: `consulta` / `neutra` / `segunda` (cortas,
+   de continuación). Si al acabar la primera aún no hay respuesta, se encadena una de
+   `segunda` tras **2,5 s de pausa** (pegadas sonaban a atropello).
+10. **Escuchador local** — `dashboard/escucha/escucha.py`, venv `E:/jarvis_tts/venv`.
+    Saca el micro del navegador porque **Chrome suspende la Web Speech API al minimizar**
+    la pestaña. Micro → webrtcvad (recorta voz de silencio) → faster-whisper `small` en GPU
+    (~1,2 s/frase) → wake word → `/chat/stream` → `/voz`. NO habla con ElevenLabs ni con el
+    modelo por su cuenta: reusa el backend, así el personaje, la memoria y el enrutado son
+    los mismos. **No usarlo a la vez que el orbe escuchando** (mandarían el comando dos veces).
+11. **Sesión ÚNICA `hugo`** para navegador y micro (antes: `web-<aleatorio>` vs `voz-local`).
+    Lo hablado por voz iba a otro hilo y Jarvis no lo recordaba al escribir después.
+12. **`GET /hilo`** + sincronización en `chat.ts` (cada 3 s, al recuperar foco, parada si
+    la pestaña está oculta o se está enviando). El escuchador habla directo con el backend,
+    así que sin esto sus mensajes no aparecían nunca en pantalla. Compara el último `id`.
+13. **BUG: el pipeline llevaba desde el 05/08 sin escribir.** `write_tab` imprimía un `✓`
+    y la consola de Windows (cp1252) lanzaba `UnicodeEncodeError` **en la primera pestaña**,
+    así que las 4 siguientes —`derived_diario` incluida— no se escribían. Fallaba en
+    silencio salvo por un traceback al final. Arreglado con `sys.stdout.reconfigure`.
+    **Era la causa de que "hubiera que ejecutarlo dos veces".**
+14. **Reintentos de Intervals reescritos.** Su sincronización con el proveedor (Zepp) es
+    PEREZOSA: la petición dispara el refresco pero devuelve lo viejo, y no hay endpoint
+    público para forzarla (foro: `t/hrv-not-available-from-the-api-without-ui-refresh/128220`).
+    Antes: 3 intentos × 8 s = 24 s, nunca llegaba. Ahora: primera espera de **60 s** y
+    creciente hasta un tope de 5 min, imprimiendo en cada intento hasta dónde llega el HRV
+    y el `updated` de la API — que es lo único que distingue "el reloj no ha subido" de
+    "nos han dado caché".
+15. **BUG: el peso del parte iba desfasado.** El respaldo a la tabla `peso` solo saltaba si
+    `derived_diario` no tenía NADA, no si estaba viejo. Ahora se coge la fuente **más
+    reciente** de las dos.
+16. **UI del chat ampliado**: el orbe preside FUERA del recuadro azul (`Expanded` acepta
+    `sinCaja`), ocupando la vista al entrar; al bajar cede hasta ~1/3 y el hilo sube. Las
+    dos zonas se REPARTEN el alto (nada de `sticky`, que superponía). El orbe solo pinta
+    "hablando" cuando de verdad sale audio (`voz.sonando`), no al abrir el turno.
+    Recargar ya no te mete en el chat: `#chat` es la excepción del deep-link.
+
 ### Sesión anterior (paneles y parser)
 1. **Carga**: reescrito a sRPE (antes tonelaje). `DetalleFatiga` en 3 tabs con línea de
    referencia del RPE de sesión. Quitados ejemplos concretos ("170×1", label "secundario").
@@ -456,6 +509,23 @@ queda de respaldo** (probar sin micro / plan B) hasta que la voz esté pulida.
      (ElevenLabs da castellano nativo).
 
    </details>
+
+**Pendientes tras la sesión del 2026-08-15 (por prioridad):**
+- **Rodar el escuchador local**: falsos positivos del wake word (Whisper puede oír "Jarvis"
+  en la tele; la regex viene de `voz.ts` y quizá sea generosa de más aquí), si el VAD corta
+  a mitad de frase (subir `SILENCIO_FIN_MS`) o se dispara con ruido (subir `VAD_AGRESIVIDAD`
+  a 3), y si se oye a sí mismo por altavoces (subir `GRACIA_S`).
+- **El orbe no refleja el micro externo**: sigue en reposo aunque el escuchador trabaje. El
+  estado vive en el navegador y el escuchador va por libre; haría falta publicarlo.
+- **Abrir un panel tarda ~12 s**: gasta dos vueltas de modelo pese a la instrucción de
+  `personalidad.py` de hablar en el mismo turno que la acción.
+- **~2 s de sobrecoste sin explicar** en `enrutar` dentro del servidor (aislado 0,7 s,
+  servido 2,8 s). No es el prompt ni Sonnet compitiendo (pasa también en el camino trivial).
+- **`keep.txt` lleva 30 días sin entrenos** (último 16/07) aunque las notas de dolor hablan
+  de sentadillas en agosto. Hasta que Hugo vuelque sus notas, Jarvis cree que no entrena.
+- **El timbre "quizás grave de más"** (Hugo, al estrenar la voz de ElevenLabs). Sin revisar.
+- **Historial huérfano**: al pasar a la sesión `hugo`, el hilo viejo del navegador quedó en
+  `jarvis.db` bajo su `web-<aleatorio>`. No se ha borrado; migrarlo es una consulta SQL.
 
 **Otros pendientes (no de voz):**
 - **Memoria en Markdown** (pedido de Hugo): mover los `hechos` de SQLite a un `.md` editable a

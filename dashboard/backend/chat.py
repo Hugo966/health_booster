@@ -17,6 +17,7 @@ frágil de `proveedor.py`; en texto plano funciona igual en ambos y los modelos
 pequeños lo siguen sin problema. Si algún día estorba, se cambia ahí dentro.
 """
 import json
+import os
 
 import briefing
 import memoria
@@ -155,10 +156,105 @@ def _ejecutar_lectura(llamada) -> str:
     return json.dumps(res, ensure_ascii=False, default=str)
 
 
+# --- muletilla ----------------------------------------------------------------
+
+# Qué muletilla ("déjame que lo mire…") pega con lo que Hugo acaba de decir. Lo decide
+# Haiku, no una regex: las palabras sueltas se equivocaban feo —"hoy me encuentro
+# jodido" caía en 'consulta' por el "hoy" y le soltaba un "voy a mirar tus datos" a
+# alguien que dice que está mal—. Haiku tarda ~1 s, corre EN PARALELO con la respuesta
+# de verdad (no la retrasa) y cuesta ~0,00005 $ por mensaje.
+_CLASIFICADOR = "claude-haiku-4-5-20251001"
+# Corto a propósito: cada token de entrada y de salida se paga en latencia, y esto tiene
+# que estar listo en ~1 s o no sirve para tapar nada.
+_SIS_RUTA = """\
+Eres Jarvis, colega de Hugo: sarcástico y cercano. Castellano de España (nada de "qué
+onda", "ahorita" ni voseo). Hugo acaba de escribirte. Devuelve UNA línea:
+
+- Si es un saludo, despedida, agradecimiento o reacción corta que NO necesita mirar sus
+  datos de salud ni de entreno, contéstale tú, con gracia, en una frase:
+      RESPUESTA: <lo que le dices>
+  Si la frase va con retintín, márcala poniendo [sarcastic] delante (o [mischievously],
+  [laughs], [curious]): es lo que hace que la voz lo diga con guasa y no en plano.
+- Si pregunta por sus datos de salud o entreno (sueño, fuerza, peso, carga, un panel,
+  una marca), o pide abrir algo del dashboard:
+      CONSULTA
+- Para cualquier otra cosa (charla, algo personal, cómo se siente):
+      NEUTRA
+
+Ej: "hola" -> RESPUESTA: [mischievously] Hombre, mira quién aparece.
+Ej: "gracias tío" -> RESPUESTA: A mandar. Para eso estoy.
+Ej: "¿qué tal he dormido?" -> CONSULTA
+Ej: "ábreme el panel de fuerza" -> CONSULTA
+Ej: "me duele el hombro" -> NEUTRA
+Ej: "ayer estuve con mi hermano" -> NEUTRA
+"""
+
+# Un solo cliente para todo el proceso: crear uno por mensaje añadía el handshake TLS
+# (~0,5 s) a algo que compite contra el reloj.
+_cliente_rapido = None
+
+
+def _cliente():
+    global _cliente_rapido
+    if _cliente_rapido is None:
+        import anthropic
+
+        _cliente_rapido = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    return _cliente_rapido
+
+
+def enrutar(mensaje: str) -> dict:
+    """Decide por dónde va el mensaje, ANTES de molestar a Sonnet. Devuelve
+    `{"respuesta": str, "muletilla": str}`: o la contestación corta ya escrita, o qué
+    pool de muletillas pega ('consulta' / 'neutra').
+
+    La coletilla NO se escribe a medida aunque quedara más pegada al contexto: habría
+    que sintetizarla en el momento y, en Flash (lo único rápido), sale plana y desentona
+    con la ironía del resto. Pregrabadas se generan con v3 y suenan con retintín.
+
+    Dos motivos para hacerlo primero y no en paralelo:
+      1. Un "hola" no necesita a Sonnet ni el parte de estado entero: Haiku lo despacha
+         en ~0,7 s en vez de los ~6 s que tardaba el camino largo.
+      2. Lanzada a la vez que Sonnet, esta llamada pasaba de 0,7 s a 2,9 s (se pisan en
+         el mismo proceso), y entonces la muletilla llegaba tarde para lo que sirve.
+
+    Todo vacío = seguir por el camino normal sin coletilla. Es el fallo seguro."""
+    try:
+        r = _cliente().messages.create(
+            model=_CLASIFICADOR, max_tokens=40, system=_SIS_RUTA,
+            messages=[{"role": "user", "content": mensaje}],
+        )
+        t = r.content[0].text.strip()
+        if t.upper().startswith("RESPUESTA:"):
+            return {"respuesta": t.split(":", 1)[1].strip().strip('"'), "muletilla": ""}
+        clase = t.strip().upper()
+        if clase.startswith("CONSULTA"):
+            return {"respuesta": "", "muletilla": "consulta"}
+        if clase.startswith("NEUTRA"):
+            return {"respuesta": "", "muletilla": "neutra"}
+    except Exception:
+        pass
+    return {"respuesta": "", "muletilla": ""}
+
+
+def responder_rapido(sesion: str, mensaje: str, respuesta: str) -> dict:
+    """Cierra el turno corto: guarda el intercambio en el hilo para que la conversación
+    siga siendo coherente aunque no haya pasado por Sonnet."""
+    memoria.init()
+    memoria.guardar_mensaje(sesion, "usuario", mensaje)
+    memoria.guardar_mensaje(sesion, "jarvis", respuesta)
+    return {"texto": respuesta, "acciones": [], "uso": {}}
+
+
 # --- el ciclo de conversación ------------------------------------------------
 
-def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) -> dict:
-    """Un turno completo: guarda, pregunta al modelo, ejecuta herramientas, devuelve."""
+def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
+              al_texto=None) -> dict:
+    """Un turno completo: guarda, pregunta al modelo, ejecuta herramientas, devuelve.
+
+    Si se pasa `al_texto`, se le van entregando los trozos según el modelo escribe, para
+    que el navegador pueda empezar a leer en alto la primera frase sin esperar al final
+    (lo que se tarda en contestar lo marca la longitud de la respuesta)."""
     memoria.init()
     memoria.guardar_mensaje(sesion, "usuario", mensaje)
 
@@ -174,7 +270,14 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None) ->
     acciones, texto = [], ""
     uso = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
     for _ in range(MAX_VUELTAS):
-        r = prov.responder(sistema, mensajes, HERRAMIENTAS)
+        # Ollama y el proveedor falso no tienen streaming: se emite su texto de una vez,
+        # así el frontend funciona igual con cualquiera de los tres.
+        if al_texto and hasattr(prov, "responder_stream"):
+            r = prov.responder_stream(sistema, mensajes, HERRAMIENTAS, al_texto)
+        else:
+            r = prov.responder(sistema, mensajes, HERRAMIENTAS)
+            if al_texto and r.texto:
+                al_texto(r.texto)
         for k in uso:
             uso[k] += r.uso.get(k, 0)
         if r.texto:

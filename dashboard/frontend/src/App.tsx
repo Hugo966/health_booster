@@ -41,7 +41,17 @@ function useWidgetEnHash(): [Widget | null, (w: Widget | null) => void] {
     const h = location.hash.slice(1);
     return ES_WIDGET(h) ? h : null;
   };
-  const [w, setW] = useState<Widget | null>(leer);
+  // Al ARRANCAR, el chat es la excepción: recargar con #chat te plantaba el orbe a
+  // pantalla completa antes de ver el dashboard, y Hugo quiere entrar por el dashboard.
+  // Los demás paneles sí se restauran (el deep-link sigue sirviendo para compartirlos).
+  const [w, setW] = useState<Widget | null>(() => {
+    const inicial = leer();
+    if (inicial === "chat") {
+      history.replaceState(null, "", location.pathname + location.search);
+      return null;
+    }
+    return inicial;
+  });
   useEffect(() => {
     const onHash = () => setW(leer());
     window.addEventListener("hashchange", onHash);
@@ -73,8 +83,9 @@ export default function App() {
   const chat = useChat(
     // Acciones de UI: v1 solo navegación de paneles (abrir/cerrar), vía el hash.
     (acciones) => reproducir(acciones, { abrir: (p) => setAbierto(p as Widget), cerrar: () => setAbierto(null) }),
-    // Respuesta nueva de Jarvis -> la voz la lee (si está activa).
-    (texto) => voz.decir(texto),
+    // Abre el turno de voz: el chat le empuja cada frase en cuanto está escrita, así
+    // Jarvis empieza a hablar sin esperar a terminar la respuesta entera.
+    () => voz.hablar(),
   );
   chatRef.current = chat;
   // Secuencia de arranque: tapa la pantalla mientras cargan los datos y se
@@ -272,6 +283,7 @@ export default function App() {
           onClose={cerrar}
           origin={origen}
           actions={<RangeSelector value={range} onChange={setRange} />}
+          sinCaja={abierto === "chat"}
         >
           {abierto === "readiness" && <ReadinessExpanded series={readinessRango} />}
           {abierto === "hrv" && <HrvExpanded rows={hrvRows} />}

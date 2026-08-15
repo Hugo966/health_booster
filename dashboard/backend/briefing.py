@@ -191,13 +191,17 @@ def generar() -> str:
     cal = _ultimo(dd, "sueno_calidad")
     partes.append(_linea("Calidad de sueño (percibida 1-10)", cal))
 
-    # Peso
+    # Peso: se coge el MÁS RECIENTE de las dos fuentes, no el de derived_diario a secas.
+    # La tabla `peso` se alimenta aparte y suele ir por delante: si el pipeline lleva días
+    # sin correr, derived_diario tiene un peso viejo —no vacío— y antes ganaba igual, así
+    # que Jarvis daba por última una pesada de hace semanas que el panel ya mostraba.
     peso = _ultimo(dd, "peso_kg")
-    if peso is None:
-        pr = [r for r in data.get("peso", []) if _num(r.get("peso_kg")) is not None]
-        if pr:
-            f = str(pr[-1].get("fecha", ""))
-            peso = (_num(pr[-1]["peso_kg"]), f, _dias_desde(f))
+    pr = [r for r in data.get("peso", []) if _num(r.get("peso_kg")) is not None]
+    if pr:
+        f = str(pr[-1].get("fecha", ""))
+        suelto = (_num(pr[-1]["peso_kg"]), f, _dias_desde(f))
+        if peso is None or f > peso[1]:  # fechas ISO: comparar como texto vale
+            peso = suelto
     ritmo = _ritmo_peso(data.get("peso", []))
     extra = f" — {ritmo:+.2f} kg/semana (últimas 6 sem)" if ritmo is not None else ""
     partes.append(_linea("Peso", peso, " kg", extra, clave="peso"))

@@ -51,16 +51,18 @@ const MAX_HIST = 100;
 // Id de sesión estable entre recargas: el backend agrupa el hilo por sesión, así
 // que si cambiara en cada arranque se perdería la continuidad de la conversación.
 // Los hechos de la vida de Hugo son globales y sobreviven igual.
+// Sesión FIJA y compartida, no una por navegador. El hilo de conversación vive en el
+// backend (jarvis.db) y Hugo quiere una sola charla: lo que dice por micro al escuchador
+// local (dashboard/escucha) y lo que escribe aquí tienen que ser la misma. Con un id
+// aleatorio por navegador se partía en dos y Jarvis no recordaba lo hablado en voz.
+const SESION_FIJA = "hugo";
+
 function idSesion(): string {
   try {
-    let s = localStorage.getItem(KEY_SESION);
-    if (!s) {
-      s = `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      localStorage.setItem(KEY_SESION, s);
-    }
-    return s;
+    // Se respeta una sesión ya guardada solo si alguien la puso a mano (pruebas).
+    return localStorage.getItem(KEY_SESION) || SESION_FIJA;
   } catch {
-    return "web";
+    return SESION_FIJA;
   }
 }
 
@@ -79,18 +81,32 @@ function cargar(): Mensaje[] {
   }
 }
 
-async function pedir(sesion: string, mensaje: string, proveedor: string): Promise<Respuesta> {
-  const r = await fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sesion, mensaje, ...(proveedor ? { proveedor } : {}) }),
-  });
-  if (!r.ok) throw new Error(`El chat respondió ${r.status}`);
-  const j = await r.json();
-  return {
-    texto: String(j.texto ?? ""),
-    acciones: Array.isArray(j.acciones) ? j.acciones : [],
-  };
+// El chat consume `/chat/stream` (SSE), no `/chat`. El endpoint sin streaming sigue
+// existiendo en el backend para pruebas con curl.
+
+// Turno de voz que el chat va alimentando (lo implementa voz.ts). Se declara aquí de
+// forma estructural para no acoplar el chat a la capa de voz.
+// El turno de voz (lo implementa voz.ts). Se declara de forma estructural para no
+// acoplar el chat a la capa de voz. Qué muletilla toca lo decide Haiku en el backend y
+// llega por SSE: una regex de palabras sueltas se equivocaba feo (un "hoy me encuentro
+// jodido" acababa en 'consulta' por el "hoy" y le soltaba "voy a mirar tus datos").
+type Habla = {
+  muletilla: (texto: string) => void;
+  empujar: (frase: string) => void;
+  cerrar: () => void;
+};
+
+// Corta el buffer por el ÚLTIMO final de frase y devuelve [listo, resto]. Se habla por
+// frases completas: mandar trozos a medias al TTS destroza la entonación.
+const FIN_FRASE = /^[\s\S]*[.!?…](?=\s|$)/;
+const MIN_FRASE = 18; // por debajo de esto se espera a la siguiente: evita microclips
+
+function cortarFrases(buf: string): [string, string] {
+  const m = buf.match(FIN_FRASE);
+  if (!m) return ["", buf];
+  const listo = m[0];
+  if (listo.trim().length < MIN_FRASE) return ["", buf];
+  return [listo, buf.slice(listo.length)];
 }
 
 export type Chat = {
@@ -104,9 +120,10 @@ export type Chat = {
 
 export function useChat(
   onAcciones?: (acciones: Accion[]) => void,
-  // Se dispara con el texto de CADA respuesta nueva de Jarvis (no el historial al
-  // recargar). Lo usa la capa de voz para leerlo en alto; opcional.
-  onRespuesta?: (texto: string) => void,
+  // Abre un turno de voz al empezar la respuesta. El chat le va empujando cada frase
+  // en cuanto está completa, así Jarvis empieza a hablar mientras aún redacta el resto.
+  // Opcional: sin voz activa, `useChat` funciona igual.
+  onHabla?: () => Habla,
 ): Chat {
   const sesion = useRef(idSesion());
   const [mensajes, setMensajes] = useState<Mensaje[]>(cargar);
@@ -130,11 +147,11 @@ export function useChat(
   // El callback de acciones se guarda en una ref para que `enviar` no se recree
   // cuando App pase una función distinta en cada render.
   const accionesRef = useRef(onAcciones);
-  const respuestaRef = useRef(onRespuesta);
+  const hablaRef = useRef(onHabla);
   useEffect(() => {
     accionesRef.current = onAcciones;
-    respuestaRef.current = onRespuesta;
-  }, [onAcciones, onRespuesta]);
+    hablaRef.current = onHabla;
+  }, [onAcciones, onHabla]);
 
   useEffect(() => {
     try {
@@ -144,6 +161,50 @@ export function useChat(
     }
   }, [mensajes]);
 
+  // Sincronización con el hilo del backend. Hace falta porque el escuchador local
+  // (dashboard/escucha) habla directamente con el backend: sus mensajes no pasan por
+  // aquí y, sin esto, lo dicho por micro no aparecía nunca en pantalla.
+  //
+  // Se compara el ÚLTIMO id: si el backend va por delante, se adopta su hilo entero
+  // (es la fuente de verdad de la conversación). No se toca mientras se está enviando,
+  // para no pisar el texto que se está escribiendo en vivo.
+  const ultimoIdRef = useRef(0);
+  useEffect(() => {
+    let vivo = true;
+    const sincronizar = async () => {
+      if (!vivo || enviando || document.hidden) return;
+      try {
+        const r = await fetch(`${API_BASE}/hilo?sesion=${encodeURIComponent(sesion.current)}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const filas: any[] = Array.isArray(j.mensajes) ? j.mensajes : [];
+        if (!filas.length) return;
+        const ultimo = Number(filas[filas.length - 1].id) || 0;
+        if (ultimo <= ultimoIdRef.current) return; // nada nuevo
+        ultimoIdRef.current = ultimo;
+        setMensajes(
+          filas.map((f) => ({
+            rol: f.rol === "usuario" ? "usuario" : "jarvis",
+            texto: String(f.texto ?? ""),
+            ts: Date.parse(f.ts) || Date.now(),
+          })),
+        );
+      } catch {
+        /* backend caído: se sigue con lo que haya en local */
+      }
+    };
+    sincronizar();
+    const t = window.setInterval(sincronizar, 3000);
+    window.addEventListener("focus", sincronizar);
+    document.addEventListener("visibilitychange", sincronizar);
+    return () => {
+      vivo = false;
+      window.clearInterval(t);
+      window.removeEventListener("focus", sincronizar);
+      document.removeEventListener("visibilitychange", sincronizar);
+    };
+  }, [enviando]);
+
   const enviar = useCallback(
     async (texto: string) => {
       const limpio = texto.trim();
@@ -151,16 +212,93 @@ export function useChat(
       setError(null);
       setMensajes((prev) => [...prev, { rol: "usuario", texto: limpio, ts: Date.now() }]);
       setEnviando(true);
-      try {
-        const r = await pedir(sesion.current, limpio, provRef.current);
-        if (r.texto) {
-          setMensajes((prev) => [...prev, { rol: "jarvis", texto: r.texto, ts: Date.now() }]);
-          respuestaRef.current?.(r.texto);   // que la voz lo lea (si está activa)
+
+      // Turno de voz abierto YA: las frases se le empujan según llegan del modelo.
+      const habla = hablaRef.current?.() ?? null;
+      const ts = Date.now();
+      let acumulado = "";   // todo lo dicho hasta ahora (para la burbuja)
+      let pendiente = "";   // lo que aún no forma frase completa (para la voz)
+      let hayBurbuja = false;
+
+      // La burbuja se va reescribiendo en vivo: se ve escribir a Jarvis.
+      const pintar = (t: string) => {
+        setMensajes((prev) => {
+          const copia = [...prev];
+          const m: Mensaje = { rol: "jarvis", texto: t, ts };
+          if (hayBurbuja) copia[copia.length - 1] = m;
+          else copia.push(m);
+          return copia;
+        });
+        hayBurbuja = true;
+      };
+
+      const vaciar = (final: boolean) => {
+        if (!habla) return;
+        if (final) {
+          if (pendiente.trim()) habla.empujar(pendiente);
+          pendiente = "";
+          return;
         }
-        if (r.acciones.length) accionesRef.current?.(r.acciones);
+        const [listo, resto] = cortarFrases(pendiente);
+        if (!listo) return;
+        pendiente = resto;
+        habla.empujar(listo);
+      };
+
+      try {
+        const r = await fetch(`${API_BASE}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sesion: sesion.current,
+            mensaje: limpio,
+            ...(provRef.current ? { proveedor: provRef.current } : {}),
+          }),
+        });
+        if (!r.ok || !r.body) throw new Error(`El chat respondió ${r.status}`);
+
+        const lector = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        let fin: { texto: string; acciones: Accion[]; error?: string | null } | null = null;
+
+        for (;;) {
+          const { done, value } = await lector.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          // SSE: los eventos van separados por línea en blanco.
+          const trozos = buf.split("\n\n");
+          buf = trozos.pop() ?? "";
+          for (const t of trozos) {
+            const linea = t.split("\n").find((l) => l.startsWith("data: "));
+            if (!linea) continue;
+            const ev = JSON.parse(linea.slice(6));
+            if (ev.tipo === "texto") {
+              acumulado += ev.texto;
+              pendiente += ev.texto;
+              pintar(acumulado);
+              vaciar(false);
+            } else if (ev.tipo === "muletilla") {
+              habla?.muletilla(String(ev.texto ?? ""));
+            } else {
+              fin = {
+                texto: String(ev.texto ?? ""),
+                acciones: Array.isArray(ev.acciones) ? ev.acciones : [],
+                error: ev.error,
+              };
+            }
+          }
+        }
+
+        vaciar(true); // la última frase, aunque no cierre con punto
+        if (fin?.error) setError(fin.error);
+        // El texto del evento final manda: incluye lo de todas las vueltas de herramienta.
+        if (fin?.texto && fin.texto !== acumulado) pintar(fin.texto);
+        if (fin?.acciones.length) accionesRef.current?.(fin.acciones);
       } catch (e) {
         setError(String(e));
       } finally {
+        habla?.cerrar();
         setEnviando(false);
       }
     },

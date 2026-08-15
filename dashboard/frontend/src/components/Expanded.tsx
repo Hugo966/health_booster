@@ -22,12 +22,16 @@ export default function Expanded({
   children,
   actions,
   origin,
+  sinCaja = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   actions?: ReactNode;
   origin?: DOMRect | null;
+  // El chat monta su propia caja: el orbe tiene que quedar FUERA del recuadro azul,
+  // presidiendo, y solo el hilo escrito va dentro. Ver ChatExpanded.
+  sinCaja?: boolean;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -129,16 +133,20 @@ export default function Expanded({
           </h2>
           <div className="ml-auto">{actions}</div>
         </div>
-        <div
-          className="flex-1 rounded-2xl p-5 md:p-6"
-          style={{
-            background: "linear-gradient(180deg, #101a2e 0%, #0c1220 100%)",
-            border: "1px solid rgba(0,212,255,0.16)",
-            boxShadow: "0 0 50px rgba(0,212,255,0.07), 0 20px 60px rgba(0,0,0,0.6)",
-          }}
-        >
-          {children}
-        </div>
+        {sinCaja ? (
+          <div className="flex flex-1 flex-col">{children}</div>
+        ) : (
+          <div
+            className="flex-1 rounded-2xl p-5 md:p-6"
+            style={{
+              background: "linear-gradient(180deg, #101a2e 0%, #0c1220 100%)",
+              border: "1px solid rgba(0,212,255,0.16)",
+              boxShadow: "0 0 50px rgba(0,212,255,0.07), 0 20px 60px rgba(0,0,0,0.6)",
+            }}
+          >
+            {children}
+          </div>
+        )}
       </div>
     </div>
   );
