@@ -147,14 +147,21 @@ export default function App() {
     [dd],
   );
 
-  // El RPE de sesión (form PM) vive en derived_diario; se une a las sesiones por fecha.
-  const rpeByFecha = useMemo(() => {
-    const m = new Map<string, number>();
+  // El RPE de sesión (form PM) y el sRPE ya calculado viven en derived_diario; se unen a
+  // las sesiones por fecha. El sRPE NO se recalcula aquí: la fórmula está en
+  // status_pipeline.py y este panel solo la consume, para que la pantalla y Jarvis
+  // —que lee la misma columna de la hoja— no puedan dar números distintos.
+  const porFecha = useMemo(() => {
+    const rpe = new Map<string, number>();
+    const srpe = new Map<string, number>();
     for (const r of data?.derived_diario ?? []) {
+      const f = String(r.fecha);
       const v = num(r.rpd_sesion);
-      if (v !== null) m.set(String(r.fecha), v);
+      if (v !== null) rpe.set(f, v);
+      const s = num(r.sRPE_series);
+      if (s !== null) srpe.set(f, s);
     }
-    return m;
+    return { rpe, srpe };
   }, [data]);
 
   // Las bandas de carga se calculan sobre TODO el histórico; el rango solo recorta
@@ -166,14 +173,15 @@ export default function App() {
           fecha: String(s.fecha),
           nSeries: num(s.n_series_total),
           nFallos: num(s.n_fallos_total) ?? 0,
-          rpeSesion: rpeByFecha.get(String(s.fecha)) ?? null,
+          rpeSesion: porFecha.rpe.get(String(s.fecha)) ?? null,
+          srpeSeries: porFecha.srpe.get(String(s.fecha)) ?? null,
           volumen: num(s.volumen_total) ?? 0,
           volBasicos: num(s.vol_basicos),
           volAccesorios: num(s.vol_accesorios),
         }))
         .filter((s) => s.volumen > 0)
         .sort((a, b) => a.fecha.localeCompare(b.fecha)),
-    [data, rpeByFecha],
+    [data, porFecha],
   );
   const sesionesRango = useMemo(
     () => sesionesTodas.filter((s) => inRange(s.fecha, start)),

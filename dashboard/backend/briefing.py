@@ -21,6 +21,9 @@ from datetime import date, datetime
 from sheets import fetch_all
 
 OBJETIVO_SUENO_H = 7.5
+# Días de la ventana de carga. Es el mismo 7 que usan `sRPE_series_7d` en el pipeline y
+# `VENTANA` en LoadPanel.tsx: si se cambia, hay que cambiarlo en los tres.
+VENTANA_CARGA_D = 7
 # A partir de cuántos días un dato deja de valer como "ahora mismo". Es por
 # métrica porque no todas envejecen igual: el HRV es diario y a los 3 días ya no
 # dice nada del presente, pero Hugo se pesa ~una vez por semana, así que un peso
@@ -206,15 +209,46 @@ def generar() -> str:
     extra = f" — {ritmo:+.2f} kg/semana (últimas 6 sem)" if ritmo is not None else ""
     partes.append(_linea("Peso", peso, " kg", extra, clave="peso"))
 
-    # Carga: sRPE de 7 días contra los percentiles de su propio histórico
-    srpe = _ultimo(dd, "sRPE_7d")
-    hist_srpe = [v for _, v in _serie(dd, "sRPE_7d")]
+    # Carga: sRPE de 7 días contra los percentiles de su propio histórico.
+    # `sRPE_series_7d` (RPE de sesión × series) sale de la MISMA columna que pinta el panel
+    # de Carga. `sRPE_7d` (rpd × duración) queda de respaldo para el histórico anterior a
+    # que existiera la columna.
+    # OJO con comparar este número con el del panel: la fórmula es la misma, pero la fecha
+    # de referencia no. Aquí se ancla a HOY (la carga aguda decae con el descanso, que es lo
+    # correcto), mientras que el panel ancla a la última sesión. Tras unos días de descanso
+    # los dos números difieren mucho y AMBOS son ciertos. No se "arregla" igualándolos: lo
+    # que engaña de verdad son las sesiones que aún no cuentan, y de eso avisa el bloque de
+    # abajo.
+    col = "sRPE_series_7d" if _ultimo(dd, "sRPE_series_7d") else "sRPE_7d"
+    srpe = _ultimo(dd, col)
+    hist_srpe = [v for _, v in _serie(dd, col)]
     extra = ""
     if srpe and len(hist_srpe) >= 5:
         p33, p67 = _percentil(hist_srpe, 0.33), _percentil(hist_srpe, 0.67)
         nivel = "baja" if srpe[0] < p33 else ("alta" if srpe[0] > p67 else "normal")
         extra = f" — carga {nivel} para él"
     partes.append(_linea("Carga sRPE 7 días", srpe, "", extra))
+
+    # Sesiones recientes que NO están contadas en esa cifra. El sRPE necesita el RPE de
+    # sesión del formulario PM, y ese formulario puede tardar días en llegar: mientras tanto
+    # una sesión dura y reciente no entra en la ventana, y el parte dice "carga baja" justo
+    # el día después de ella. Sin este aviso Jarvis concluye lo contrario de lo que pasa.
+    sin_rpe = []
+    for fila_s in data.get("entreno_sesion", []):
+        f = str(fila_s.get("fecha", ""))
+        if not f or _dias_desde(f) > VENTANA_CARGA_D:
+            continue
+        fila_d = next((x for x in dd if str(x.get("fecha")) == f), None)
+        if fila_d is None or _num(fila_d.get("sRPE_series")) is None:
+            sin_rpe.append(f)
+    if sin_rpe:
+        partes.append(
+            f"  AVISO: esa carga NO incluye {len(sin_rpe)} entreno(s) de los últimos "
+            f"{VENTANA_CARGA_D} días ({', '.join(sorted(sin_rpe))}): les falta el RPE de "
+            "sesión porque el formulario PM está sin rellenar. La carga real es MAYOR que "
+            "ese número, así que no concluyas que va descargado; si viene a cuento, "
+            "recuérdale que rellene el PM."
+        )
 
     mol = _ultimo(dd, "molestias_nivel")
     partes.append(_linea("Molestias (1-10)", mol))
@@ -225,10 +259,24 @@ def generar() -> str:
     ses = [r for r in data.get("entreno_sesion", []) if r.get("bloque") not in ("", None)]
     if ses:
         u = ses[-1]
-        partes.append(
+        linea = (
             f"- Último entreno registrado: bloque {u.get('bloque')} semana "
             f"{u.get('semana')} ({u.get('fecha')})"
         )
+        # Cómo FUE la sesión, no solo cuándo. Los agregados (volumen, series) bajan cuando
+        # algo se tuerce, pero no dicen por qué, así que Jarvis daba por normal una sesión
+        # en la que Hugo falló series o no pudo ni valorar el esfuerzo. Estas dos marcas
+        # vienen del keep: `0x0` -> fallo, `@?`/`RIR?` -> no pudo valorar (dolor, lesión,
+        # prisa). Son lo único que distingue una sesión mala de una sesión corta.
+        marcas = []
+        nf, nsi = _num(u.get("n_fallos_total")), _num(u.get("n_sin_intensidad_total"))
+        if nf:
+            marcas.append(f"{nf:g} series falladas (0 repes)")
+        if nsi:
+            marcas.append(f"{nsi:g} series sin poder valorar el esfuerzo (@?)")
+        if marcas:
+            linea += " — " + ", ".join(marcas)
+        partes.append(linea)
 
     # Notas de los formularios AM/PM: texto libre de Hugo (cómo se sintió, lesiones,
     # vida, contexto…). Dan mucha información que los números no capturan, así que se le
@@ -236,9 +284,18 @@ def generar() -> str:
     notas = []
     for row in dd:
         f = str(row.get("fecha", ""))
+        # El dolor de la sesión está DUPLICADO a propósito: Hugo lo escribe en el keep al
+        # acabar de entrenar (`dolor_sesion_keep`) y más tarde copia el mismo texto al campo
+        # "dolor de entreno" del formulario PM (`dolor_sesion_nota`). Pasarle los dos haría
+        # que Jarvis leyera un único episodio como dos, así que el del keep entra solo
+        # mientras el del formulario siga vacío: cubre la ventana entre entrenar y
+        # rellenarlo, y desaparece en cuanto llega el bueno.
+        campos = [("notas_am", "AM"), ("notas_pm", "PM"), ("dolor_sesion_nota", "dolor")]
+        if not str(row.get("dolor_sesion_nota", "") or "").strip():
+            campos.append(("dolor_sesion_keep", "dolor (del keep, aún sin pasar al form)"))
         trozos = [
             f"{etq}: {v.strip()}"
-            for campo, etq in (("notas_am", "AM"), ("notas_pm", "PM"), ("dolor_sesion_nota", "dolor"))
+            for campo, etq in campos
             for v in [str(row.get(campo, "") or "")]
             if v.strip()
         ]

@@ -202,12 +202,42 @@ def drive_lookups():
     creds = Credentials.from_service_account_file(SA_JSON, scopes=scopes)
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(DRIVE_EXCEL_ID)
-    sheets = []
+    sheets, fallidas = [], []
     for ws in sh.worksheets():
-        try:
-            sheets.append((ws.title, ws.col_values(1)))
-        except Exception:
-            continue  # pestañas de gráfico no tienen columna A; se ignoran
+        # Un fallo aquí NO es lo mismo que una pestaña de gráfico sin columna A: la API de
+        # Google devuelve errores transitorios (429 y compañía) cada dos por tres. Antes los
+        # dos casos caían en el mismo `except: continue`, así que una pestaña de plan podía
+        # esfumarse en silencio y sus sesiones se escribían en la hoja SIN nombre de
+        # ejercicio, sin `tipo` y fuera de vol_basicos/vol_accesorios y de rm1. Medido: 2 de
+        # cada 7 lecturas devolvían el plan incompleto. Se reintenta, y lo que siga fallando
+        # se anota para decidir abajo si importa.
+        # Espera creciente (3, 6, 12, 24 s): lo que falla suele ser el límite de cuota de
+        # Google, y ese no se pasa en dos segundos. Son ~45 s en el peor caso y solo cuando
+        # algo va mal; el camino bueno no espera nada.
+        col = None
+        for intento in range(5):
+            try:
+                col = ws.col_values(1)
+                break
+            except Exception:
+                if intento < 4:
+                    time.sleep(3 * 2 ** intento)
+        if col is None:
+            fallidas.append(ws.title)
+            continue
+        sheets.append((ws.title, col))
+
+    # Si lo que se perdió era una pestaña de PLAN, los datos saldrían degradados sin que
+    # nadie se entere. Mejor reventar aquí que escribir una hoja a medias.
+    plan_perdidas = [t for t in fallidas if ep.route_tab(t)]
+    if plan_perdidas:
+        raise RuntimeError(
+            "Drive no ha devuelto pestañas del plan tras 5 intentos: "
+            f"{', '.join(plan_perdidas)}. Sus sesiones se escribirían sin nombre de "
+            "ejercicio, así que se aborta. Reintenta en un rato."
+        )
+    if fallidas:
+        print(f"  (aviso) pestañas sin columna A, ignoradas: {', '.join(fallidas)}")
     return ep.extract_exercises(sheets, verbose=True)
 
 def build_entreno():
@@ -228,6 +258,12 @@ def build_entreno():
         # Series falladas (0 reps) de la sesión. El frontend las pondera aparte en la
         # carga (un fallo es esfuerzo máximo y fatiga mucho más que una serie normal).
         nfallos = g.loc[g["flag"].astype(str).str.contains("fallo", na=False), "n_series"].sum(min_count=1)
+        # Series con `@?`/`RIR?`: Hugo levantó el peso pero no pudo valorar el esfuerzo
+        # (dolor, lesión, ir contra el reloj). Se cuentan aparte de los fallos y de la
+        # basura de tecleo (`int_no_parseable`) porque son la señal de que la sesión se
+        # torció; sin agregarlas aquí, el flag no sale nunca de `entreno_sets`.
+        nsinint = g.loc[g["flag"].astype(str).str.contains("sin_intensidad", na=False),
+                        "n_series"].sum(min_count=1)
         dolor = ""
         if "dolor_sesion" in g:
             vals = g["dolor_sesion"].dropna().astype(str)
@@ -238,6 +274,7 @@ def build_entreno():
             volumen_total=g["volumen"].sum(min_count=1),
             n_series_total=g["n_series"].sum(min_count=1),
             n_fallos_total=nfallos,
+            n_sin_intensidad_total=nsinint,
             mejor_e1rm=g["e1rm"].max(),
             vol_basicos=vb, vol_accesorios=va,
             dolor_sesion_keep=dolor,
@@ -252,7 +289,11 @@ def build_rm1(sets):
     if sets.empty: return pd.DataFrame()
     b = sets[(sets["tipo"] == "básico") & sets["e1rm"].notna()]
     if b.empty: return pd.DataFrame()
-    piv = (b.groupby(["bloque", "semana", "ejercicio"])["e1rm"].max()
+    # `plani` va en la clave: Hugo REINICIA la numeración de bloques con cada plan, así que
+    # sin él el bloque 3 de PLANI 2 se fusionaría con el bloque 3 de PLANI 1 y los e1RM de
+    # dos etapas distintas saldrían mezclados. Hoy no chocan (P1 usa 3/4, P2 va por el 1),
+    # pero es cuestión de tiempo. El panel de Fuerza ya etiqueta P{plani}B{bloque}S{semana}.
+    piv = (b.groupby(["plani", "bloque", "semana", "ejercicio"])["e1rm"].max()
              .reset_index().rename(columns={"e1rm": "mejor_e1rm"}))
     return piv
 
@@ -349,6 +390,26 @@ def consolidate(am, pm, peso, objetivo, sesion, duraciones):
     # delta AM->PM
     df["delta_am_pm"] = df["sensacion_global"] - df["sensacion_am"]
 
+    # sRPE por SERIES — la métrica de carga PRINCIPAL (ver CLAUDE.md). Se calcula aquí y en
+    # ningún otro sitio: hasta ahora el panel de Carga la recalculaba en TypeScript mientras
+    # la hoja guardaba otra fórmula con el mismo nombre (`sRPE` = rpd × duración), así que
+    # Jarvis —que lee la hoja— podía contradecir lo que Hugo veía en pantalla.
+    # Un fallo (0 repes) es esfuerzo máximo y fatiga mucho más que una serie normal, así que
+    # cuenta como una serie a RPE 10 por este factor. Si algún día dispara demasiado la
+    # carga, bajarlo a 2 — y solo aquí.
+    FACTOR_FALLO = 3
+    if "rpd_sesion" in df and "n_series_total" in df:
+        fallos = df["n_fallos_total"].fillna(0) if "n_fallos_total" in df else 0
+        completas = (df["n_series_total"] - fallos).clip(lower=0)
+        df["sRPE_series"] = (df["rpd_sesion"] * completas + fallos * 10 * FACTOR_FALLO).round(0)
+        # Ventana de 7 DÍAS NATURALES, no de 7 filas: `derived_diario` solo tiene los días
+        # con datos, así que contar filas metería en la ventana sesiones de hace semanas.
+        _idx = pd.to_datetime(df["fecha"], errors="coerce")
+        df["sRPE_series_7d"] = (df.set_index(_idx)["sRPE_series"]
+                                  .rolling("7D", min_periods=1).sum().values)
+
+    # sRPE por DURACIÓN (heredado). Depende de Intervals, que a veces no manda duración, así
+    # que es el flojo; se mantiene porque ACWR y el panel de Correlaciones aún tiran de él.
     # sRPE = RPD * duración (min)
     if "rpd_sesion" in df and "duracion_min" in df:
         df["sRPE"] = (df["rpd_sesion"] * df["duracion_min"]).round(0)

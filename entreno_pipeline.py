@@ -79,6 +79,14 @@ RPE_TABLE = {
 }
 RPE_KEYS=sorted(RPE_TABLE); BW=('plancha','abduc','retrac','dominada','fondo','hollow','gusano')
 
+# Ejercicios que NUNCA llevan carga. En ellos dos números son SERIES × REPES, no peso ×
+# repes: "2x5RIR2" en la rueda abdominal son 2 series de 5, no 2 kg. No vale con el flag
+# `bw` (peso corporal) para decidirlo, porque una dominada también es peso corporal y ahí
+# "5x3" SÍ son 5 kg lastrados. Por eso va por ejercicio concreto y no por categoría: hay
+# abdominales que sí llevan peso (el crunch en polea son 55 kg de verdad).
+# Se compara en minúsculas contra el nombre del plan de Drive, así que basta un fragmento.
+SIN_CARGA=('rueda abdominal','plancha','step down lateral','w slides')
+
 # Vocabulario controlado de zonas (mismo que el form AM) + sinónimos para normalizar texto libre.
 ZONE_KEYWORDS = {
     'Abdomen':['abdomen','abdominal','core'], 'Aductor':['aductor','adductor'],
@@ -233,7 +241,19 @@ def parse_segment(seg):
         a=int(m.group(1)); b=int(m.group(2)) if m.group(2) else None
         rir=round((a+b)/2,2) if b is not None else a
     if rir is not None and not (0 <= rir <= 10): rir=None   # a prueba de fallos
-    bad_int=bool(re.search(r'RIR(?!\s*\d)',s,re.I))
+    # Dos motivos distintos para quedarse sin intensidad, y NO se mezclan:
+    #   `@?` / `RIR?` -> Hugo no PUEDE valorar el esfuerzo (lesión, dolor, contra el
+    #     reloj). Es información sobre la sesión, no un error: flag `sin_intensidad`,
+    #     para poder contar estas series como señal de sesión comprometida.
+    #   `RIRmario` y demás -> basura de tecleo: flag `int_no_parseable`. Contarla como
+    #     señal daría falsos positivos, así que va aparte.
+    # En ningún caso se inventa un valor de esfuerzo.
+    # El `@?` además hay que borrarlo aquí igual que un `@7`: va pegado al número, así que
+    # si sobrevive, "115x1@?" deja el token "1@?" fuera de los números y la serie se lee
+    # como 115 REPES sin peso (kg, volumen y e1RM perdidos).
+    sin_int=bool(re.search(r'@\s*\?|RIR\s*\?',s,re.I))
+    bad_int=bool(re.search(r'RIR(?!\s*[\d?])',s,re.I))
+    s=re.sub(r'@\s*\?+',' ',s)
     s=re.sub(r'@[\d.]+(?:-[\d.]+)?',' ',s)
     s=re.sub(r'RIR\s*\d+(?:-\d+)?\+?',' ',s,flags=re.I)
     # rango de REPES (unilateral: 8 en un lado, 10 en el otro -> "8-10" -> media 9).
@@ -273,14 +293,28 @@ def parse_segment(seg):
         elif re.fullmatch(r'[\d.]+', tok):
             try: nums.append(float(tok))
             except: pass
+        elif re.fullmatch(r'\?+', tok): pass   # marcador de `RIR?`, ya está en el flag
         else: words.append(tok)
     if words: note.append(' '.join(words))
     return dict(raw=raw, nums=nums, rpe=corr if corr is not None else rpe, rir=rir,
-                bad_int=bad_int, banda=banda, carga=carga,
+                bad_int=bad_int, sin_int=sin_int, banda=banda, carga=carga,
                 metros=(int(metros.group(1)) if metros else None),
                 had_secs=had_secs, note=' | '.join(n for n in note if n))
 
-def interpret(nums, anchor, bw, banda, metros, carga=None):
+# Un segmento con un solo número son repes por convención ("1x12"). Pero cuando Hugo
+# apunta el peso y se deja las repes ("77.5x6@7.5 - 77.5@8"), ese número es un KG, y
+# guardarlo como repes mete basura en la tabla. Se distingue mirando las series hermanas
+# de la MISMA línea: si se parece a su peso, es un peso. Dos condiciones, y hacen falta
+# las dos:
+#   - TOL_KG_HERMANA: a cuánto puede estar del peso de una hermana (sube o baja algún kilo
+#     dentro del mismo ejercicio).
+#   - REPS_MAX_PLAUSIBLE: medido sobre el histórico del keep, las repes reales de Hugo
+#     nunca pasan de 20 (p99 = 16). Sin este tope, en un accesorio de 2 kg la ventana de
+#     ±5 se traga el rango de repeticiones y "6RIR0 - 2x5RIR2" convertiría 6 repes en 6 kg.
+TOL_KG_HERMANA = 5.0
+REPS_MAX_PLAUSIBLE = 20
+
+def interpret(nums, anchor, bw, banda, metros, carga=None, kgs_linea=(), sin_carga=False):
     numeric=[n for n in nums if isinstance(n,float)]; has_secs='SECS' in nums
     # Cargas que NO son kg (banda por color, discos/caja como dificultad): los números son
     # series y reps, nunca peso. La etiqueta ya va en la nota. Series se omite si es 1.
@@ -293,18 +327,39 @@ def interpret(nums, anchor, bw, banda, metros, carga=None):
         return 1,None,None,esp,'carga_rara'
     if metros is not None:
         # Farmer walks y demás por distancia: guarda series + PESO cargado + metros (en nota).
-        ns=numeric[0] if numeric else 1
-        kg=numeric[1] if len(numeric)>=2 else None
+        # Con UN solo número es el peso, no las series: "32.5x20m" son 32,5 kg cargados una
+        # vez, y leerlo como 32,5 SERIES infla el sRPE (RPE × nº de series) de toda la
+        # semana. La serie se omite cuando es 1, igual que en el resto de la notación.
+        if len(numeric)>=2: ns,kg=numeric[0],numeric[1]
+        else:               ns,kg=1,(numeric[0] if numeric else None)
         return ns,kg,None,'distancia','distancia_m'
     if has_secs:
-        if len(numeric)>=2: return numeric[0],None,numeric[1],'tempo',''
+        # La comilla ya ha marcado CUÁL es el número de segundos y lo ha sacado de la lista,
+        # así que los que quedan son la notación normal: 3 -> series × PESO × repes,
+        # 2 -> series × repes (en tempo el peso se omite si no lo hay). Antes se leían solo
+        # los dos primeros y el tercero se perdía: "2x4x12x2"" guardaba 2 series de 4 repes
+        # en vez de 2 series × 4 kg × 12 repes.
+        if len(numeric)>=3: return numeric[0],numeric[1],numeric[2],'tempo',''
+        if len(numeric)==2: return numeric[0],None,numeric[1],'tempo',''
         return (numeric[0] if numeric else 1),None,None,'isometrico',''
     # Convención de Hugo: 3 números = series × peso × reps; 2 números = peso × reps
     # (1 serie; el peso se escribe siempre, 0 incluido para peso corporal); 1 = solo reps.
     # `anchor`/`bw` ya no hacen falta: la notación es inequívoca.
     if len(numeric)==3: return numeric[0],numeric[1],numeric[2],None,''
-    if len(numeric)==2: return 1,numeric[0],numeric[1],None,''
-    if len(numeric)==1: return 1,None,numeric[0],None,'incompleto'
+    # En un ejercicio sin carga posible el peso no existe, así que los dos números solo
+    # pueden ser series y repes. Con tres (3x0x4) Hugo ya escribe el 0, y ese caso cae
+    # arriba sin tocar nada. El "0x0" queda FUERA: no son 0 series de 0 repes, es su marca
+    # de serie fallada o no hecha, y leerlo como 0 series la borraría de la carga (un fallo
+    # pesa 10 × FACTOR_FALLO en el sRPE).
+    if len(numeric)==2:
+        if sin_carga and numeric[0] >= 1 and numeric[1] >= 1:
+            return numeric[0],None,numeric[1],None,''
+        return 1,numeric[0],numeric[1],None,''
+    if len(numeric)==1:
+        n=numeric[0]
+        if n>REPS_MAX_PLAUSIBLE and any(abs(n-k)<=TOL_KG_HERMANA for k in kgs_linea):
+            return 1,n,None,None,'incompleto'    # peso sin repes
+        return 1,None,n,None,'incompleto'        # repes sin peso
     return None,None,None,None,'sin_datos'
 
 def parse_keep(text, lookups):
@@ -372,9 +427,24 @@ def parse_keep(text, lookups):
         # dígitos sin espacios (RIR8-10, @7-8) NO separa: es un rango.
         segs=[parse_segment(t) for t in re.split(r'\s+-\s*|\s*-\s+', line)]; segs=[p for p in segs if p]
         anchor=next((p['nums'][1] for p in segs if len([n for n in p['nums'] if isinstance(n,float)])==3), None)
+        # Pesos de las demás series de esta línea (mismo ejercicio), para resolver los
+        # segmentos con un solo número. Se leen de los `nums` en crudo siguiendo la
+        # convención (3 números -> series×PESO×repes; 2 -> PESO×repes) y se excluyen banda,
+        # discos, distancia y tempo, donde los números no son kg.
+        # En un ejercicio sin carga posible los números nunca son kg, así que no hay pesos
+        # hermanos que ofrecer: la lista se queda vacía y un número suelto sigue siendo repes.
+        sin_carga=bool(name) and any(k in str(name).lower() for k in SIN_CARGA)
+        kgs_linea=[]
+        for p in (() if sin_carga else segs):
+            if p['banda'] or p.get('carga') or p['metros'] is not None or p['had_secs']: continue
+            nn=[n for n in p['nums'] if isinstance(n,float)]
+            if len(nn)==3: kgs_linea.append(nn[1])
+            elif len(nn)==2: kgs_linea.append(nn[0])
         for p in segs:
-            ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'],p.get('carga'))
+            ns,kg,reps,sp,flag=interpret(p['nums'],anchor,bw,p['banda'],p['metros'],
+                                         p.get('carga'),kgs_linea,sin_carga)
             rpe,rir=p['rpe'],p['rir']
+            if p['sin_int']: flag=(flag+' sin_intensidad').strip()
             if p['bad_int']: flag=(flag+' int_no_parseable').strip()
             if not has_excel: flag=(flag+' sin_excel').strip()
             # Intento a 0 reps: marca de fallo (el frontend lo pinta distinto y no es récord).
@@ -383,7 +453,12 @@ def parse_keep(text, lookups):
             # mete en la carga (sRPE) lo aplica el frontend con su propio factor.
             if reps == 0:
                 flag=(flag+' fallo').strip(); rpe,rir=10.0,None
-            est,met=e1rm(kg,reps,rpe,rir) if (kg is not None and sp is None) else (None,None)
+            # Serie `@?`/`RIR?`: el peso y las repes son reales, así que suman volumen y
+            # fatiga, pero el e1RM NO lo es —depende del esfuerzo, y justo eso es lo que
+            # Hugo no pudo valorar—. Sin e1RM no compite por un PR, que es lo que importa:
+            # un récord no puede salir de una serie que él marcó porque algo iba mal.
+            calcula_e1rm = kg is not None and sp is None and not p['sin_int']
+            est,met=e1rm(kg,reps,rpe,rir) if calcula_e1rm else (None,None)
             vol=round(ns*kg*reps,1) if (kg is not None and reps is not None and ns is not None) else None
             rows.append(dict(plani=plani,bloque=bloque,semana=week,dia=dia,fecha=cur_fecha,slot=slot,
                 ejercicio=name,tipo=block,especial=sp,token=p['raw'],n_series=ns,kg=kg,reps=reps,

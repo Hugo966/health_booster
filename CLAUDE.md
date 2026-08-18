@@ -60,6 +60,23 @@ canal de sincronización, así que:
   `P{plani}B{bloque}S{semana}` (P2B1S1) ordenado **por fecha**, no por nº de bloque. Aún
   pendiente: `rm1` agrupa por (bloque, semana) sin plani, así que ahí sí colisionarían dos
   planes con el mismo bloque; hoy no pasa (P1 usa 3/4, P2 usa 1).
+- **El dolor de una sesión vive en DOS columnas, y la del keep es solo un borrador.**
+  Hugo escribe `Dolores sesión: ...` en el keep al acabar de entrenar y **más tarde copia
+  ese mismo texto** al campo "dolor de entreno" del **formulario PM**. De ahí salen
+  `dolor_sesion_keep` (keep, vía `parse_keep`) y `dolor_sesion_nota` (form) con el mismo
+  párrafo. La fuente buena es **la del formulario**; la del keep solo cubre la ventana
+  entre entrenar y rellenarlo. Nunca pasarle las dos a Jarvis a la vez: vería el dolor
+  duplicado y lo leería como dos episodios. `briefing.py` incluye el `_keep` solo si ese
+  día falta el del form; cualquier consumidor nuevo (panel, herramienta de chat,
+  anomalías) debe hacer lo mismo.
+- **`@?` y `RIR?` en el keep no son errores de tecleo.** Significan que Hugo **no pudo
+  valorar el esfuerzo** de esa serie: lesión, dolor o ir contra el reloj. El peso y las
+  repes son reales (suman volumen y fatiga), pero el esfuerzo no se conoce, así que la
+  serie **no genera e1RM** y por tanto no puede optar a un PR. Llevan flag propio
+  `sin_intensidad`, distinto de `int_no_parseable` (esa sí es basura: `RIRmario`, un `RIR`
+  sin número). `0x0` es una serie fallada o no hecha -> flag `fallo`. Los tres son la
+  única señal automática de que una sesión se torció, y se agregan por sesión en
+  `n_fallos_total` / `n_sin_intensidad_total`.
 - **Intervals llega con retraso, a veces de días, y NO es un fallo.** Si la API devuelve
   filas con los campos a `None`, es que el reloj aún no ha subido; el campo `updated` dice
   cuándo llegó de verdad. Reejecutar el pipeline más tarde lo alinea. No diagnostiques
