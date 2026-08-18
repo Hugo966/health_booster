@@ -165,6 +165,58 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 
 ## 6. Cambios de esta sesión
 
+### Sesión 2026-08-18 (una sesión mala, legible: parser + señales a Jarvis)
+Salió de una pregunta de Hugo: "¿pillaría Jarvis una sesión de mierda?". No la pillaba, y
+buscándolo aparecieron 8 bugs, 5 de ellos corrompiendo datos en silencio.
+
+1. **`@?` y `RIR?` significan "no pude valorar el esfuerzo"** (dolor, lesión, contra el
+   reloj), NO son errores de tecleo. Llevan flag propio **`sin_intensidad`**, separado de
+   `int_no_parseable` (esa sí es basura: `RIRmario`, un `RIR` sin número): mezclarlos deja
+   los dos inservibles como señal. Esas series **suman volumen pero no generan e1RM**, así
+   que no pueden optar a un PR — un récord no puede salir de una serie marcada justo porque
+   algo iba mal.
+   Además el `@?` **perdía datos**: el borrado de RPE era `@[\d.]+` y no casaba `@?`, así que
+   `115x1@?` dejaba el token `1@?` fuera del núcleo numérico y la serie se guardaba como
+   **115 REPES sin peso** (kg, volumen y e1RM perdidos).
+2. **Cuatro bugs más de parseo**, todos la misma forma —un número leído como otra magnitud—,
+   encontrados auditando el keep entero en busca de valores imposibles:
+   - Farmer walk sin nº de series (`32.5x20m`) leía el **peso como 32,5 SERIES**: una sesión
+     con 120 series en vez de 26, inflando el sRPE de esa semana entera.
+   - Peso sin repes (`77.5@8`) se guardaba como 77,5 repes. Ahora se resuelve contra los kg
+     de las series hermanas de la misma línea (±5 kg) **y** con techo de repes plausibles
+     (`REPS_MAX_PLAUSIBLE = 20`, medido: p99 = 16): sin ese techo, en un accesorio de 2 kg la
+     ventana de 5 kg convertiría 6 repes en 6 kg.
+   - **Ejercicios que nunca llevan carga** escriben series × repes, no peso × repes. No se
+     puede decidir por los números ni por "es peso corporal" —una dominada también lo es y
+     ahí `5x3` sí son 5 kg lastrados—, así que va por **nombre de ejercicio**:
+     `entreno_pipeline.SIN_CARGA`. Hoy: rueda abdominal, planchas, step down lateral,
+     W slides. **El `0x0` queda fuera de la regla**: es la marca de serie fallada, y leerlo
+     como "0 series" la borraría de la carga.
+   - Tempo con tres números (`2x4x12x2"`) descartaba el tercero. La comilla ya identifica
+     cuál es el número de segundos, así que los que quedan siguen la convención normal.
+3. **El sRPE se calcula UNA sola vez**, en `status_pipeline` → `derived_diario.sRPE_series` +
+   `sRPE_series_7d` (ventana de 7 días naturales). Antes `LoadPanel.tsx` lo recalculaba en
+   TypeScript mientras la hoja guardaba otra fórmula con el mismo nombre (`sRPE` = rpd ×
+   duración), así que **Jarvis podía contradecir la pantalla**. El panel ahora **consume** la
+   columna; el `FACTOR_FALLO = 3` que queda en el TSX es solo para el texto explicativo.
+   **No reintroducir la fórmula en el frontend.**
+4. **Jarvis ya ve cómo fue la sesión**, no solo cuándo: la línea del último entreno lleva
+   fallos y series sin valorar (`n_fallos_total`, `n_sin_intensidad_total`), y el bloque de
+   notas incluye el dolor. Ojo con el dolor: está **duplicado a propósito** y no se pasan las
+   dos fuentes a la vez (ver §11).
+5. **`drive_lookups` fallaba en silencio.** Su `except: continue` no distinguía "pestaña de
+   gráfico sin columna A" de "la API ha fallado". Medido: **2 de cada 7 lecturas devolvían el
+   plan con semanas enteras ausentes**, y esas sesiones se habrían escrito en la hoja sin
+   nombre de ejercicio, sin `tipo` y fuera de `vol_basicos`/`rm1`. Ahora reintenta 5 veces con
+   espera creciente (3-6-12-24 s) y **aborta en voz alta** si lo perdido es una pestaña de
+   plan, en vez de escribir datos degradados.
+6. **`rm1` ya lleva `plani` en la clave** del groupby: Hugo reinicia la numeración de bloques
+   con cada plan, así que el bloque 3 de PLANI 2 se habría fusionado con el de PLANI 1. Nota:
+   **hoy `rm1` no lo consume nadie** (el panel de Fuerza calcula desde `entreno_sets`).
+7. **Columnas nuevas en la hoja**: `derived_diario` gana `sRPE_series`, `sRPE_series_7d` y
+   `n_sin_intensidad_total`; `entreno_sesion` gana `n_sin_intensidad_total`. `write_tab`
+   escribe el df tal cual, así que entran solas.
+
 ### Sesión 2026-08-15 (voz + bugs de conversación)
 1. **Voz resuelta con ElevenLabs v3** (ver §9.4 para el detalle completo): nuevo servicio
    `dashboard/tts/servidor_voz.py` con respaldo XTTS perezoso. Qwen3-TTS descartado por
@@ -292,6 +344,19 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
   aparece. Mientras, la latencia se estima como (tiempo en cama − dormido).
 - **Datos corruptos de RPE**: había un caso (rpe=39.75) por un token mal separado; corregido en
   el parser. Vigilar tokens raros nuevos en `keep.txt`.
+- **El briefing y el panel de Carga dan cifras de sRPE distintas, y las dos son correctas.**
+  La fórmula es la misma columna; lo que cambia es la fecha de referencia: el briefing ancla
+  la ventana de 7 días a **hoy** (la carga aguda decae con el descanso, que es lo correcto) y
+  el panel a la **última sesión**. Tras unos días de descanso difieren mucho. **No igualarlos**
+  — se decidió el 2026-08-18. Lo que engañaba de verdad ya tiene aviso: ver el punto siguiente.
+- **Sin formulario PM no hay carga.** El sRPE necesita `rpd_sesion`, que sale del forms PM, y
+  Hugo tarda días en rellenarlo. Mientras falta, una sesión reciente y dura **no entra en la
+  ventana** y el parte diría "carga baja" el día después de ella. `briefing.py` avisa
+  explícitamente de los entrenos de los últimos 7 días sin RPE de sesión para que Jarvis no
+  concluya lo contrario de lo que pasa.
+- **12 filas de PLANI 1 sin cruzar con el plan** (`SEM2 - DIA4(3)`): Hugo escribió día 4
+  anotando entre paréntesis que era el 3, y el parser no entiende esa notación. Decidido
+  dejarlo como histórico (2026-08-18).
 
 ## 9. Tareas pendientes (priorizadas)
 _Fase 1 completa: los 7 paneles revisados y sin pendientes conocidos._
@@ -551,6 +616,14 @@ Resueltas en esta tanda:
    - Añadir `avgSleepingHR` (FC durmiendo, de Intervals) al dashboard.
    - Añadir al formulario AM: nº de despertares y latencia (minutos en dormirse) explícitos.
 
+### Deuda técnica abierta (revisada 2026-08-18)
+- **Correlaciones y ACWR siguen sobre el sRPE por DURACIÓN** (`derived_diario.sRPE` = rpd ×
+  duracion_min), que depende de Intervals y es frágil (la duración falta o llega a 0 desde
+  Zepp; de ahí `DURACION_DEFECTO_MIN`). Lo que bloqueaba el cambio **ya está hecho**: el sRPE
+  por series existe como columna (`sRPE_series`, `sRPE_series_7d`). Solo falta apuntar el panel
+  de Correlaciones y el ACWR a la columna buena.
+- **Detección de anomalías de sesión**: ver §11.
+
 ## 10. Convenciones y patrones
 - **Idioma**: todo en español — nombres de variables, comentarios, UI. Comentarios explican
   el *porqué*, no el *qué*, con tono cercano.
@@ -580,5 +653,25 @@ Resueltas en esta tanda:
 - Intervals no iba "desactualizado" por bug de `run.sh`: la hoja estaba vieja; los datos existían.
 - El clic-en-línea para drill-down se verificó funcionando SOLO tras acotar el selector CDP al
   overlay `.fixed` (antes cogía los círculos del panel compacto de fondo).
+- **El dolor de una sesión está DUPLICADO a propósito, y no se pasan las dos fuentes a la vez.**
+  Hugo escribe `Dolores sesión: ...` en el keep al acabar de entrenar y **más tarde copia ese
+  mismo texto** al campo "dolor de entreno" del formulario PM. De ahí salen dos columnas con el
+  mismo párrafo: `dolor_sesion_keep` (keep, vía `parse_keep`) y `dolor_sesion_nota` (forms PM).
+  **La buena es la del formulario**; la del keep solo cubre la ventana entre entrenar y
+  rellenarlo. Si se le pasan las dos a Jarvis, ve el dolor duplicado y lo lee como dos
+  episodios distintos. `briefing.py` incluye el `_keep` **solo si ese día falta el del form**;
+  cualquier consumidor nuevo (panel, herramienta de chat, detección de anomalías) debe hacer lo
+  mismo.
+- **La notación del keep no es uniforme y el parser depende del ejercicio.** Dos números pueden
+  ser peso × repes (lo normal, y en dominadas lastradas `5x3` son 5 kg) o series × repes (en los
+  que nunca llevan carga). Al añadir un ejercicio nuevo de ese tipo, meterlo en
+  `entreno_pipeline.SIN_CARGA` o sus series se guardarán como kilos. Ojo: hay abdominales que
+  SÍ llevan peso (el crunch en polea son 55 kg reales), así que la regla no puede ir por
+  categoría.
+- **La detección de anomalías de sesión sigue SIN hacer.** Los flags (`fallo`,
+  `sin_intensidad`) ya llegan al briefing, pero nadie compara una sesión contra la línea base
+  de Hugo. Era la idea original del 2026-08-18 y quedó pendiente de decidir el umbral (se
+  propuso: volumen o series >40% por debajo de la mediana de 4 semanas, o cualquier flag).
 - Memoria persistente del proyecto (en `~/.claude/.../memory/`): variantes distintas, estado
-  Fase 1, plan de entreno en Drive ("Peaking SN" = bloque 4), sueño cama≠dormido, backlog post-v1.
+  Fase 1, plan de entreno en Drive ("Peaking SN" = bloque 4), sueño cama≠dormido, backlog post-v1,
+  pendientes técnicos (Correlaciones y ACWR aún con el sRPE por duración).
