@@ -13,6 +13,7 @@ import type { Accion } from "./chat";
 // valida contra esta lista para no navegar a un hash inventado.
 const PANELES = new Set([
   "readiness", "hrv", "sueno", "carga", "fuerza", "peso", "correlaciones",
+  "formularios",
 ]);
 
 export type ReproductorAPI = {

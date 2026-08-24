@@ -10,6 +10,7 @@ import WeightTrend, { WeightExpanded } from "./components/WeightTrend";
 import CorrelationHeatmap, { CorrelationExpanded } from "./components/CorrelationHeatmap";
 import ChatPanel, { ChatExpanded } from "./components/ChatPanel";
 import NotasPanel, { NotasExpanded } from "./components/NotasPanel";
+import FormulariosPanel, { FormulariosExpanded } from "./components/FormulariosPanel";
 import Expanded from "./components/Expanded";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
@@ -18,7 +19,7 @@ import { useVoz } from "./lib/voz";
 import { reproducir } from "./lib/acciones";
 import { anim, theme } from "./lib/theme";
 
-type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "notas" | "chat";
+type Widget = "readiness" | "hrv" | "sueno" | "carga" | "fuerza" | "peso" | "correlaciones" | "notas" | "formularios" | "chat";
 
 const TITULOS: Record<Widget, string> = {
   readiness: "Readiness",
@@ -29,6 +30,7 @@ const TITULOS: Record<Widget, string> = {
   peso: "Peso",
   correlaciones: "Correlaciones",
   notas: "Notas",
+  formularios: "Formularios",
   chat: "Jarvis",
 };
 
@@ -72,6 +74,9 @@ export default function App() {
   const [abierto, setAbierto] = useWidgetEnHash();
   // Rectángulo del panel pinchado, para que el overlay crezca desde ahí.
   const [origen, setOrigen] = useState<DOMRect | null>(null);
+  // El rango global manda también en Formularios. "TODO" (0) se topa en 90:
+  // una tira de 400 columnas no se lee, y los huecos viejos ya no se arreglan.
+  const diasRango = range === 0 ? 90 : range;
   const abrir = (w: Widget) => (o?: DOMRect) => { setOrigen(o ?? null); setAbierto(w); };
   const [objetivo, setObjetivo] = useObjetivoPeso();
   // El hilo del chat vive aquí para que el compacto y el ampliado lo compartan.
@@ -271,9 +276,15 @@ export default function App() {
           {/* Notas: texto libre de los formularios, a lo ancho (puede ser largo). */}
           <NotasPanel rows={data.derived_diario} onExpand={abrir("notas")} />
 
+
           {/* El chat de Jarvis, a lo ancho: es la pieza central de la Fase 2, no
               una columna más. Compacto aquí; conversación entera al ampliar. */}
           <ChatPanel chat={chat} voz={voz} onExpand={abrir("chat")} />
+
+          {/* Formularios: el semáforo de lo que falta por rellenar. Se pide aparte al
+              backend (lee las pestañas origen), no sale de `data`: derived_diario no
+              tiene fila para los días vacíos, que son justo los que hay que detectar. */}
+          <FormulariosPanel dias={diasRango} onExpand={abrir("formularios")} />
         </div>
       )}
 
@@ -290,7 +301,11 @@ export default function App() {
           title={TITULOS[abierto]}
           onClose={cerrar}
           origin={origen}
-          actions={<RangeSelector value={range} onChange={setRange} />}
+          // Formularios no dibuja una serie temporal: se rellena un día concreto, y ese
+          // se elige con su propio selector de fecha. El rango global aquí solo confunde.
+          actions={abierto === "formularios"
+            ? undefined
+            : <RangeSelector value={range} onChange={setRange} />}
           sinCaja={abierto === "chat"}
         >
           {abierto === "readiness" && <ReadinessExpanded series={readinessRango} />}
@@ -303,6 +318,7 @@ export default function App() {
           )}
           {abierto === "correlaciones" && <CorrelationExpanded rows={dd} />}
           {abierto === "notas" && <NotasExpanded rows={data.derived_diario} />}
+          {abierto === "formularios" && <FormulariosExpanded dias={diasRango} />}
           {abierto === "chat" && <ChatExpanded chat={chat} voz={voz} />}
         </Expanded>
       )}

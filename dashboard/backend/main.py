@@ -1,18 +1,21 @@
-"""FastAPI — /data sirve la hoja en JSON (solo lectura) y /chat habla con Jarvis."""
+"""FastAPI — /data sirve la hoja en JSON, /formulario escribe en ella y /chat habla con Jarvis."""
 import json
 import os
 import queue
 import threading
 import time
 
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import chat as chat_mod
+import formularios
+import huecos
 import memoria
 import proveedor
+import sheets
 from sheets import fetch_all
 
 
@@ -22,15 +25,24 @@ def _mantener_datos_calientes():
     siguiente mensaje espera ~6s a Google. Así nunca se enfría."""
     while True:
         try:
-            fetch_all()
+            # ttl=0 fuerza la relectura. Con el TTL por defecto (300s) esta llamada daba
+            # acierto de caché a los 240s y no refrescaba nada: el refresco real caía cada
+            # ~480s y la caché podía llegar con 8 minutos de retraso.
+            fetch_all(ttl=0)
         except Exception:
             pass
         time.sleep(240)
 
 app = FastAPI(title="Health Booster — Dashboard API")
+# Antes esto era allow_origins=["*"], que valía cuando la API solo leía. Ahora hay
+# endpoints que escriben en la hoja, así que una web cualquiera abierta en el navegador
+# de Hugo podría hacerles POST. Se limita a orígenes locales y de LAN privada: sigue
+# valiendo para el dashboard, para abrirlo desde el móvil por wifi y para el escuchador.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\]|"
+                       r"192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+                       r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -51,6 +63,42 @@ def _arranque():
 @app.get("/data")
 def data():
     return fetch_all()
+
+
+# --- formularios: rellenar y corregir desde la app ---------------------------
+# Hasta ahora los datos solo entraban por Google Forms. El cuerpo es plano
+# ({"fecha": ..., campos...}) y todos los campos son opcionales salvo la fecha, porque la
+# voz manda trozos sueltos. Los rangos NO se declaran aquí: viven en formularios.ESQUEMA,
+# que es la única fuente, y de ahí los saca también la UI.
+
+@app.get("/formularios/esquema")
+def formularios_esquema():
+    return formularios.esquema_publico()
+
+
+@app.get("/formularios/estado")
+def formularios_estado(dias: int = 14):
+    return huecos.estado(dias=dias)
+
+
+@app.get("/formulario/{tipo}")
+def formulario_leer(tipo: str, fecha: str):
+    if tipo not in formularios.ESQUEMA:
+        raise HTTPException(404, f"No existe el formulario '{tipo}'.")
+    return {"tipo": tipo, "fecha": fecha, "valores": formularios.leer(tipo, fecha)}
+
+
+@app.post("/formulario/{tipo}")
+def formulario_guardar(tipo: str, datos: dict = Body(...)):
+    fecha = str(datos.get("fecha", "")).strip()
+    valores = {k: v for k, v in datos.items() if k != "fecha"}
+    try:
+        res = formularios.guardar(tipo, fecha, valores)
+    except ValueError as e:
+        # 422 con el mensaje en español: se lo va a leer Jarvis para volver a preguntar.
+        raise HTTPException(422, str(e))
+    res["valores"] = formularios.leer(tipo, fecha)
+    return res
 
 
 class Mensaje(BaseModel):

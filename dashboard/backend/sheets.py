@@ -17,7 +17,12 @@ ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env")
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-TABS = ["derived_diario", "entreno_sesion", "rm1", "peso", "entreno_sets"]
+# `wellness_am` y `wellness_pm` son las pestañas ORIGEN de los formularios (las llenan
+# los Google Forms y ahora también la app). Se leen para el editor y el semáforo de
+# huecos: `derived_diario` no sirve para eso porque solo lo regenera el pipeline y no
+# tiene fila para los días vacíos, que son justo los que hay que detectar.
+TABS = ["derived_diario", "entreno_sesion", "rm1", "peso", "entreno_sets",
+        "wellness_am", "wellness_pm"]
 
 _client = None
 _cache = {"ts": 0.0, "data": None}
@@ -54,3 +59,12 @@ def fetch_all(ttl: int = 300):
 
     _cache.update(ts=now, data=data)
     return data
+
+
+def invalidar() -> None:
+    """Fuerza que la próxima lectura vaya a Google en vez de a la caché.
+
+    Se llama tras escribir un formulario: si no, el semáforo y el editor seguirían
+    viendo el estado anterior hasta 300s, y parecería que el guardado no ha hecho nada.
+    """
+    _cache["ts"] = 0.0

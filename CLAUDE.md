@@ -81,6 +81,37 @@ canal de sincronización, así que:
   filas con los campos a `None`, es que el reloj aún no ha subido; el campo `updated` dice
   cuándo llegó de verdad. Reejecutar el pipeline más tarde lo alinea. No diagnostiques
   "sincronización rota" a partir de una consulta puntual — pasó el 2026-07-20 y era falso.
+- **Las escalas de los formularios NO son 1-10.** Lo dice la pestaña "Léeme" de la hoja:
+  bipolares (sueño, sensación, ánimo, energía) **1-9** con 5=normal y 9=mejor; unipolares
+  (estrés, molestias) **0-9** con 0=nada; alcohol 0-27; `rpd_sesion` 0-10. `readiness`
+  divide entre 9, así que un 10 colado en una bipolar da readiness > 100 sin avisar. La
+  fuente única es `dashboard/backend/formularios.ESQUEMA`: la UI y las herramientas de
+  Jarvis sacan de ahí sus rangos, no los declaran por su cuenta.
+- **El backend YA escribe en `wellness_am` / `wellness_pm` / `peso`** (`formularios.py`),
+  aunque el docstring de `status_pipeline.py` diga "NUNCA toca": eso sigue siendo cierto
+  *para el pipeline*. La escritura es un **upsert por fecha** —Hugo corrige lo que ya
+  metió— y edita la ÚLTIMA fila que coincida, que es la que gana en `consolidate()`.
+  Ya hay fechas duplicadas de antes (`wellness_am` 2026-06-25 y 2026-08-04, `peso`
+  2026-08-11), así que esa regla no es teórica.
+- **En la hoja, `fecha` y las horas son valores numéricos, no texto** (46258 = 2026-08-24,
+  0.9722 = 23:20): se ven bien por el formato de la columna. Por eso se escriben con
+  `USER_ENTERED`. El texto libre va aparte con `RAW`, o una nota que empiece por `=` se
+  convertiría en fórmula.
+- **Los huecos se detectan contra las pestañas ORIGEN, nunca contra `derived_diario`**
+  (`huecos.py`): esa tabla solo la regenera el pipeline y no tiene fila para los días
+  vacíos, que son justo los que hay que encontrar. Por leer de `derived_diario`,
+  `briefing.py` reclamaba RPEs que Hugo ya había rellenado.
+- **`rpd_sesion` del form PM es la señal fiable de "ese día entrenó".** Hugo lo rellena
+  cuando ha entrenado y lo deja vacío cuando no, así que no depende de que haya volcado el
+  keep ni de en qué máquina esté. Comparado con `entreno_sesion` (que sí sale del keep)
+  da los días que le falta escribir. Verificado el 2026-08-24: los 33 días con RPE puesto
+  estaban todos en el keep, y ningún día del keep posterior a junio se quedaba sin RPE.
+- **`entreno_sesion` (hoja) y `keep.txt` (local) se desincronizan entre las dos máquinas.**
+  El keep no va por git: si se vuelca en un equipo y se corre el pipeline, la hoja se
+  adelanta y el keep del otro equipo se queda atrás. Pasó el 2026-08-24: la hoja tenía
+  sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
+  entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
+  entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
 - **Alturas de panel en px fijos, nunca en %.** `ResponsiveContainer height="100%"` dentro
   de un `flex-1` sin altura definida provoca un bucle de ResizeObserver.
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.

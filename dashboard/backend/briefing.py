@@ -192,7 +192,7 @@ def generar() -> str:
     partes.append(_linea("Sueño", sue, " h", extra))
 
     cal = _ultimo(dd, "sueno_calidad")
-    partes.append(_linea("Calidad de sueño (percibida 1-10)", cal))
+    partes.append(_linea("Calidad de sueño (percibida, 1-9: 5 normal, 9 mejor)", cal))
 
     # Peso: se coge el MÁS RECIENTE de las dos fuentes, no el de derived_diario a secas.
     # La tabla `peso` se alimenta aparte y suele ir por delante: si el pipeline lleva días
@@ -233,27 +233,51 @@ def generar() -> str:
     # sesión del formulario PM, y ese formulario puede tardar días en llegar: mientras tanto
     # una sesión dura y reciente no entra en la ventana, y el parte dice "carga baja" justo
     # el día después de ella. Sin este aviso Jarvis concluye lo contrario de lo que pasa.
-    sin_rpe = []
-    for fila_s in data.get("entreno_sesion", []):
-        f = str(fila_s.get("fecha", ""))
-        if not f or _dias_desde(f) > VENTANA_CARGA_D:
-            continue
-        fila_d = next((x for x in dd if str(x.get("fecha")) == f), None)
-        if fila_d is None or _num(fila_d.get("sRPE_series")) is None:
-            sin_rpe.append(f)
+    # Entrenos sin RPE de sesión. Se pregunta a `huecos`, que lee la pestaña ORIGEN
+    # (`wellness_pm`), y NO a derived_diario: esa columna solo se rellena cuando corre el
+    # pipeline, así que un RPE puesto después de la última pasada se veía como ausente y
+    # Jarvis reclamaba un formulario que Hugo ya había rellenado.
+    try:
+        import huecos
+        sin_rpe = huecos.estado(dias=VENTANA_CARGA_D)["fuentes"]["rpe"]["faltan"]
+    except Exception:
+        sin_rpe = []
     if sin_rpe:
         partes.append(
             f"  AVISO: esa carga NO incluye {len(sin_rpe)} entreno(s) de los últimos "
-            f"{VENTANA_CARGA_D} días ({', '.join(sorted(sin_rpe))}): les falta el RPE de "
+            f"{VENTANA_CARGA_D} días ({', '.join(sin_rpe)}): les falta el RPE de "
             "sesión porque el formulario PM está sin rellenar. La carga real es MAYOR que "
-            "ese número, así que no concluyas que va descargado; si viene a cuento, "
-            "recuérdale que rellene el PM."
+            "ese número, así que no concluyas que va descargado. Puedes rellenárselo tú "
+            "con `guardar_pm` si te dice qué tal fue la sesión."
         )
 
+    # Formularios pendientes. Se calcula contra las pestañas ORIGEN (huecos.estado), no
+    # contra derived_diario: un día sin ningún dato no tiene fila ahí, así que los huecos
+    # de verdad serían invisibles.
+    try:
+        import huecos
+        est = huecos.estado(dias=7)
+        pend = []
+        for clave in ("am", "pm"):
+            f = est["fuentes"][clave]
+            if f["faltan"]:
+                pend.append(f"{f['etiqueta']}: {', '.join(f['faltan'])}")
+        if est["fuentes"]["peso"]["estado"] == "falta":
+            pend.append(f"Peso: {est['fuentes']['peso']['detalle'].lower()}")
+        if pend:
+            partes.append("")
+            partes.append("LE FALTAN FORMULARIOS POR RELLENAR:")
+            partes += [f"- {t}" for t in pend]
+            partes.append("  Puedes rellenárselos tú si te los cuenta (guardar_am / "
+                          "guardar_pm / guardar_peso). Suéltalo cuando venga a cuento, "
+                          "una vez y sin dar la brasa.")
+    except Exception:
+        pass  # que un fallo leyendo huecos no deje a Jarvis sin parte de estado
+
     mol = _ultimo(dd, "molestias_nivel")
-    partes.append(_linea("Molestias (1-10)", mol))
+    partes.append(_linea("Molestias (0-9: 0 nada, 9 máximo)", mol))
     ene = _ultimo(dd, "energia")
-    partes.append(_linea("Energía (1-10)", ene))
+    partes.append(_linea("Energía (1-9: 5 normal, 9 mejor)", ene))
 
     # Momento del plan: de dónde viene y dónde está
     ses = [r for r in data.get("entreno_sesion", []) if r.get("bloque") not in ("", None)]

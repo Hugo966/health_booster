@@ -276,6 +276,25 @@ class ProveedorFalso:
         if ultimo.startswith("[resultado de"):
             return Respuesta(texto="Ya lo tengo delante. Pinta bien.")
 
+        # Formularios: permite probar el circuito de escritura entero (herramienta ->
+        # upsert -> resultado inyectado en el hilo) sin modelo ni API key.
+        m = re.search(r"(?:dormido|sue[ñn]o).{0,20}?\b([0-9])\b", ultimo)
+        if m:
+            return Respuesta(texto="Apuntado.", llamadas=[Llamada(
+                nombre="guardar_am", args={"sueno_calidad": int(m.group(1))})])
+        m = re.search(r"(?:pesado|peso|kilos).{0,20}?\b(\d{2,3}[.,]?\d*)\b", ultimo)
+        if m:
+            return Respuesta(texto="Anotado el peso.", llamadas=[Llamada(
+                nombre="guardar_peso", args={"peso_kg": float(m.group(1).replace(",", "."))})])
+        if "sesi" in ultimo or "rpe" in ultimo:
+            m = re.search(r"\b(\d{1,2}(?:[.,]\d)?)\b", ultimo)
+            if m:
+                return Respuesta(texto="Vale, lo guardo.", llamadas=[Llamada(
+                    nombre="guardar_pm", args={"rpd_sesion": float(m.group(1).replace(",", "."))})])
+        if "falta" in ultimo or "formulario" in ultimo:
+            return Respuesta(texto="Miro qué te falta.",
+                             llamadas=[Llamada(nombre="estado_formularios", args={})])
+
         for panel, palabras in [
             ("sueno", ("sueño", "sueno", "dormi", "dormí")),
             ("carga", ("carga", "volumen", "srpe")),

@@ -165,6 +165,51 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 
 ## 6. Cambios de esta sesión
 
+### Sesión 2026-08-24 (formularios propios: API de escritura, semáforo y relleno por voz)
+Primer camino de ESCRITURA del proyecto. Hasta ahora los datos diarios solo entraban por
+Google Forms: si a Hugo se le olvidaba un día nadie se lo decía, y el dato se perdía.
+Ahora se pueden rellenar **y corregir** desde la app, hablando con Jarvis, y hay un
+semáforo de lo que falta. Los Google Forms siguen vivos y siguen siendo la vía principal.
+
+1. **`dashboard/backend/formularios.py` (nuevo)** — `ESQUEMA` declara los tres formularios
+   con sus campos y rangos, y es la **fuente única**: la UI (`/formularios/esquema`), la
+   validación y las descripciones de las herramientas salen de ahí. `guardar()` hace
+   **upsert por fecha**, actualizando solo las celdas de los campos recibidos, para que
+   una corrección parcial por voz no borre lo que ya había. NO usa `write_tab` del
+   pipeline (es clear+reescritura: sobre `wellness_am` sería destructivo).
+2. **Dos cosas de la hoja que costó descubrir y condicionan la escritura**: las columnas de
+   fecha y hora guardan **valores numéricos**, no texto → `USER_ENTERED`; y el texto libre
+   necesita `RAW` o un `=` inicial se vuelve fórmula. Van en dos llamadas separadas.
+   Además **ya había fechas duplicadas** en la hoja, así que el upsert edita la ÚLTIMA
+   coincidencia (la que gana en `consolidate()`) y lo dice en `avisos`.
+3. **`dashboard/backend/huecos.py` (nuevo)** — el semáforo, contra un calendario y leyendo
+   las pestañas ORIGEN. Vigila form AM, form PM, peso (10 días de tolerancia: es semanal),
+   RPE de sesión y frescura del keep. Tres estados: `ok` / `pendiente` / `falta`, porque
+   con dos estaría en rojo todas las mañanas.
+4. **`briefing.py` reclamaba RPEs ya rellenados.** Miraba `derived_diario.sRPE_series`, que
+   solo se rellena cuando corre el pipeline; un RPE puesto después se veía como ausente.
+   Comprobado en vivo: el 2026-08-20 tenía `rpd_sesion`=7 en `wellness_pm` y `sRPE_series`
+   vacío. Ahora ese aviso lo da `huecos`. **También decía mal las escalas** ("Molestias
+   1-10" cuando son 0-9).
+5. **Jarvis rellena formularios hablando** — `guardar_am`, `guardar_pm`, `guardar_peso` y
+   `estado_formularios` (10 herramientas en total, `HERRAMIENTAS_ESCRITURA` es lista
+   aparte porque tocan los datos de Hugo). El modo es híbrido: extrae lo que pueda de una
+   parrafada, guarda, y la propia escritura **devuelve qué campos faltan**, así preguntar
+   no gasta otra vuelta de `MAX_VUELTAS`. `personalidad.py` le obliga a leer de vuelta lo
+   apuntado con los números: es el mecanismo de seguridad contra que alucine un valor.
+6. **Panel Formularios** (`FormulariosPanel.tsx` + `lib/formularios.ts`): semáforo por
+   fuente, tira de los últimos 14 días (AM arriba, PM abajo, punto en los días con
+   entreno) y editor precargado con lo que ya hay. Las escalas se pintan como fila de
+   botones 1-9 con el 5 marcado como "normal". Chips de zona con `data-no-expand`.
+7. **Dos bugs de fuera del alcance, arreglados de paso**: el hilo que mantiene caliente la
+   caché dormía 240s pero pedía con el TTL de 300s, así que daba acierto de caché y el
+   refresco real caía cada ~480s; y el CORS estaba en `*` con endpoints que ahora
+   escriben, así que se limitó a localhost y LAN privada.
+
+**QUÉ FALTA (Fase B, en el portátil):** la app móvil Expo. El plan está en
+`~/.claude/plans/crear-una-aplicacion-movil-encapsulated-dragonfly.md`. Toda la API de
+esta sesión es lo que va a consumir.
+
 ### Sesión 2026-08-18 (una sesión mala, legible: parser + señales a Jarvis)
 Salió de una pregunta de Hugo: "¿pillaría Jarvis una sesión de mierda?". No la pillaba, y
 buscándolo aparecieron 8 bugs, 5 de ellos corrompiendo datos en silencio.

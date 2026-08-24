@@ -2,8 +2,11 @@
 
 Hay DOS familias de herramientas y la diferencia es estructural:
 
-  - **De lectura** (`dia`, `ejercicio`, `recordar`): las ejecuta este backend y el
-    resultado vuelve al modelo, que sigue razonando con él.
+  - **De lectura** (`dia`, `ejercicio`, `recordar`, `estado_formularios`): las ejecuta
+    este backend y el resultado vuelve al modelo, que sigue razonando con él.
+  - **De escritura** (`guardar_am`, `guardar_pm`, `guardar_peso`): también las ejecuta el
+    backend, pero MODIFICAN la hoja de Hugo. Van en su propia lista para que se vea de un
+    vistazo qué puede tocar sus datos.
   - **De actuación** (`abrir_panel`, `cerrar_panel`, `resaltar`, `grafico`): el
     servidor NO puede ejecutarlas — pasan al navegador como una lista de acciones.
 
@@ -18,8 +21,11 @@ pequeños lo siguen sin problema. Si algún día estorba, se cambia ahí dentro.
 """
 import json
 import os
+from datetime import date
 
 import briefing
+import formularios
+import huecos
 import memoria
 import personalidad
 import proveedor
@@ -27,7 +33,14 @@ from sheets import fetch_all
 
 MAX_VUELTAS = 4  # tope de idas y venidas con herramientas, por si el modelo se atasca
 
-PANELES = ["readiness", "hrv", "sueno", "carga", "fuerza", "peso", "correlaciones"]
+PANELES = ["readiness", "hrv", "sueno", "carga", "fuerza", "peso", "correlaciones",
+           "formularios"]
+
+# El vocabulario sale del ESQUEMA para que no pueda divergir de lo que acepta la hoja.
+ZONAS_DESC = ("Zonas separadas por coma, del vocabulario del formulario: "
+              + ", ".join(formularios.ZONAS)
+              + ". Si Hugo lo dice con sus palabras ('me duele el cuello'), mándalo tal "
+                "cual: el backend lo traduce al vocabulario.")
 
 HERRAMIENTAS_LECTURA = [
     {
@@ -55,6 +68,75 @@ HERRAMIENTAS_LECTURA = [
         },
         "requeridos": ["tema", "texto"],
     },
+    {
+        "nombre": "estado_formularios",
+        "descripcion": "Qué formularios ha rellenado Hugo y cuáles le faltan, con lo que "
+                       "ya tiene puesto. Úsala cuando pregunte qué le falta, cuando "
+                       "quieras recordárselo, y SIEMPRE antes de corregir algo.",
+        "params": {"dias": {"type": "integer", "description": "Días atrás a mirar. Por defecto 14."}},
+        "requeridos": [],
+    },
+]
+
+HERRAMIENTAS_ESCRITURA = [
+    {
+        "nombre": "guardar_am",
+        "descripcion": (
+            "Guarda o CORRIGE el formulario de la MAÑANA. Manda SOLO los campos que Hugo "
+            "haya dicho: lo que no mandes se queda como está, así que sirve igual para "
+            "rellenarlo entero que para cambiar un solo número. "
+            "ESCALAS: sueno_calidad, sensacion_am y animo van de 1 a 9 (5 = normal, "
+            "9 = lo mejor); estres y molestias_nivel de 0 a 9 (0 = nada). Si te da una "
+            "nota sobre 10, NO la conviertas tú: pregúntale sobre 9."
+        ),
+        "params": {
+            "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
+            "hora_acostarse": {"type": "string", "description": "HH:MM, cuándo se metió en la cama"},
+            "hora_despertar": {"type": "string", "description": "HH:MM, cuándo se levantó"},
+            "sueno_calidad": {"type": "integer", "description": "1-9, qué tal durmió"},
+            "sensacion_am": {"type": "integer", "description": "1-9, cómo se siente al levantarse"},
+            "animo": {"type": "integer", "description": "1-9, de ánimo"},
+            "estres": {"type": "integer", "description": "0-9, 0 = nada de estrés"},
+            "molestias_nivel": {"type": "integer", "description": "0-9, 0 = sin molestias"},
+            "molestias_zona": {"type": "string", "description": ZONAS_DESC},
+            "cafeina_ayer_mg": {"type": "integer", "description": "mg de cafeína de AYER"},
+            "cafeina_ayer_hora": {"type": "string", "description": "HH:MM de la última cafeína de ayer"},
+            "alcohol_ayer": {"type": "integer", "description": "0-27, su escala personal"},
+            "notas_am": {"type": "string", "description": "Texto libre, con SUS palabras, no las tuyas"},
+        },
+        "requeridos": [],
+    },
+    {
+        "nombre": "guardar_pm",
+        "descripcion": (
+            "Guarda o CORRIGE el formulario de la TARDE. Manda solo lo que diga. "
+            "ESCALAS: energia y sensacion_global van de 1 a 9 (5 = normal, 9 = lo mejor). "
+            "OJO: rpd_sesion es el RPE del entreno y va de 0 a 10, escala DISTINTA. "
+            "Sin rpd_sesion la sesión no cuenta para la carga, así que es el importante."
+        ),
+        "params": {
+            "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
+            "energia": {"type": "integer", "description": "1-9, energía del día"},
+            "sensacion_global": {"type": "integer", "description": "1-9, sensación al cerrar el día"},
+            "cafeina_hoy_mg": {"type": "integer", "description": "mg de cafeína de HOY"},
+            "cafeina_hoy_hora": {"type": "string", "description": "HH:MM de la última cafeína de hoy"},
+            "rpd_sesion": {"type": "number", "description": "0-10, esfuerzo global del entreno"},
+            "dolor_sesion_zona": {"type": "string", "description": ZONAS_DESC},
+            "dolor_sesion_nota": {"type": "string", "description": "El dolor del entreno, con SUS palabras"},
+            "notas_pm": {"type": "string", "description": "Texto libre, con SUS palabras"},
+        },
+        "requeridos": [],
+    },
+    {
+        "nombre": "guardar_peso",
+        "descripcion": "Apunta una pesada. Hugo se pesa en ayunas, más o menos una vez "
+                       "por semana, así que no se lo persigas a diario.",
+        "params": {
+            "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
+            "peso_kg": {"type": "number", "description": "En kilos, p.ej. 81.8"},
+        },
+        "requeridos": ["peso_kg"],
+    },
 ]
 
 HERRAMIENTAS_UI = [
@@ -78,7 +160,8 @@ HERRAMIENTAS_UI = [
     },
 ]
 
-HERRAMIENTAS = HERRAMIENTAS_LECTURA + HERRAMIENTAS_UI
+HERRAMIENTAS_BACKEND = HERRAMIENTAS_LECTURA + HERRAMIENTAS_ESCRITURA
+HERRAMIENTAS = HERRAMIENTAS_BACKEND + HERRAMIENTAS_UI
 NOMBRES_UI = {h["nombre"] for h in HERRAMIENTAS_UI}
 
 
@@ -134,13 +217,47 @@ def _tool_ejercicio(nombre: str) -> dict:
     }
 
 
-def _ejecutar_lectura(llamada) -> str:
+def _hoy() -> str:
+    return date.today().isoformat()
+
+
+def _tool_guardar(tipo: str, args: dict) -> dict:
+    """Guarda o corrige un formulario. Devuelve también QUÉ FALTA todavía.
+
+    Que la propia escritura diga lo que queda vacío es lo que hace que el relleno por voz
+    quepa en un turno: Jarvis guarda lo que ha oído y ya sabe qué preguntar, sin gastar
+    otra vuelta de MAX_VUELTAS.
+    """
+    fecha = str(args.get("fecha") or "").strip() or _hoy()
+    valores = {k: v for k, v in args.items() if k != "fecha"}
+    if not valores:
+        return {"error": "no me has pasado ningún campo con valor"}
+    try:
+        res = formularios.guardar(tipo, fecha, valores)
+    except ValueError as e:
+        # El mensaje va en español y es el que Jarvis le repetirá a Hugo para re-preguntar.
+        return {"error": str(e), "fecha": fecha}
+    etiquetas = {c.nombre: c.etiqueta for c in formularios.ESQUEMA[tipo].campos}
+    return {
+        "guardado": res["guardado"],
+        "fecha": res["fecha"],
+        "asi_queda": res["valores"],
+        "faltan": [etiquetas.get(n, n) for n in res["faltan"]],
+        "avisos": res["avisos"],
+    }
+
+
+def _ejecutar_backend(llamada) -> str:
     """Ejecuta una herramienta de backend y devuelve su resultado como texto."""
     try:
         if llamada.nombre == "dia":
             res = _tool_dia(str(llamada.args.get("fecha", "")))
         elif llamada.nombre == "ejercicio":
             res = _tool_ejercicio(str(llamada.args.get("nombre", "")))
+        elif llamada.nombre == "estado_formularios":
+            res = huecos.estado(dias=int(llamada.args.get("dias") or 14))
+        elif llamada.nombre in ("guardar_am", "guardar_pm", "guardar_peso"):
+            res = _tool_guardar(llamada.nombre.removeprefix("guardar_"), llamada.args)
         elif llamada.nombre == "recordar":
             tema = str(llamada.args.get("tema", "general"))
             texto = str(llamada.args.get("texto", "")).strip()
@@ -316,7 +433,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
             args = json.dumps(ll.args, ensure_ascii=False)
             mensajes.append({
                 "role": "user",
-                "content": f"[resultado de {ll.nombre}({args})]: {_ejecutar_lectura(ll)}",
+                "content": f"[resultado de {ll.nombre}({args})]: {_ejecutar_backend(ll)}",
             })
 
     # Al pedirle que comente una acción de UI, a veces vuelve a llamar a la herramienta
