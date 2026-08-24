@@ -55,16 +55,19 @@ function Tira({ estado }: { estado: EstadoFormularios }) {
         const punto = (puesto: boolean) => (
           <span
             className="block h-[7px] w-full rounded-[2px]"
-            style={{
-              background: puesto ? theme.good : esHoy ? theme.amber : theme.alert,
-              opacity: puesto ? 0.85 : esHoy ? 0.7 : 0.55,
-            }}
+            // Pasada la ventana el registro sigue siendo rojo, pero MUY apagado: cuenta
+            // que quedó sin completar sin reclamar nada, porque ya no se puede rellenar
+            // de memoria. En gris se leería como "sin datos", que no es lo mismo.
+            style={{ background: puesto ? COL.hecho
+              : d.cerrado ? COL.cerrado
+              : esHoy ? COL.hoy : COL.pendiente }}
           />
         );
         return (
           <div key={d.fecha} className="flex min-w-0 flex-1 flex-col items-center gap-[3px]"
                title={`${d.fecha} · AM ${d.am ? "✓" : "falta"} · PM ${d.pm ? "✓" : "falta"}${
-                 d.sin_keep ? " · entreno SIN volcar al keep" : d.entreno ? " · entreno" : ""}`}>
+                 d.sin_keep ? " · entreno SIN volcar al keep" : d.entreno ? " · entreno" : ""
+               }${d.cerrado ? " · sin completar" : ""}`}>
             <span className="text-[8px]"
                   style={{ color: d.sin_keep ? theme.alert : d.entreno ? theme.accent : "transparent" }}>•</span>
             <div className="w-full">{punto(d.am)}</div>
@@ -78,15 +81,37 @@ function Tira({ estado }: { estado: EstadoFormularios }) {
   );
 }
 
+function Muestra({ color, children }: { color: string; children: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-block h-[7px] w-[10px] rounded-[2px]" style={{ background: color }} />
+      {children}
+    </span>
+  );
+}
+
 function Leyenda() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]" style={{ color: theme.muted }}>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]"
+         style={{ color: theme.muted }}>
       <span>Fila de arriba: AM · fila de abajo: PM</span>
+      <Muestra color={COL.hecho}>registrado</Muestra>
+      <Muestra color={COL.pendiente}>pendiente</Muestra>
+      <Muestra color={COL.cerrado}>sin completar</Muestra>
       <span style={{ color: theme.accent }}>• día con entreno</span>
       <span style={{ color: theme.alert }}>• sin volcar al keep</span>
     </div>
   );
 }
+
+// Los cuatro estados de una casilla. Se declaran juntos porque la leyenda tiene que
+// pintar exactamente los mismos colores que la tira.
+const COL = {
+  hecho: "rgba(46,213,115,0.85)",
+  pendiente: "rgba(255,71,87,0.85)",
+  cerrado: "rgba(255,71,87,0.22)",
+  hoy: "rgba(255,165,2,0.7)",
+};
 
 function Semaforo({ estado }: { estado: EstadoFormularios | null }) {
   if (!estado) return <div className="text-[11px]" style={{ color: theme.muted }}>Cargando…</div>;

@@ -37,7 +37,7 @@ export type EstadoFormularios = {
   color: "verde" | "ambar" | "rojo";
   resumen: string;
   fuentes: Record<string, Fuente>;
-  dias: { fecha: string; am: boolean; pm: boolean; entreno: boolean; sin_keep: boolean }[];
+  dias: { fecha: string; am: boolean; pm: boolean; entreno: boolean; sin_keep: boolean; cerrado: boolean }[];
 };
 
 export type Valores = Record<string, string | number>;

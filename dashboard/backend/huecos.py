@@ -25,6 +25,12 @@ ROOT = Path(__file__).resolve().parents[2]
 # al levantarse, y marcarlo en rojo a las 8 de la mañana sería ruido.
 HORA_LIMITE_AM = 12
 
+# Un día que lleva más de una semana sin rellenar se da por PERDIDO y se deja de pedir.
+# Decisión de Hugo: a esas alturas ya no se acuerda de cómo durmió ni de qué RPE fue, así
+# que reclamarlo solo sirve para tener el panel en rojo para siempre por algo que no tiene
+# arreglo. Se sigue sin ese día y punto.
+VENTANA_RECUPERABLE_D = 7
+
 # El peso es SEMANAL (martes, en ayunas). Con la tolerancia de 2 días del resto estaría
 # siempre en rojo. Mismo criterio que DIAS_OBSOLETO en briefing.py.
 DIAS_PESO = 10
@@ -105,6 +111,7 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
     dias_detalle = []
 
     # --- formularios AM y PM, día a día -------------------------------------
+    limite_recuperable = (hoy - timedelta(days=VENTANA_RECUPERABLE_D)).isoformat()
     for tipo, tabla in (("am", am), ("pm", pm)):
         faltan = []
         for f in calendario:
@@ -114,6 +121,8 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
             # mañana: tenerlo en ámbar desde por la mañana es ruido, no información.
             if f == hoy.isoformat() and (tipo == "pm" or ahora.hour < HORA_LIMITE_AM):
                 continue
+            if f < limite_recuperable:
+                continue  # perdido: ya no se pide (ver VENTANA_RECUPERABLE_D)
             faltan.append(f)
         hoy_pendiente = (tipo == "am"
                          and not _relleno(tabla.get(hoy.isoformat()), NUCLEO["am"])
@@ -126,8 +135,8 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
             "estado": estado_f,
             "faltan": faltan,
             "ultima": ultimo,
-            "detalle": (f"Faltan {len(faltan)} de {dias} días · el último relleno, "
-                        f"{_dm(ultimo)}" if faltan else
+            "detalle": (f"Faltan {len(faltan)} días ({', '.join(_dm(f) for f in faltan)})"
+                        if faltan else
                         ("Pendiente el de hoy" if hoy_pendiente else
                          f"Al día · último {_dm(ultimo)}" if ultimo else "Sin datos")),
         }
@@ -143,6 +152,8 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
             "am": _relleno(am.get(f), NUCLEO["am"]),
             "pm": _relleno(pm.get(f), NUCLEO["pm"]),
             "entreno": f in entrenados,
+            # Pasada la ventana, un hueco deja de ser un aviso: se pinta apagado, no rojo.
+            "cerrado": f < limite_recuperable,
             # entrenó pero no está volcado: el aviso de "mete este día en el keep"
             "sin_keep": f in entrenados and f not in sesiones,
         })
@@ -182,7 +193,8 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
     # Antes esto solo miraba la frescura del fichero local, que además no va por git:
     # si el keep está en la otra máquina, "hace 7 días sin entrenar" es falso.
     sin_volcar = sorted(f for f in calendario
-                        if f in entrenados and f not in sesiones)
+                        if f in entrenados and f not in sesiones
+                        and f >= limite_recuperable)
     ultimo_keep = _ultima_sesion_keep()
     ultimo_hoja = max(sesiones, default=None)
     if sin_volcar:
