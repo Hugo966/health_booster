@@ -3,6 +3,58 @@
 > Resumen autocontenido para continuar el proyecto en una sesión nueva.
 > Usuario: Hugo (powerlifter). Idioma de trabajo: español. Código y comentarios en español.
 
+## 0. LO PRIMERO — pendientes del 2026-08-24 (leer antes de tocar nada)
+
+Escrito desde el otro equipo al cerrar la sesión de los formularios. Cada punto lleva el
+porqué, porque el orden importa y saltárselo tiene consecuencias.
+
+### 1. Sincronizar, antes que nada
+- `git pull --rebase` y **`git push`**. En este equipo quedó un commit sin pushear de una
+  sesión anterior. Es el **bloqueante del punto 4**: si se reescribe el histórico mientras
+  haya commits sin subir, esos commits quedan colgando de una historia que ya no existe en
+  `origin` y hay que rescatarlos a mano.
+- **Revisar `keep.txt`.** No va por git. El 2026-08-24 el de este equipo iba por delante
+  (sesiones hasta el 20/08) y el del otro se había quedado en el 17/08. El panel de
+  Formularios lo detecta solo y avisa en ámbar comparando el keep local con
+  `entreno_sesion` de la hoja. Cuidado con pisar el bueno con el viejo.
+
+### 2. Ver funcionando lo que se hizo
+`./run.sh` — de paso el pipeline recalcula `derived_diario`, que arrastra un `sRPE_series`
+vacío del 20/08 (el RPE estaba puesto en el formulario, pero la última pasada del pipeline
+fue antes de que Hugo lo rellenara).
+
+Merece la pena comprobar **con el modelo de verdad** lo que aquí solo se probó con
+`ProveedorFalso`, porque es lo único que no se pudo verificar sin la API key:
+- Contarle algo tipo "he dormido fatal, un 4, y me duele el cuello" y ver que llama a
+  `guardar_am`, lo guarda y **repite los números**. Ese read-back es el único mecanismo de
+  seguridad contra que el modelo alucine un valor: sin él, un número inventado entra en la
+  hoja sin que nadie se entere.
+- Corregir algo ya guardado ("el RPE era 7, no 6") y confirmar que **no aparece una fila
+  nueva** en la pestaña.
+
+### 3. Tailscale (antes de empezar la app)
+Receta completa en **`docs/app_movil.md`**. El porqué: la app móvil necesita llegar al
+backend, y la alternativa —arrancar uvicorn con `--host 0.0.0.0`— expondría a cualquiera de
+la wifi unos endpoints que **escriben en la hoja de Hugo**. Con `tailscale serve` el backend
+sigue escuchando solo en localhost, solo se llega desde su red privada, y encima da HTTPS.
+Por eso **`run.sh` no se toca**. El login es interactivo: lo tiene que hacer Hugo.
+
+### 4. Limpiar el histórico (SOLO con el punto 1 hecho)
+Receta en **`docs/publicar_repo.md`**. El porqué: al pasar el repo a público se publica
+**todo el histórico**, no el estado final. El árbol de trabajo ya está neutralizado —el
+repo dice "el otro equipo" en vez de identificar las máquinas— pero los commits antiguos
+conservan la redacción vieja, y ahí es donde se queda para siempre.
+
+Dos trampas de esa receta: **borrar `docs/publicar_repo.md`** antes del force-push (cita
+literalmente las cadenas que purga, así que publicado las reintroduce), y **volver a clonar
+en las dos máquinas** después, porque los hashes cambian y un `pull` normal no sirve.
+
+### 5. Y entonces sí, la app
+Decisiones ya cerradas en `docs/app_movil.md` — no volver a plantearlas. El motor que va a
+consumir (API de formularios, semáforo, herramientas de voz) está terminado y en `main`.
+
+---
+
 ## 1. Objetivo del proyecto
 Dashboard personal de bienestar ("Jarvis") que consolida datos de salud y entreno
 de Hugo para leer de un vistazo su estado (readiness, HRV, sueño, carga de entreno,
