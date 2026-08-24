@@ -25,8 +25,7 @@ canal de sincronización, así que:
   traspaso a mano (pendrive, etc.) para retomar en el otro equipo: `.env`, `keep.txt`,
   `jarvis.db`, `health-boost-*.json`. Precisar cuáles cambiaron y si el otro equipo los
   necesita de verdad.
-- **El modelo local (Ollama, `qwen2.5:3b`) solo vive en el portátil.** El equipo del
-  trabajo NO lo ejecuta, así que la config del modelo en `.env` no le hace falta.
+- **El modelo local (Ollama, `qwen2.5:3b`) solo vive en el portátil.** El segundo equipo NO lo ejecuta, así que la config del modelo en `.env` no le hace falta.
 
 ## Convenciones
 
@@ -116,6 +115,14 @@ canal de sincronización, así que:
   de un `flex-1` sin altura definida provoca un bucle de ResizeObserver.
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.
   Sin ese flag las animaciones de Recharts no avanzan y los gráficos salen vacíos.
+
+## Antes de hacer el repo público
+
+Ver **`docs/publicar_repo.md`**: el histórico entero se publica, así que la limpieza va en
+una sola pasada antes de publicar. Dos reglas: nada de datos personales en ficheros
+trackeados, y **no decir cuáles son los dos equipos** (que hay dos y se sincronizan por git
+sí es información necesaria). El árbol de trabajo ya está neutralizado; el histórico se
+arregla con la receta de `filter-repo` de ese documento.
 
 ## Ficheros que NUNCA van al repo
 

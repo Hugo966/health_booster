@@ -412,7 +412,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
           try {
             blob = await siguiente;
           } catch {
-            // Falla el servicio (apagado, otro equipo…): plan B, voz del
+            // Falla el servicio (apagado, equipo sin GPU…): plan B, voz del
             // navegador, pero solo si aún es nuestro turno y no habíamos empezado a sonar.
             if (i === 0 && turnoRef.current === turno && activaRef.current) decirNavegador(limpio);
             return;

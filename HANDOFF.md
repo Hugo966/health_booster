@@ -206,9 +206,9 @@ semáforo de lo que falta. Los Google Forms siguen vivos y siguen siendo la vía
    refresco real caía cada ~480s; y el CORS estaba en `*` con endpoints que ahora
    escriben, así que se limitó a localhost y LAN privada.
 
-**QUÉ FALTA (Fase B, en el portátil):** la app móvil Expo. El plan está en
-`~/.claude/plans/crear-una-aplicacion-movil-encapsulated-dragonfly.md`. Toda la API de
-esta sesión es lo que va a consumir.
+**QUÉ FALTA (en el portátil):** la app móvil Expo. Plan, decisiones ya tomadas y pasos
+previos —incluido el montaje de Tailscale— en **`docs/app_movil.md`**. Toda la API de esta
+sesión es lo que va a consumir.
 
 ### Sesión 2026-08-18 (una sesión mala, legible: parser + señales a Jarvis)
 Salió de una pregunta de Hugo: "¿pillaría Jarvis una sesión de mierda?". No la pillaba, y
