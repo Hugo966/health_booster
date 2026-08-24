@@ -10,11 +10,11 @@ eso la limpieza se hace **una sola vez, justo antes de publicar**, y no a trocit
    ni nombres de personas, ni valores de salud concretos. Auditado el 2026-08-24: limpio,
    y ningún fichero ignorado (`.env`, `health-boost-*.json`, `keep.txt`, `jarvis.db`) se
    coló nunca en la historia.
-2. **No decir CUÁLES son los dos equipos.** Que el proyecto se desarrolla en dos máquinas y
-   se sincroniza por git es información técnica necesaria; a qué corresponde cada una
-   no, y basta con "el otro equipo". En el árbol
-   de trabajo ya está neutralizado ("el otro equipo", "un segundo equipo"), pero **sigue en
-   el histórico**: eso es lo que arregla la receta de abajo.
+2. **No identificar cuáles son los dos equipos.** Que el proyecto se desarrolla en dos
+   máquinas y se sincroniza por git es información técnica necesaria y se queda; a qué
+   corresponde cada una, no, y basta con "el otro equipo" / "un segundo equipo". El árbol de
+   trabajo ya está así, pero el **histórico** conserva la redacción vieja: eso es lo que
+   arregla la receta de abajo.
 
 ## Checklist
 
@@ -48,7 +48,13 @@ el otro equipo cae a la voz del navegador==>el otro equipo cae a la voz del nave
 (otro equipo / apagado)==>(otro equipo / apagado)
 keep del otro equipo==>keep del otro equipo
 En el otro equipo solo==>En el otro equipo solo
+a qué corresponde cada una==>a qué corresponde cada una
+no, y basta con "el otro equipo". En el árbol==>no, y basta con "el otro equipo". En el árbol
+"<términos que identifiquen las máquinas>"==>"<términos que identifiquen las máquinas>"
 ```
+
+Las dos últimas líneas existen porque este mismo fichero llegó a contener esas frases en
+los commits del 2026-08-24, antes de reescribirlo.
 
 ```bash
 git clone https://github.com/Hugo966/health_booster.git limpio && cd limpio
@@ -61,6 +67,7 @@ Comprobación de que no queda nada:
 
 ```bash
 git log --all -p --pretty=format: | grep -inE "<términos que identifiquen las máquinas>" || echo limpio
+# (ojo: este grep también casa consigo mismo dentro de este fichero)
 ```
 
 Las seis líneas de arriba cubren las **diez variantes** que había en el histórico el
