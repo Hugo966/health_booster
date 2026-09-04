@@ -3,55 +3,88 @@
 > Resumen autocontenido para continuar el proyecto en una sesión nueva.
 > Usuario: Hugo (powerlifter). Idioma de trabajo: español. Código y comentarios en español.
 
-## 0. LO PRIMERO — pendientes del 2026-08-24 (leer antes de tocar nada)
+## 0. LO PRIMERO — pendientes del 2026-09-04 (leer antes de tocar nada)
 
-Escrito desde el otro equipo al cerrar la sesión de los formularios. Cada punto lleva el
-porqué, porque el orden importa y saltárselo tiene consecuencias.
+Escrito en el portátil al cerrar la sesión. Cada punto lleva el porqué, porque el orden
+importa y saltárselo tiene consecuencias.
 
-### 1. Sincronizar, antes que nada
-- `git pull --rebase` y **`git push`**. En este equipo quedó un commit sin pushear de una
-  sesión anterior. Es el **bloqueante del punto 4**: si se reescribe el histórico mientras
-  haya commits sin subir, esos commits quedan colgando de una historia que ya no existe en
-  `origin` y hay que rescatarlos a mano.
-- **Revisar `keep.txt`.** No va por git. El 2026-08-24 el de este equipo iba por delante
-  (sesiones hasta el 20/08) y el del otro se había quedado en el 17/08. El panel de
-  Formularios lo detecta solo y avisa en ámbar comparando el keep local con
-  `entreno_sesion` de la hoja. Cuidado con pisar el bueno con el viejo.
+### Lo que se cerró el 2026-09-04 (no rehacerlo)
+- **Sincronización: hecha.** El commit suelto del que avisaba el handoff anterior ya está
+  en `origin`. El punto de limpiar el histórico queda desbloqueado.
+- **Los formularios por voz funcionan de verdad**, probados con el modelo real y no con
+  `ProveedorFalso`: Jarvis escribió el PM del 04/09 (energía 7, sensación 6, cafeína 0,
+  RPE 6) y el upsert corrigió la fila en vez de duplicarla.
+- Salieron **tres fallos de esa prueba, los tres arreglados** (detalle en §12).
 
-### 2. Ver funcionando lo que se hizo
-`./run.sh` — de paso el pipeline recalcula `derived_diario`, que arrastra un `sRPE_series`
-vacío del 20/08 (el RPE estaba puesto en el formulario, pero la última pasada del pipeline
-fue antes de que Hugo lo rellenara).
+### 1. Volcar el keep y pasar el pipeline
+`keep.txt` no tiene las sesiones del **02/09, 03/09 y 04/09** (el semáforo las canta en
+rojo: hay RPE en el formulario pero no hay sesión). Y **el pipeline no pasa desde el
+21/08**, así que `derived_diario` arrastra el HRV, el sueño y los pasos clavados en el
+20/08, más el `sRPE_series` vacío de ese día. Volcar primero y pasar el pipeline después,
+para que entre todo de una vez.
 
-Merece la pena comprobar **con el modelo de verdad** lo que aquí solo se probó con
-`ProveedorFalso`, porque es lo único que no se pudo verificar sin la API key:
-- Contarle algo tipo "he dormido fatal, un 4, y me duele el cuello" y ver que llama a
-  `guardar_am`, lo guarda y **repite los números**. Ese read-back es el único mecanismo de
-  seguridad contra que el modelo alucine un valor: sin él, un número inventado entra en la
-  hoja sin que nadie se entere.
-- Corregir algo ya guardado ("el RPE era 7, no 6") y confirmar que **no aparece una fila
-  nueva** en la pestaña.
+### 2. Máquina en GCP + Tailscale (es lo siguiente que quiere Hugo)
+La idea: que **el dashboard deje de depender de que el portátil esté encendido**, y poder
+entrar desde el móvil. Va antes que la app porque la app necesita justo esto.
 
-### 3. Tailscale (antes de empezar la app)
-Receta completa en **`docs/app_movil.md`**. El porqué: la app móvil necesita llegar al
-backend, y la alternativa —arrancar uvicorn con `--host 0.0.0.0`— expondría a cualquiera de
-la wifi unos endpoints que **escriben en la hoja de Hugo**. Con `tailscale serve` el backend
-sigue escuchando solo en localhost, solo se llega desde su red privada, y encima da HTTPS.
-Por eso **`run.sh` no se toca**. El login es interactivo: lo tiene que hacer Hugo.
+Cabe en la **always-free** de GCP, pero solo la mitad ligera — y el corte cae donde el
+proyecto ya está partido:
 
-### 4. Limpiar el histórico (SOLO con el punto 1 hecho)
-Receta en **`docs/publicar_repo.md`**. El porqué: al pasar el repo a público se publica
-**todo el histórico**, no el estado final. El árbol de trabajo ya está neutralizado —el
-repo dice "el otro equipo" en vez de identificar las máquinas— pero los commits antiguos
-conservan la redacción vieja, y ahí es donde se queda para siempre.
+| Componente | ¿Cabe en la e2-micro (1 GB)? |
+|---|---|
+| Backend FastAPI | Sí — mide **121 MB** en marcha |
+| Frontend ya compilado + pipelines por cron | Sí |
+| Chat con `JARVIS_PROVEEDOR=anthropic` | Sí: el modelo corre en Anthropic, no en la VM |
+| TTS (`dashboard/tts/`) | **No**: torch + Qwen3-TTS son ~4 GB de VRAM y no hay GPU |
+| Ollama | **No**: `qwen2.5:7b` no entra en 1 GB |
 
-Dos trampas de esa receta: **borrar `docs/publicar_repo.md`** antes del force-push (cita
-literalmente las cadenas que purga, así que publicado las reintroduce), y **volver a clonar
-en las dos máquinas** después, porque los hashes cambian y un `pull` normal no sirve.
+El TTS se queda en el portátil y ya está previsto: sin servidor de voz, `voz.ts` cae a la
+voz del navegador.
+
+Trampas, por orden de probabilidad de comérselas:
+1. **`npm run build` se queda sin memoria en 1 GB.** Compilar el frontend fuera y subir
+   el `dist/`, o poner 2 GB de swap.
+2. La always-free solo existe en **`us-west1` / `us-central1` / `us-east1`** (~100-130 ms
+   desde España; se nota un poco en el chat, nada en el panel).
+3. **1 GB de egress al mes.** El JSON y el bundle no lo rozan; audio sí lo fundiría, pero
+   el audio no va a estar ahí.
+4. **No quitarle la IP externa efímera**: sin ella la VM no llega a Sheets ni a Intervals,
+   y Cloud NAT sí se cobra. Es gratis mientras la instancia está encendida.
+5. **Alerta de presupuesto a 1 €**: la free tier pide tarjeta.
+
+Tailscale encaja **mejor en la VM que en el portátil**: metiéndola en el tailnet no hace
+falta abrir ni un puerto público. Receta en `docs/app_movil.md` (el login es interactivo,
+lo tiene que hacer Hugo). Ojo: si el backend se va a la VM y el TTS se queda en el
+portátil, el navegador llama al TTS por la IP de tailnet del portátil — hay que repasar a
+dónde apunta `voz.ts`.
+
+### 3. Investigar si Intervals se actualiza al toque
+Pendiente de Hugo. Lo que ya se sabe (2026-08-21): Intervals **no guarda el HRV**, lo
+busca al proveedor de forma perezosa y **solo cuando se refresca SU interfaz** (la app o
+la web de Intervals.icu; la de Zepp se probó y no vale). Por la API no hay forma de
+dispararlo. El campo `updated` distingue "no hay dato arriba" de "me sirven caché". Falta
+confirmar si eso sigue igual y si hay forma de que no dependa de abrir la app a mano —
+porque en la VM, con el pipeline por cron y nadie mirando, esto se vuelve el cuello de
+botella de verdad.
+
+### 4. Limpiar el histórico (ya desbloqueado)
+Receta en **`docs/publicar_repo.md`**. Al hacer el repo público se publica **todo el
+histórico**, no el estado final: el árbol ya está neutralizado, pero los commits viejos
+conservan la redacción que identifica las máquinas.
+
+Dos trampas: **borrar `docs/publicar_repo.md`** antes del force-push (cita literalmente
+las cadenas que purga) y **volver a clonar en las dos máquinas** después, porque los
+hashes cambian y un `pull` normal no sirve.
 
 ### 5. Y entonces sí, la app
 Decisiones ya cerradas en `docs/app_movil.md` — no volver a plantearlas. El motor que va a
 consumir (API de formularios, semáforo, herramientas de voz) está terminado y en `main`.
+
+### Suelto, cuando toque
+- Probar por voz que una zona desconocida se resuelve bien: decirle "me dolió el pie" y
+  comprobar que ofrece **Tobillo** en vez de tragárselo (ver §12).
+- El navegador arrastra en `localStorage` la sesión vieja `web-mrtkdqd6-l9noua`, así que
+  no comparte hilo con el micro externo, que escribe en `hugo` (`chat.ts:58`).
 
 ---
 
@@ -216,6 +249,19 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-09-04 (probar los formularios con el modelo real, y arreglar lo que salió)
+Sesión de verificación, no de features: se estrenó con el modelo de verdad el camino de
+escritura que el 24/08 solo se había probado con `ProveedorFalso`. **Funciona** —Jarvis
+rellenó el PM del 04/09 hablando y el upsert corrigió la fila sin duplicarla— pero por el
+camino salieron tres fallos, los tres arreglados. **El detalle está en §12**, que conviene
+leer entero antes de tocar `formularios.py` o `sheets.py`.
+
+En corto: una zona de dolor que no está en el vocabulario (`pie`) se guardaba como celda
+vacía y encima borraba lo que hubiera; un fallo de lectura de la hoja se cacheaba 5 minutos
+como "no hay datos" y dejaba el panel en blanco, como si se hubieran perdido meses de
+registros; y nada de eso llegaba a ningún log. Tocados: `formularios.py`, `sheets.py`,
+`personalidad.py`, `run.sh` y `.gitignore`.
 
 ### Sesión 2026-08-24 (formularios propios: API de escritura, semáforo y relleno por voz)
 Primer camino de ESCRITURA del proyecto. Hasta ahora los datos diarios solo entraban por
@@ -772,3 +818,60 @@ Resueltas en esta tanda:
 - Memoria persistente del proyecto (en `~/.claude/.../memory/`): variantes distintas, estado
   Fase 1, plan de entreno en Drive ("Peaking SN" = bloque 4), sueño cama≠dormido, backlog post-v1,
   pendientes técnicos (Correlaciones y ACWR aún con el sRPE por duración).
+
+## 12. La prueba de formularios del 2026-09-04 (tres fallos y cómo quedaron)
+
+Los tres salieron del **mismo sitio**: un `except` que se traga el motivo y deja al que
+llama creyendo que todo va bien. Merece la pena tenerlo presente antes de añadir el
+siguiente, porque nos costó la sesión entera diagnosticarlo.
+
+### 1. Una zona de dolor desconocida se guardaba como celda vacía
+Hugo dictó "dolor en el pie". **`Pie` no existe en `ZONE_KEYWORDS`** (está `Tobillo`), así
+que `normalizar_zonas()` devolvía `""`, `validar()` lo daba por bueno y `guardar()`
+escribía el hueco en la hoja: la zona se perdía **y además borraba lo que hubiera**, sin
+error y sin rastro en el log. Le venía pasando a todas las menciones al pie, que es su
+dolor crónico.
+
+Peor todavía: la herramienta le devolvía a Jarvis un `asi_queda` con la zona vacía y un
+`faltan` que seguía pidiéndola, o sea **contradiciendo lo que él acababa de mandar**. Con
+eso Jarvis concluyó que había reventado el sistema y le dijo a Hugo "se ha atragantado el
+sistema, error raro de fondo" — cuando en realidad se había guardado todo lo demás.
+
+**Cómo quedó:** una zona no reconocida ya no entra en los valores limpios (la celda no se
+toca) y sale por `avisos` con la lista de zonas válidas. Es **aviso y no error** a
+propósito: una palabra rara no puede tirar abajo la energía y el RPE dictados en la misma
+frase. Regla nueva en `personalidad.py` para que Jarvis diga qué ha fallado y **proponga**
+la zona equivalente ("'pie' no está, la más parecida es Tobillo, ¿te la marco?").
+
+**Decisión de Hugo: NO se añade `Pie` al vocabulario.** Para eso está la IA. Además
+añadirlo tocaría el parseo histórico del keep, y `'pie'` es subcadena de `'pierna'`: con el
+matching actual (`k in low`, sin límite de palabra) etiquetaría como Pie cualquier
+mención a la pierna.
+
+### 2. Un fallo de lectura de la hoja se cacheaba como "no hay datos"
+Al guardar, `invalidar()` forzaba releer **las 7 pestañas de golpe**; esa ráfaga se pasó de
+la cuota de la API de Google; `sheets.fetch_all()` convertía cada fallo en lista vacía —
+y la cacheaba 5 minutos. Resultado: el panel en blanco y el semáforo en rojo diciendo que
+faltaban 8 días de formularios. **Parecía una pérdida de datos y no lo era**: la hoja
+estuvo intacta todo el rato. Solo se arreglaba reiniciando el backend.
+
+**Cómo quedó:** si una pestaña falla se conserva lo último que se leyó bien de ella, no se
+renueva el TTL y se reintenta a los 30 s (`ESPERA_TRAS_FALLO_S`) — reintentar en cada
+petición, con la cuota agotada, solo echaría más leña. Y ahora lo escribe en el log.
+`invalidar(tab)` refresca **una sola** pestaña: 1 petición por guardado en vez de 7, que
+era lo que nos ponía contra la cuota. Al probarlo apareció un cuarto agujero:
+**`open_by_key()` estaba fuera del `try`**, así que si lo que fallaba era abrir la hoja
+—el caso más típico con la cuota agotada— la petición se iba en 500 entera.
+
+### 3. No había forma de ver nada de esto desde el servidor
+Los fallos de herramienta mueren en `chat.py` convertidos en JSON para el modelo, y los de
+lectura morían en `sheets.py`. Ninguno llegaba a ninguna parte.
+
+**Cómo quedó:** `sheets.py` avisa por `logging`, y `run.sh` manda la salida del backend a
+**`logs/backend.log`** además de a pantalla (rota a los 5 MB, cabecera con fecha en cada
+arranque, `logs/` ignorado en git). En la VM esto no es opcional: allí no hay terminal
+donde mirar.
+
+Nota para el que siga: `run.sh` lanza el backend con **sustitución de proceso**
+(`> >(tee -a "$LOG")`) y no con `| tee`. Con la tubería, `$!` sería el PID de `tee` y el
+`trap cleanup` dejaría uvicorn vivo al salir.

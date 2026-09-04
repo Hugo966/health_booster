@@ -3,6 +3,7 @@
 Reutiliza el mismo Service Account y SHEET_ID que los pipelines, leyendo el
 `.env` de la raíz del proyecto (el backend vive en dashboard/backend/).
 """
+import logging
 import os
 import time
 from pathlib import Path
@@ -24,8 +25,17 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 TABS = ["derived_diario", "entreno_sesion", "rm1", "peso", "entreno_sets",
         "wellness_am", "wellness_pm"]
 
+log = logging.getLogger(__name__)
+
+# Tras un fallo de lectura se sirve lo último bueno durante este rato antes de volver a
+# intentarlo. Reintentar en CADA petición, con la cuota de Google agotada, solo echaría
+# más leña al fuego que provocó el fallo.
+ESPERA_TRAS_FALLO_S = 30
+
 _client = None
-_cache = {"ts": 0.0, "data": None}
+# `ts` es la hora de la última lectura COMPLETAMENTE buena; una lectura con fallos no la
+# renueva, para que se reintente en cuanto pase `reintento_ts`.
+_cache = {"ts": 0.0, "data": None, "reintento_ts": 0.0}
 
 
 def client():
@@ -41,30 +51,71 @@ def client():
 def fetch_all(ttl: int = 300):
     """Devuelve un dict {tab: [registros]} con las pestañas que consume el panel.
 
-    Cachea en memoria TTL segundos (por defecto 5 min). Las pestañas que no
-    existan o fallen devuelven lista vacía en vez de romper.
+    Cachea en memoria TTL segundos (por defecto 5 min).
+
+    Si una pestaña no se puede leer se conserva lo último que se leyó bien de ella. NO se
+    cachea el vacío: hacerlo convertía un fallo pasajero (cuota de Google, un corte de
+    red) en "no tienes datos" durante 5 minutos, con el semáforo pintando en rojo días
+    que estaban rellenos y el editor en blanco. Pasó el 2026-09-04 justo después de
+    guardar un formulario, y parecía una pérdida de datos que nunca existió.
     """
     now = time.time()
-    if _cache["data"] is not None and now - _cache["ts"] < ttl:
+    if _cache["data"] is not None and (now - _cache["ts"] < ttl or now < _cache["reintento_ts"]):
         return _cache["data"]
 
-    sh = client().open_by_key(os.environ["SHEET_ID"])
+    previo = _cache["data"] or {}
+    try:
+        sh = client().open_by_key(os.environ["SHEET_ID"])
+    except Exception as e:
+        # Abrir la hoja falla en bloque cuando se agota la cuota, y aquí no vale con
+        # propagar: dejaría la petición en 500 y al panel sin nada. Si ya teníamos datos
+        # se sirven, y se reintenta luego.
+        log.warning("sheets: no se pudo abrir la hoja (%s: %s)", type(e).__name__, e)
+        if previo:
+            _cache.update(reintento_ts=now + ESPERA_TRAS_FALLO_S)
+            return previo
+        raise
+
     data = {}
+    fallos = []
     for tab in TABS:
         try:
             records = sh.worksheet(tab).get_all_records()
             data[tab] = pd.DataFrame(records).to_dict(orient="records")
-        except Exception:
-            data[tab] = []
+        except Exception as e:
+            # Sin este log el motivo se perdía y desde el servidor el fallo era invisible.
+            log.warning("sheets: no se pudo leer la pestaña %r (%s: %s). Me quedo con las "
+                        "%d filas que ya tenía.", tab, type(e).__name__, e,
+                        len(previo.get(tab, [])))
+            fallos.append(tab)
+            data[tab] = previo.get(tab, [])
 
-    _cache.update(ts=now, data=data)
+    if fallos:
+        _cache.update(data=data, reintento_ts=now + ESPERA_TRAS_FALLO_S)
+    else:
+        _cache.update(ts=now, data=data, reintento_ts=0.0)
     return data
 
 
-def invalidar() -> None:
-    """Fuerza que la próxima lectura vaya a Google en vez de a la caché.
+def invalidar(tab: str | None = None) -> None:
+    """Refresca la caché tras escribir. Con `tab`, solo esa pestaña.
 
     Se llama tras escribir un formulario: si no, el semáforo y el editor seguirían
     viendo el estado anterior hasta 300s, y parecería que el guardado no ha hecho nada.
+
+    Lo de refrescar UNA pestaña no es una optimización cosmética: releer las 7 en cada
+    guardado (con `entreno_sets` a la cabeza, 1500+ filas) es lo que nos ponía contra la
+    cuota de la API. Al guardar un formulario solo cambia su propia pestaña.
     """
-    _cache["ts"] = 0.0
+    if tab is None or _cache["data"] is None:
+        _cache["ts"] = 0.0
+        return
+    try:
+        sh = client().open_by_key(os.environ["SHEET_ID"])
+        records = sh.worksheet(tab).get_all_records()
+        _cache["data"][tab] = pd.DataFrame(records).to_dict(orient="records")
+    except Exception as e:
+        # Si el refresco puntual falla, que la próxima lectura completa lo intente.
+        log.warning("sheets: no se pudo refrescar %r tras escribir (%s: %s)",
+                    tab, type(e).__name__, e)
+        _cache["ts"] = 0.0

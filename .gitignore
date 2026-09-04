@@ -20,6 +20,8 @@ dashboard/frontend/tsconfig.tsbuildinfo
 __pycache__/
 *.pyc
 entreno_join.csv
+# log del backend: local de cada máquina y con las peticiones de Hugo dentro
+logs/
 
 # --- claude / editor / SO ---
 .claude/

@@ -58,8 +58,25 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # --- 2) backend ------------------------------------------------------------
-echo "▸ 2/3  Backend en http://localhost:$BACKEND_PORT …"
-( cd "$BACKEND_DIR" && exec "$PY" -m uvicorn main:app --port "$BACKEND_PORT" ) &
+# El backend avisa por el log de cosas que no se ven en pantalla (una pestaña de la hoja
+# que no se pudo leer, por ejemplo). En el terminal se pierden al cerrarlo, así que van
+# también a fichero: sin eso, un fallo pasajero solo se puede diagnosticar si estabas
+# mirando en ese momento.
+LOG_DIR="$ROOT/logs"
+LOG="$LOG_DIR/backend.log"
+mkdir -p "$LOG_DIR"
+# Rotación mínima: a partir de 5 MB se aparta como .1 y se empieza de cero. Encendido
+# meses en un servidor, un log sin tope se come el disco.
+if [[ -f "$LOG" && "$(wc -c < "$LOG")" -gt 5000000 ]]; then
+  mv -f "$LOG" "$LOG.1"
+fi
+printf '\n===== arranque %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG"
+
+echo "▸ 2/3  Backend en http://localhost:$BACKEND_PORT …  (log: logs/backend.log)"
+# Con `| tee`, $! sería el PID de tee y el trap dejaría vivo a uvicorn al salir. Con
+# sustitución de proceso, $! sigue siendo el del backend.
+( cd "$BACKEND_DIR" && exec "$PY" -m uvicorn main:app --port "$BACKEND_PORT" ) \
+  > >(tee -a "$LOG") 2>&1 &
 BACK_PID=$!
 
 # espera a que /data responda (máx ~15s) para no arrancar el front antes de tiempo

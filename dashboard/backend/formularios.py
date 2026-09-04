@@ -142,18 +142,23 @@ def normalizar_zonas(texto: str) -> str:
     return ", ".join(zonas)
 
 
-def validar(tipo: str, valores: dict) -> tuple[dict, list[str]]:
-    """Devuelve (valores limpios, errores en español).
+def validar(tipo: str, valores: dict) -> tuple[dict, list[str], list[str]]:
+    """Devuelve (valores limpios, errores en español, avisos en español).
 
     Los rangos salen del ESQUEMA, que es la única fuente: si algún día cambian las
     escalas se tocan ahí y la UI, la API y las herramientas de Jarvis quedan alineadas.
+
+    La diferencia entre error y aviso: el error tumba el guardado entero, el aviso deja
+    pasar el resto. Una zona que no está en el vocabulario no puede tirar abajo la
+    energía y el RPE que Hugo ha dictado en la misma frase.
     """
     form = ESQUEMA.get(tipo)
     if form is None:
-        return {}, [f"No existe el formulario '{tipo}'. Son: {', '.join(ESQUEMA)}."]
+        return {}, [f"No existe el formulario '{tipo}'. Son: {', '.join(ESQUEMA)}."], []
 
     limpios: dict = {}
     errores: list[str] = []
+    avisos: list[str] = []
     for nombre, bruto in valores.items():
         if nombre == "fecha":
             continue
@@ -168,7 +173,20 @@ def validar(tipo: str, valores: dict) -> tuple[dict, list[str]]:
         if campo.tipo == "texto":
             limpios[nombre] = crudo
         elif campo.tipo == "zonas":
-            limpios[nombre] = normalizar_zonas(crudo)
+            zonas = normalizar_zonas(crudo)
+            if zonas:
+                limpios[nombre] = zonas
+            else:
+                # Antes esto entraba como cadena vacía: la zona se perdía Y borraba lo que
+                # hubiera en la celda, sin error ni rastro en el log. Peor todavía, la
+                # herramienta le devolvía a Jarvis un "así queda" que contradecía lo que él
+                # acababa de mandar, y lo leía como que había fallado el sistema.
+                # Ahora no se toca la celda y se dice qué palabra no se ha entendido: la
+                # zona más parecida la propone Jarvis, que para eso sabe de anatomía.
+                avisos.append(
+                    f"{campo.etiqueta}: no reconozco '{crudo}', así que ese campo se ha "
+                    f"quedado como estaba. Las zonas válidas son: {', '.join(ZONAS)}."
+                )
         elif campo.tipo == "hora":
             m = _HORA.match(crudo)
             if not m or not (0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59):
@@ -191,7 +209,7 @@ def validar(tipo: str, valores: dict) -> tuple[dict, list[str]]:
                 errores.append(f"{campo.etiqueta}: {crudo} se sale de la escala ({campo.ayuda or f'{campo.minimo} a {campo.maximo}'}).")
                 continue
             limpios[nombre] = int(num) if campo.tipo == "entero" else num
-    return limpios, errores
+    return limpios, errores, avisos
 
 
 def _fecha_valida(fecha: str) -> bool:
@@ -240,11 +258,14 @@ def guardar(tipo: str, fecha: str, valores: dict) -> dict:
     if not _fecha_valida(fecha):
         raise ValueError(f"La fecha '{fecha}' no tiene el formato AAAA-MM-DD.")
 
-    limpios, errores = validar(tipo, valores)
+    limpios, errores, avisos_val = validar(tipo, valores)
     if errores:
         raise ValueError(" ".join(errores))
     if not limpios:
-        raise ValueError("No has mandado ningún campo con valor.")
+        # Si lo ÚNICO que mandó era una zona que no se entiende, decir "no has mandado
+        # ningún campo" despistaría: lo mandó, no se reconoció. Que se vea el motivo.
+        raise ValueError(" ".join(avisos_val) if avisos_val
+                         else "No has mandado ningún campo con valor.")
 
     coincidencias: list[int] = []
     with _lock:
@@ -308,12 +329,12 @@ def guardar(tipo: str, fecha: str, valores: dict) -> dict:
             creada = False
 
     # Sin esto el semáforo y el editor seguirían viendo el estado anterior hasta 300s.
-    sheets.invalidar()
+    sheets.invalidar(ESQUEMA[tipo].pestana)
 
     actual = leer(tipo, fecha)
     faltan = [c.nombre for c in ESQUEMA[tipo].campos
               if str(actual.get(c.nombre, "")).strip() == ""]
-    avisos = []
+    avisos = list(avisos_val)
     if len(coincidencias) > 1:
         # Ya hay duplicados de antes en la hoja (wellness_am 2026-06-25 y 2026-08-04,
         # peso 2026-08-11). Se edita la ÚLTIMA porque es la que gana en consolidate(),
