@@ -20,6 +20,7 @@ frágil de `proveedor.py`; en texto plano funciona igual en ambos y los modelos
 pequeños lo siguen sin problema. Si algún día estorba, se cambia ahí dentro.
 """
 import json
+import logging
 import os
 from datetime import date
 
@@ -31,7 +32,19 @@ import personalidad
 import proveedor
 from sheets import fetch_all
 
+log = logging.getLogger(__name__)
+
 MAX_VUELTAS = 4  # tope de idas y venidas con herramientas, por si el modelo se atasca
+
+
+class Cancelado(Exception):
+    """Hugo ha cortado a Jarvis a media respuesta.
+
+    No es un error: es la vía por la que se aborta el turno. Lanzada desde `al_texto`
+    sale del `with` del stream de Anthropic (cerrándolo, así que además se deja de pagar
+    lo que quedara por escribir) y se lleva por delante las vueltas de herramienta y el
+    guardado, que es lo que de verdad importa: sin esto, cortarle no impedía que
+    escribiera en su hoja de cálculo."""
 
 PANELES = ["readiness", "hrv", "sueno", "carga", "fuerza", "peso", "correlaciones",
            "formularios"]
@@ -167,14 +180,49 @@ NOMBRES_UI = {h["nombre"] for h in HERRAMIENTAS_UI}
 
 # --- herramientas de lectura -------------------------------------------------
 
+def _ultima_fila(data: dict, pestana: str, fecha: str) -> dict:
+    """La ÚLTIMA fila de esa fecha. Hay fechas duplicadas de cuando Hugo corregía a mano,
+    y la que vale es la última: es la que gana también al consolidar."""
+    filas = [r for r in data.get(pestana, []) if str(r.get("fecha")) == fecha]
+    return filas[-1] if filas else {}
+
+
 def _tool_dia(fecha: str) -> dict:
     data = fetch_all()
     fila = next((r for r in data.get("derived_diario", []) if str(r.get("fecha")) == fecha), None)
-    if fila is None:
+
+    # `derived_diario` SOLO lo regenera el pipeline, así que cualquier día posterior a la
+    # última pasada sale vacío aunque Hugo tenga el formulario relleno. Pasó el 2026-09-06:
+    # `dia` juraba "no hay datos del 5" mientras el PM del 5 estaba guardado, y Jarvis se
+    # contradijo a sí mismo delante de él. Por eso se leen también las pestañas ORIGEN,
+    # que es donde escriben los formularios — la misma regla que ya seguía `huecos.py`.
+    am = _ultima_fila(data, "wellness_am", fecha)
+    pm = _ultima_fila(data, "wellness_pm", fecha)
+    peso = _ultima_fila(data, "peso", fecha)
+
+    if fila is None and not am and not pm and not peso:
         return {"error": f"no hay datos del {fecha}"}
+
+    fila = fila or {}
     interesa = ["readiness", "hrv_rmssd", "sueno_horas", "sueno_calidad", "energia",
                 "molestias_nivel", "rpd_sesion", "volumen_total", "n_series_total"]
     resumen = {k: fila[k] for k in interesa if fila.get(k) not in ("", None)}
+
+    # El origen manda sobre lo derivado: es lo que Hugo acaba de escribir.
+    del_origen = ["sueno_calidad", "sensacion_am", "animo", "estres", "molestias_nivel",
+                  "molestias_zona", "alcohol_ayer", "notas_am",
+                  "energia", "sensacion_global", "cafeina_hoy_mg", "rpd_sesion",
+                  "dolor_sesion_zona", "dolor_sesion_nota", "notas_pm"]
+    for origen in (am, pm):
+        for k in del_origen:
+            if origen.get(k) not in ("", None):
+                resumen[k] = origen[k]
+    if peso.get("peso_kg") not in ("", None):
+        resumen["peso_kg"] = peso["peso_kg"]
+    # `dolor_sesion_keep` NO se incluye nunca: es el borrador que Hugo escribe en el keep y
+    # luego copia al formulario. Dárselos los dos le haría leer el mismo dolor como dos
+    # episodios distintos.
+    resumen["formularios"] = {"am": bool(am), "pm": bool(pm)}
     sets = [
         {"ejercicio": s.get("ejercicio"), "kg": s.get("kg"), "reps": s.get("reps"),
          "n_series": s.get("n_series"), "rpe": s.get("rpe")}
@@ -221,6 +269,34 @@ def _hoy() -> str:
     return date.today().isoformat()
 
 
+# Envoltorios con los que el modelo anida los campos de vez en cuando, en vez de
+# mandarlos sueltos como pide el esquema.
+_ENVOLTORIOS = ("valores", "campos", "datos", "formulario")
+
+
+def _aplanar(args: dict) -> dict:
+    """Sube los campos si el modelo los ha metido dentro de un objeto.
+
+    Pasó el 2026-09-06 rellenando el PM por voz: mandó `guardar_pm({valores: {...}})` y
+    el guardado moría con "'valores' no es un campo del formulario PM". Hugo lo había
+    dictado bien y lo perdió tres veces seguidas.
+
+    Se corrige en vez de rechazarse porque el coste es asimétrico: aceptar la forma
+    anidada no puede estropear nada (los nombres de campo se validan igual justo
+    después), y rechazarla le cuesta a Hugo repetir el parte entero de viva voz.
+    """
+    if not isinstance(args, dict):
+        return {}
+    plano = {k: v for k, v in args.items() if k not in _ENVOLTORIOS}
+    for k in _ENVOLTORIOS:
+        dentro = args.get(k)
+        if isinstance(dentro, dict):
+            # Lo de fuera manda: si mandó la fecha suelta y otra dentro, gana la suelta.
+            for sub_k, sub_v in dentro.items():
+                plano.setdefault(sub_k, sub_v)
+    return plano
+
+
 def _tool_guardar(tipo: str, args: dict) -> dict:
     """Guarda o corrige un formulario. Devuelve también QUÉ FALTA todavía.
 
@@ -228,6 +304,7 @@ def _tool_guardar(tipo: str, args: dict) -> dict:
     quepa en un turno: Jarvis guarda lo que ha oído y ya sabe qué preguntar, sin gastar
     otra vuelta de MAX_VUELTAS.
     """
+    args = _aplanar(args)
     fecha = str(args.get("fecha") or "").strip() or _hoy()
     valores = {k: v for k, v in args.items() if k != "fecha"}
     if not valores:
@@ -237,14 +314,28 @@ def _tool_guardar(tipo: str, args: dict) -> dict:
     except ValueError as e:
         # El mensaje va en español y es el que Jarvis le repetirá a Hugo para re-preguntar.
         return {"error": str(e), "fecha": fecha}
-    etiquetas = {c.nombre: c.etiqueta for c in formularios.ESQUEMA[tipo].campos}
-    return {
-        "guardado": res["guardado"],
-        "fecha": res["fecha"],
-        "asi_queda": res["valores"],
-        "faltan": [etiquetas.get(n, n) for n in res["faltan"]],
-        "avisos": res["avisos"],
-    }
+
+    # A PARTIR DE AQUÍ LA HOJA YA ESTÁ ESCRITA. Pase lo que pase montando el resumen, no
+    # se puede devolver un error: Jarvis lo leería como que el guardado ha fallado y le
+    # haría dictarlo todo otra vez encima de un dato que ya está bien.
+    # Pasó el 2026-09-06: `res["valores"]` no existe (la clave es `guardado`), saltó un
+    # KeyError DESPUÉS de escribir, y Jarvis le dijo a Hugo que no sabía si se había
+    # guardado. Estaba guardado, y correcto.
+    try:
+        etiquetas = {c.nombre: c.etiqueta for c in formularios.ESQUEMA[tipo].campos}
+        return {
+            "guardado": True,
+            "creada": res["creada"],   # fila nueva, o corrección de una que ya estaba
+            "fecha": res["fecha"],
+            "asi_queda": res["guardado"],
+            "faltan": [etiquetas.get(n, n) for n in res["faltan"]],
+            "avisos": res["avisos"],
+        }
+    except Exception as e:
+        log.warning("guardar_%s escribió bien pero falló al montar el resumen (%s: %s)",
+                    tipo, type(e).__name__, e)
+        return {"guardado": True, "fecha": fecha,
+                "avisos": ["Se ha guardado, pero no he podido leer cómo queda."]}
 
 
 def _ejecutar_backend(llamada) -> str:
@@ -270,6 +361,13 @@ def _ejecutar_backend(llamada) -> str:
             res = {"error": f"herramienta desconocida: {llamada.nombre}"}
     except Exception as e:  # que un fallo de herramienta no tumbe la conversación
         res = {"error": f"{type(e).__name__}: {e}"}
+    # El error solo viajaba al modelo, así que desde fuera esto era invisible: Jarvis
+    # decía "ha petado el guardado" y no quedaba ni rastro de por qué. Con los argumentos,
+    # que es lo que hace falta para reproducirlo.
+    if isinstance(res, dict) and res.get("error"):
+        log.warning("herramienta %s falló: %s · argumentos=%s",
+                    llamada.nombre, res["error"],
+                    json.dumps(llamada.args, ensure_ascii=False, default=str)[:400])
     return json.dumps(res, ensure_ascii=False, default=str)
 
 
@@ -366,12 +464,18 @@ def responder_rapido(sesion: str, mensaje: str, respuesta: str) -> dict:
 # --- el ciclo de conversación ------------------------------------------------
 
 def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
-              al_texto=None) -> dict:
+              al_texto=None, cancelado=None) -> dict:
     """Un turno completo: guarda, pregunta al modelo, ejecuta herramientas, devuelve.
 
     Si se pasa `al_texto`, se le van entregando los trozos según el modelo escribe, para
     que el navegador pueda empezar a leer en alto la primera frase sin esperar al final
-    (lo que se tarda en contestar lo marca la longitud de la respuesta)."""
+    (lo que se tarda en contestar lo marca la longitud de la respuesta).
+
+    `cancelado()` dice si Hugo ha cortado a Jarvis. Se mira antes de EJECUTAR nada y
+    antes de guardar: sin esto, cortarle a media frase mientras te dicta el formulario
+    escribía igualmente en la hoja los valores que había entendido mal, y dejaba en la
+    memoria una respuesta que Hugo nunca llegó a oír. El corte fino (dejar de generar) lo
+    hace `al_texto` lanzando `Cancelado` desde dentro del stream."""
     memoria.init()
     memoria.guardar_mensaje(sesion, "usuario", mensaje)
 
@@ -428,6 +532,11 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
         if not lecturas:
             break
 
+        # Última puerta antes de tocar nada de Hugo. Si ya le ha cortado, no hay a quién
+        # contestar y aquí dentro hay escrituras en su hoja (`guardar_pm`…).
+        if cancelado and cancelado():
+            raise Cancelado()
+
         mensajes.append({"role": "assistant", "content": r.texto or ""})
         for ll in lecturas:
             args = json.dumps(ll.args, ensure_ascii=False)
@@ -445,6 +554,12 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
         if clave not in vistas:
             vistas.add(clave)
             unicas.append(a)
+
+    # Si le cortó por el camino, no se guarda nada suyo. Guardar media respuesta sería
+    # peor que perderla: en el turno siguiente el modelo la leería como dicha, y Hugo le
+    # cortó precisamente porque iba mal.
+    if cancelado and cancelado():
+        raise Cancelado()
 
     if texto:
         memoria.guardar_mensaje(sesion, "jarvis", texto)

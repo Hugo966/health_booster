@@ -54,6 +54,21 @@ body {
   box-shadow: 0 0 18px rgba(0, 212, 255, 0.3);
 }
 
+/* Cortar: cerrar tu turno ("he terminado") o callar a Jarvis. En rojo porque interrumpe
+   algo que está pasando; es el único control del orbe que no es "seguir". Discreto en
+   reposo para no competir con el orbe, encendido al pasar por encima. */
+.jarvis-cortar {
+  color: #ff4757;
+  border: 1px solid rgba(255, 71, 87, 0.3);
+  background: rgba(255, 71, 87, 0.07);
+  transition: background 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.jarvis-cortar:hover {
+  border-color: rgba(255, 71, 87, 0.55);
+  background: rgba(255, 71, 87, 0.16);
+  box-shadow: 0 0 14px rgba(255, 71, 87, 0.25);
+}
+
 /* Pulso del botón de voz cuando escucha o habla. El glow usa currentColor, así que
    toma el color del estado (verde escuchando, ámbar hablando). Con "reducir
    movimiento" se apaga y queda el color fijo como indicador. */

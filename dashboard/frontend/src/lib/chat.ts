@@ -118,6 +118,24 @@ export type Chat = {
   setProveedor: (p: string) => void;
 };
 
+// Avisa al backend de que ya no hay nadie escuchando. Cerrar el socket NO basta: el
+// turno corre en un hilo aparte que llegaría hasta el final, ejecutando por el camino
+// las herramientas de escritura (`guardar_pm`…) sobre la hoja de Hugo.
+// `keepalive` para que salga aunque la pestaña se esté cerrando; los fallos se ignoran a
+// propósito: es un aviso de cortesía, no puede tumbar la petición nueva.
+function cancelarTurno(sesion: string) {
+  try {
+    void fetch(`${API_BASE}/chat/cancelar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sesion }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* backend caído: no hay nada que cancelar */
+  }
+}
+
 export function useChat(
   onAcciones?: (acciones: Accion[]) => void,
   // Abre un turno de voz al empezar la respuesta. El chat le va empujando cada frase
@@ -130,6 +148,12 @@ export function useChat(
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proveedor, setProveedorState] = useState<string>(proveedorInicial);
+
+  // Petición en vuelo, para poder abortarla cuando Hugo interrumpe.
+  const abortRef = useRef<AbortController | null>(null);
+  // Nº de envío. Sirve para que el desenlace de una petición abortada (que llega tarde)
+  // no toque el estado de la que ya la ha sustituido.
+  const genRef = useRef(0);
 
   // El proveedor se lee en `enviar` desde una ref para no recrear el callback al
   // cambiar de modelo a media conversación.
@@ -169,10 +193,14 @@ export function useChat(
   // (es la fuente de verdad de la conversación). No se toca mientras se está enviando,
   // para no pisar el texto que se está escribiendo en vivo.
   const ultimoIdRef = useRef(0);
+  // Tras abortar, el backend tarda un poco en enterarse. Durante ese rato su hilo aún no
+  // refleja la interrupción, y adoptarlo repintaría lo que Hugo acaba de cortar.
+  const noSincronizarHastaRef = useRef(0);
   useEffect(() => {
     let vivo = true;
     const sincronizar = async () => {
       if (!vivo || enviando || document.hidden) return;
+      if (Date.now() < noSincronizarHastaRef.current) return;
       try {
         const r = await fetch(`${API_BASE}/hilo?sesion=${encodeURIComponent(sesion.current)}`);
         if (!r.ok) return;
@@ -208,7 +236,27 @@ export function useChat(
   const enviar = useCallback(
     async (texto: string) => {
       const limpio = texto.trim();
-      if (!limpio || enviando) return;
+      if (!limpio) return;
+
+      // Interrumpir: la petición en vuelo se ABORTA en vez de descartar la nueva. Antes
+      // había aquí un `|| enviando` que tiraba en silencio lo que Hugo dijera mientras
+      // Jarvis respondía: le cortaba la voz pero su aclaración no llegaba a ninguna
+      // parte, y desde fuera parecía que a Jarvis no se le podía interrumpir.
+      if (abortRef.current) {
+        abortRef.current.abort();
+        // Cerrar el socket no basta: el turno corre en un hilo aparte del backend que
+        // seguiría hasta el final, ejecutando herramientas de ESCRITURA incluidas.
+        cancelarTurno(sesion.current);
+        noSincronizarHastaRef.current = Date.now() + 4000;
+      }
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      // Cada envío lleva su número. El `finally` de una petición abortada llega TARDE,
+      // cuando la nueva ya está en marcha: sin esto le apagaría el `enviando` y le
+      // pisaría la burbuja.
+      const gen = ++genRef.current;
+      const vigente = () => genRef.current === gen;
+
       setError(null);
       setMensajes((prev) => [...prev, { rol: "usuario", texto: limpio, ts: Date.now() }]);
       setEnviando(true);
@@ -222,6 +270,7 @@ export function useChat(
 
       // La burbuja se va reescribiendo en vivo: se ve escribir a Jarvis.
       const pintar = (t: string) => {
+        if (!vigente()) return;
         setMensajes((prev) => {
           const copia = [...prev];
           const m: Mensaje = { rol: "jarvis", texto: t, ts };
@@ -254,6 +303,7 @@ export function useChat(
             mensaje: limpio,
             ...(provRef.current ? { proveedor: provRef.current } : {}),
           }),
+          signal: ctrl.signal,
         });
         if (!r.ok || !r.body) throw new Error(`El chat respondió ${r.status}`);
 
@@ -294,15 +344,20 @@ export function useChat(
         if (fin?.error) setError(fin.error);
         // El texto del evento final manda: incluye lo de todas las vueltas de herramienta.
         if (fin?.texto && fin.texto !== acumulado) pintar(fin.texto);
-        if (fin?.acciones.length) accionesRef.current?.(fin.acciones);
+        if (fin?.acciones.length && vigente()) accionesRef.current?.(fin.acciones);
       } catch (e) {
-        setError(String(e));
+        // Abortar es lo que Hugo ha pedido al interrumpir, no un fallo: pintarlo en rojo
+        // sería mentirle.
+        if ((e as Error)?.name !== "AbortError" && vigente()) setError(String(e));
       } finally {
-        habla?.cerrar();
-        setEnviando(false);
+        habla?.cerrar(); // protegido por el contador de turno de voz.ts: es inocuo si ya cambió
+        if (vigente()) {
+          abortRef.current = null;
+          setEnviando(false);
+        }
       }
     },
-    [enviando],
+    [],
   );
 
   return { mensajes, enviando, error, enviar, proveedor, setProveedor };

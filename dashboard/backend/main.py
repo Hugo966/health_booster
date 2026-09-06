@@ -108,6 +108,51 @@ class Mensaje(BaseModel):
     proveedor: str | None = None
 
 
+class Sesion(BaseModel):
+    sesion: str = "default"
+
+
+# Turno en vuelo por sesión, para poder cortarlo. Que el navegador cierre el socket NO
+# basta: el turno corre en un hilo aparte que seguiría hasta el final, ejecutando por el
+# camino las herramientas que escriben en la hoja de Hugo. Y el generador SSE suele estar
+# bloqueado en `cola.get()`, no en un `yield`, así que tampoco se puede confiar en que le
+# llegue el `GeneratorExit` a tiempo. Por eso el frontend lo pide explícitamente.
+_turnos: dict[str, threading.Event] = {}
+_turnos_lock = threading.Lock()
+
+
+def _abrir_turno(sesion: str) -> threading.Event:
+    """Registra el turno y cancela el anterior de esa sesión, si lo hubiera.
+
+    Lo segundo es la red de seguridad del backend: aunque el navegador no avise (pestaña
+    cerrada de golpe, red caída), mandar un mensaje nuevo corta el viejo."""
+    corte = threading.Event()
+    with _turnos_lock:
+        previo = _turnos.get(sesion)
+        if previo is not None:
+            previo.set()
+        _turnos[sesion] = corte
+    return corte
+
+
+def _cerrar_turno(sesion: str, corte: threading.Event) -> None:
+    with _turnos_lock:
+        # Solo si sigue siendo el nuestro: otro turno pudo haber tomado el relevo.
+        if _turnos.get(sesion) is corte:
+            _turnos.pop(sesion, None)
+
+
+@app.post("/chat/cancelar")
+def chat_cancelar(s: Sesion):
+    """Hugo ha cortado a Jarvis. Lo llama el navegador al abortar la petición."""
+    with _turnos_lock:
+        corte = _turnos.get(s.sesion)
+    if corte is None:
+        return {"cancelado": False}
+    corte.set()
+    return {"cancelado": True}
+
+
 @app.post("/chat")
 def chat(m: Mensaje):
     """Devuelve {texto, acciones}: lo que dice Jarvis y lo que el navegador debe hacer."""
@@ -159,30 +204,50 @@ def chat_stream(m: Mensaje):
 
     cola: queue.Queue = queue.Queue()
     caja: dict = {}
+    corte = _abrir_turno(m.sesion)
+
+    def al_texto(t):
+        # El punto de corte fino: se comprueba en cada token. Lanzar aquí sale del `with`
+        # del stream de Anthropic, así que además de abortar el turno se deja de generar.
+        if corte.is_set():
+            raise chat_mod.Cancelado()
+        cola.put(("texto", t))
 
     def trabajo():
         try:
             caja["r"] = chat_mod.responder(
                 m.sesion, m.mensaje, m.proveedor,
-                al_texto=lambda t: cola.put(("texto", t)),
+                al_texto=al_texto, cancelado=corte.is_set,
             )
+        except chat_mod.Cancelado:
+            # Hugo le ha cortado: no es un fallo y no hay nada que contarle. La respuesta
+            # a medias NO se guarda (lo decide `chat.responder`).
+            caja["cancelado"] = True
         except Exception as e:  # el error viaja en el evento final, no rompe el flujo
             caja["error"] = str(e)
         finally:
+            _cerrar_turno(m.sesion, corte)
             cola.put(None)
 
     threading.Thread(target=trabajo, daemon=True).start()
 
     def eventos():
-        # La coletilla ya la trae el enrutado: sale la primera, sin esperar a Sonnet.
-        if ruta["muletilla"]:
-            yield f"data: {json.dumps({'tipo': 'muletilla', 'texto': ruta['muletilla']}, ensure_ascii=False)}\n\n"
-        while True:
-            item = cola.get()
-            if item is None:
-                break
-            tipo, dato = item
-            yield f"data: {json.dumps({'tipo': tipo, 'texto': dato}, ensure_ascii=False)}\n\n"
+        try:
+            # La coletilla ya la trae el enrutado: sale la primera, sin esperar a Sonnet.
+            if ruta["muletilla"]:
+                yield f"data: {json.dumps({'tipo': 'muletilla', 'texto': ruta['muletilla']}, ensure_ascii=False)}\n\n"
+            while True:
+                item = cola.get()
+                if item is None:
+                    break
+                tipo, dato = item
+                yield f"data: {json.dumps({'tipo': tipo, 'texto': dato}, ensure_ascii=False)}\n\n"
+        except GeneratorExit:
+            # El navegador se fue sin avisar (pestaña cerrada, red caída). Red secundaria:
+            # el camino normal es `POST /chat/cancelar`, que llega antes y no depende de
+            # que este generador esté parado en un `yield` justo cuando toca.
+            corte.set()
+            raise
         r = caja.get("r") or {}
         fin = {
             "tipo": "fin",
@@ -190,6 +255,9 @@ def chat_stream(m: Mensaje):
             "acciones": r.get("acciones", []),
             "uso": r.get("uso", {}),
             "error": caja.get("error"),
+            # Lo mira quien siga escuchando: si el corte lo provocó un mensaje NUEVO de la
+            # misma sesión, este cliente sigue ahí y no debe quedarse colgado esperando.
+            "cancelado": bool(caja.get("cancelado")),
         }
         yield f"data: {json.dumps(fin, ensure_ascii=False)}\n\n"
 

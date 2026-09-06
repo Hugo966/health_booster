@@ -3,10 +3,20 @@
 > Resumen autocontenido para continuar el proyecto en una sesión nueva.
 > Usuario: Hugo (powerlifter). Idioma de trabajo: español. Código y comentarios en español.
 
-## 0. LO PRIMERO — pendientes del 2026-09-04 (leer antes de tocar nada)
+## 0. LO PRIMERO — pendientes del 2026-09-06 (leer antes de tocar nada)
 
 Escrito en el portátil al cerrar la sesión. Cada punto lleva el porqué, porque el orden
 importa y saltárselo tiene consecuencias.
+
+### Lo que se cerró el 2026-09-06 (no rehacerlo)
+- **A Jarvis ya se le puede interrumpir** —con el botón y hablándole encima— y **espera a
+  que Hugo termine** antes de contestar. Probado en vivo por él y dado por bueno.
+- Por el camino salieron **cuatro fallos que no eran de voz**, los cuatro arreglados: la
+  herramienta `dia` leyendo datos caducados, dos formas distintas de romper el guardado
+  de formularios, y Jarvis quedándose mudo sin decir por qué.
+- **Todo el detalle, y las perillas para reajustar la voz, en §13.** Leerlo antes de
+  tocar `voz.ts` o `vad.ts`: casi todos esos números están donde están por una prueba
+  concreta, no por gusto.
 
 ### Lo que se cerró el 2026-09-04 (no rehacerlo)
 - **Sincronización: hecha.** El commit suelto del que avisaba el handoff anterior ya está
@@ -249,6 +259,11 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-09-06 (interrumpir a Jarvis por voz, y que espere a que termines)
+Hugo pidió tres cosas de conversación: poder cortarle, que no conteste antes de que él
+acabe, y que el orbe signifique "he terminado" en vez de "apágate". Las tres están.
+Salieron además cuatro fallos que no tenían nada que ver con la voz. **Todo en §13.**
 
 ### Sesión 2026-09-04 (probar los formularios con el modelo real, y arreglar lo que salió)
 Sesión de verificación, no de features: se estrenó con el modelo de verdad el camino de
@@ -875,3 +890,135 @@ donde mirar.
 Nota para el que siga: `run.sh` lanza el backend con **sustitución de proceso**
 (`> >(tee -a "$LOG")`) y no con `| tee`. Con la tubería, `$!` sería el PID de `tee` y el
 `trap cleanup` dejaría uvicorn vivo al salir.
+
+---
+
+## 13. La voz conversacional del 2026-09-06 (interrumpir, esperar, y cuatro sorpresas)
+
+Lo que pidió Hugo, literal: poder **cortarle** cuando Jarvis oye mal y arranca a hablar;
+que **no conteste antes de que él termine**, pero sin que se note lento; y que tocar el
+orbe mientras escucha signifique **"he terminado, contéstame"**, no "apágate".
+
+### Por qué interrumpir no funcionaba: eran CUATRO eslabones, no uno
+Lo que más despistaba es que no funcionaba **ni haciendo clic**. El clic sí callaba el
+audio, pero la aclaración de Hugo moría después:
+
+1. `voz.ts` — el reconocedor descartaba todo mientras el estado era `"hablando"`
+   (anti-eco deliberado). Interrumpir hablando era imposible por diseño.
+2. `chat.ts` — `if (!limpio || enviando) return` **tiraba en silencio** cualquier comando
+   que llegara con una petición en vuelo. Éste es el que hacía inútil el clic.
+3. `chat.ts` — el `fetch` no llevaba `AbortController`: la respuesta seguía llegando.
+4. `main.py` — el turno corre en un hilo daemon que ignora la desconexión: seguía hasta
+   el final, **ejecutaba las escrituras en la hoja** y guardaba en `jarvis.db` la
+   respuesta entera, no la que Hugo llegó a oír.
+
+### Cómo quedó
+- **Cortar por voz**: `dashboard/frontend/src/lib/vad.ts` (nuevo). Mide la energía del
+  micro por frame y avisa cuando hay voz sostenida. No vale el reconocedor de Chrome:
+  tarda de 300 ms a 1 s en soltar el primer parcial, y para entonces ya te ha soltado
+  media parrafada encima.
+- **Cortar a mano**: el clic del orbe es contextual (hablando -> cállate; escuchando con
+  algo dicho -> he terminado; escuchando sin nada -> reposo) y hay botón de micro
+  tachado. **Es la red de seguridad**: si el corte por voz falla, esto funciona siempre.
+- **Esperar a que termine**: se acumula lo que dice y se manda tras un silencio, en vez
+  de despachar con el primer `isFinal` de Chrome, que corta pronto.
+- **Backend cancelable**: `POST /chat/cancelar` + un registro de turnos por sesión en
+  `main.py`. La cancelación viaja como excepción `Cancelado` lanzada desde `al_texto`,
+  que sale del `with` del stream de Anthropic (deja de generar) **antes** de las
+  herramientas y del guardado. Verificado en vivo: corte a los 14,9 s, stream cerrado en
+  100 ms, y en `jarvis.db` solo el mensaje de Hugo.
+  - **No fiarlo a `GeneratorExit`**: `eventos()` es un generador síncrono que suele estar
+    bloqueado en `cola.get()`, no en un `yield`. Queda como red secundaria.
+  - `enrutar` y la ruta corta `responder_rapido` **no son cancelables**. Son turnos de
+    una frase; asumido.
+
+### Las perillas, y por qué están donde están
+Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.**
+
+| Dónde | Constante | Hoy | Historia |
+|---|---|---|---|
+| `voz.ts` | `FIN_TURNO_MS` | 1200 | 1100 cortaba · 1800 se hacía incómodo · 1200 ya con el filtro de ruido |
+| `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2000 | Si la frase acaba en "…y", "…o sea" |
+| `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras |
+| `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
+| `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
+| `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA |
+
+Para afinar con números y no de oído: `localStorage.setItem("jarvis.voz.debug","1")` y
+recargar. Traza cada parcial, cada final, cuánto silencio espera, qué manda, y el nivel
+del VAD contra su umbral mientras Jarvis habla.
+
+Hay una prueba de la lógica del VAD en `scratchpad/test_vad.cjs` (no va al repo): seis
+casos —silencio, golpe, respiración, Hugo hablando, eco de Jarvis, Hugo interrumpiéndole
+por encima— con un micro simulado. Fue la que destapó que el eco se autocortaba. Si se
+tocan los umbrales, vale la pena rehacerla: `npx esbuild src/lib/vad.ts --format=cjs
+--platform=node --outfile=vad.cjs`. Ojo: en Node, `navigator` y `performance` son globales
+nativos y **asignarlos no toma efecto** — hay que usar `Object.defineProperty`, o el VAD
+ni arranca y los "ok" son falsos.
+
+### Trampas que costaron sangre (no re-descubrirlas)
+- **`\b` de JavaScript no considera letra la `ñ`.** La regex de "frase colgada" abría
+  frontera dentro de la palabra y **"muéstrame el sueño" contaba como acabado en la
+  conjunción "o"**. Con "sueño" en medio de casi todo lo que dicta, habría esperado de
+  más justo en las frases más comunes. Se usa `(?:^|\s)`, no `\b`.
+- **La ventana de gracia por tiempo NO evita el eco.** Bloquea lo que *llega* en ese
+  rato, pero Chrome tarda más de un segundo en dar una frase por final, así que la cola
+  de la voz de Jarvis aterrizaba después y entraba como si la hubiera dicho Hugo (su
+  "…rellena el keep, anda" volvió como "rellena el Panda" y se contestó a sí mismo). Lo
+  que funciona es **`rec.abort()`** al acabar de hablar: descarta el audio sin emitirlo.
+  `stop()` haría lo contrario, finalizarlo.
+- **El filtro anti-eco por contenido se descartó a propósito.** El caso de uso de Hugo es
+  cortarle **para citarle** ("no te he dicho el peso, te he dicho el sueño"): un filtro
+  de similitud se comería justo esas frases.
+- **`autoGainControl` va a `false`** en el `getUserMedia` del VAD: el AGC sube la
+  ganancia en los silencios y destroza la escala sobre la que se mide.
+- **El suelo de ruido se congela mientras Jarvis habla.** Si no, aprende su eco, el
+  umbral sube con él y el corte por voz **deja de funcionar poco a poco y sin síntoma**.
+- **El orbe parpadeaba** hablando/pensando en cada frase, con su transición de 0,75 s,
+  porque `sonando` caía a false en el hueco entre frases. Ahora solo se apaga al acabar
+  el turno.
+- **`hablar()` no tenía respaldo a la voz del navegador** (solo `decir()`, que ya no se
+  usa). Con el 8123 apagado, Jarvis era **mudo del todo** y parecía que la conversación
+  estaba rota. Ya cae al navegador, con temporizador de seguridad: si `speechSynthesis`
+  no avisa de que ha terminado, el micro se reabre igual en vez de quedarse colgado en
+  "hablando" para siempre.
+
+### Los cuatro fallos que no eran de voz
+1. **`dia` leía solo `derived_diario`**, que únicamente regenera el pipeline. Como no
+   pasa desde el 21/08, juraba "no hay datos del 5" con el PM del 5 guardado, y Jarvis se
+   contradijo delante de Hugo. Ahora lee también las pestañas ORIGEN. **Es exactamente la
+   trampa que ya estaba documentada para `huecos.py`**, en otro consumidor: si añades una
+   herramienta que mire días recientes, no la cuelgues de `derived_diario`.
+   - Ojo al añadir campos ahí: **`dolor_sesion_keep` no se incluye nunca** junto al del
+     formulario, o Jarvis lee el mismo dolor como dos episodios.
+2. **El modelo anida los argumentos** de vez en cuando: mandó `guardar_pm({valores:{…}})`
+   y el guardado moría con "'valores' no es un campo". `chat._aplanar` los sube. Se
+   corrige en vez de rechazarse porque el coste es asimétrico: aceptarlo no rompe nada
+   (los nombres se validan igual justo después) y rechazarlo le cuesta a Hugo dictar el
+   parte entero otra vez.
+3. **`_tool_guardar` pedía `res["valores"]`**, pero `formularios.guardar` devuelve
+   `guardado`. `KeyError` **después** de escribir en la hoja: el dato estaba guardado y
+   Jarvis le dijo a Hugo que no sabía si se había perdido. Arreglado, y además: **una vez
+   escrita la hoja esa herramienta ya no puede devolver un error**; si falla montando el
+   resumen, dice "guardado" y avisa aparte. Un fallo de formato no puede hacer que Hugo
+   dicte encima de un dato que ya está bien.
+   - Este solo salió a la luz al arreglar el 2: antes el guardado moría antes de llegar a
+     esa línea. Los dos hablaban de "valores" y eran fallos distintos.
+4. **Un fallo de herramienta era invisible**: el error solo viajaba al modelo, sin dejar
+   rastro. Ahora se registra con los argumentos, que es lo que hace falta para
+   reproducirlo.
+
+### Vocabulario en `personalidad.py`
+Hugo dice "el PM", "el forms", "el keep", "volcar", "el parte", y Jarvis no sabía a qué
+se refería. Hay un glosario, y una regla: **no afirmar "no tienes nada del día X" con una
+sola herramienta vacía** sin cruzarlo con `estado_formularios`.
+
+### Qué queda suelto por aquí
+- **`escucha.py` no se tocó.** Sigue con los dos mismos fallos (`SILENCIO_FIN_MS` fijo y
+  `mudo_hasta` bloqueando todo mientras habla). Hugo usa el orbe del navegador; si algún
+  día vuelve al micro externo, hay que portar esto.
+- **Para la VM de GCP**: `getUserMedia` y la Web Speech API **exigen contexto seguro**.
+  Por el `http://100.x.y.z` de Tailscale la voz no arranca; hará falta HTTPS
+  (`tailscale cert` / `tailscale serve`). `vite.config.ts` sirve en claro.
+- **"No he tomado cafeína" no se guarda como 0**: el modelo omite el campo en vez de
+  mandar 0. No es el mismo fallo y no se tocó; sería una línea en `personalidad.py`.

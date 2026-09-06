@@ -172,9 +172,9 @@ function estadoPresencia(voz: Voz | undefined, enviando: boolean): EstadoPresenc
 const LEYENDA: Record<EstadoPresencia, string> = {
   off: "Toca el orbe para activar la voz",
   dormido: "En reposo · di «Jarvis» para hablar",
-  escuchando: "Te escucho, habla",
+  escuchando: "Te escucho · para cuando termines, te espero un segundo",
   pensando: "Pensando…",
-  hablando: "Hablando…",
+  hablando: "Hablando… (puedes cortarle)",
 };
 
 // Nivel de potencia (0/1/2) = posición del modelo activo en MODELOS (Estándar/Turbo/Máx).
@@ -184,15 +184,64 @@ function potenciaDe(proveedor: string): number {
   return i < 0 ? 0 : i;
 }
 
-// El orbe + su leyenda. Un clic enciende/apaga la escucha (o corta si está hablando).
+// Micrófono tachado: "corta, que ya está". SVG a mano porque el proyecto no arrastra
+// ninguna librería de iconos.
+function MicroTachado() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6" />
+      <path d="M18.89 13.23A7 7 0 0 0 19 12v-2M5 10v2a7 7 0 0 0 12 5" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
+// Qué significa tocar el orbe AHORA. Antes solo alternaba escuchar/reposo, y Hugo pedía
+// justo lo contrario: con el orbe escuchando, pulsar es "ya he terminado, contéstame",
+// no "apágate". El botón repite la acción de forma visible, porque un canvas no anuncia
+// que se pueda pulsar.
+type AccionVoz = { hacer: () => void; titulo: string; boton: string | null };
+
+function accionDeVoz(voz: Voz): AccionVoz {
+  // Se mira `sonando` además del estado: entre que se abre el turno y sale la voz hay
+  // varios segundos de generación, y ahí cortarle también tiene que valer.
+  if (voz.estado === "hablando" || voz.sonando) {
+    return { hacer: voz.parar, titulo: "Callar a Jarvis y hablar tú", boton: "Cállate" };
+  }
+  if (voz.estado === "activo") {
+    return voz.hayPendiente
+      ? { hacer: voz.finTurno, titulo: "Cerrar tu turno y que conteste ya", boton: "He terminado" }
+      : { hacer: voz.alternar, titulo: "Dejar de escuchar (seguirá atento a «Jarvis»)", boton: "Dejar de escuchar" };
+  }
+  return {
+    hacer: voz.alternar,
+    titulo: voz.estado === "off" ? "Activar la voz" : "Volver a escuchar",
+    boton: null,
+  };
+}
+
+// El orbe, su botón de cortar y la leyenda.
 function Orbe({ voz, enviando, potencia, size }: { voz?: Voz; enviando: boolean; potencia: number; size: number }) {
   const est = estadoPresencia(voz, enviando);
-  const onToggle = voz?.soportado
-    ? () => (voz.estado === "hablando" ? voz.parar() : voz.alternar())
-    : undefined;
+  const accion = voz?.soportado ? accionDeVoz(voz) : null;
   return (
     <div className="flex flex-col items-center gap-1">
-      <Presencia estado={est} potencia={potencia} onToggle={onToggle} size={size} />
+      <Presencia estado={est} potencia={potencia} onToggle={accion?.hacer} titulo={accion?.titulo} size={size} />
+      {accion?.boton && (
+        <button
+          type="button"
+          data-no-expand
+          onClick={accion.hacer}
+          title={accion.titulo}
+          aria-label={accion.titulo}
+          className="jarvis-cortar flex h-[28px] items-center gap-1.5 rounded-lg px-2.5 text-[11px]"
+        >
+          <MicroTachado />
+          {accion.boton}
+        </button>
+      )}
       <div className="text-[11px]" style={{ color: theme.muted }}>
         {voz?.soportado === false ? "Voz no disponible (usa Chrome)" : LEYENDA[est]}
       </div>
@@ -214,8 +263,10 @@ function Entrada({ enviando, onEnviar, voz, autofocus }: { enviando: boolean; on
 
   const mandar = () => {
     const t = texto.trim();
-    if (!t || enviando) return;
-    if (voz?.estado === "hablando") voz.parar(); // barge-in: al escribir, córtale
+    // Ya no se bloquea mientras responde: escribir mientras habla es otra forma de
+    // interrumpirle, y `enviar` aborta la petición anterior en vez de descartar ésta.
+    if (!t) return;
+    if (voz?.estado === "hablando" || voz?.sonando) voz.parar(); // barge-in: al escribir, córtale
     onEnviar(t);
     setTexto("");
   };
@@ -240,9 +291,10 @@ function Entrada({ enviando, onEnviar, voz, autofocus }: { enviando: boolean; on
       />
       <button
         onClick={mandar}
-        disabled={enviando || !texto.trim()}
+        // Solo por texto vacío: con una respuesta en curso, enviar significa cortarle.
+        disabled={!texto.trim()}
         aria-label="Enviar mensaje"
-        title="Enviar"
+        title={enviando ? "Enviar (cortará lo que esté diciendo)" : "Enviar"}
         className="jarvis-back flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
       >
         <FlechaEnviar />

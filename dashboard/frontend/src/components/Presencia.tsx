@@ -261,11 +261,13 @@ export default function Presencia({
   estado,
   potencia = 0,
   onToggle,
+  titulo,
   size = 168,
 }: {
   estado: EstadoPresencia;
   potencia?: number; // 0 Estándar / 1 Turbo / 2 Máxima
   onToggle?: () => void;
+  titulo?: string; // qué significa tocarlo AHORA (lo decide quien lo monta)
   size?: number;
 }) {
   const cvRef = useRef<HTMLCanvasElement>(null);
@@ -382,20 +384,11 @@ export default function Presencia({
       ref={cvRef}
       onClick={onToggle}
       role="button"
-      aria-label={
-        estado === "off"
-          ? "Activar la voz de Jarvis"
-          : estado === "escuchando"
-            ? "Jarvis te escucha (toca para ponerlo en reposo)"
-            : "Jarvis en reposo (toca o di «Jarvis» para hablar)"
-      }
-      title={
-        estado === "off"
-          ? "Toca para activar la voz"
-          : estado === "escuchando"
-            ? "Te escucho · toca para poner en reposo"
-            : "En reposo · toca o di «Jarvis» para hablar"
-      }
+      // El significado del clic ya no se deduce del estado del orbe: depende también de
+      // si hay algo dicho a medias. Lo decide quien lo monta y llega por `titulo`; el
+      // texto de aquí abajo es solo el respaldo de cuando no se pasa.
+      aria-label={titulo ?? (estado === "off" ? "Activar la voz de Jarvis" : "Hablar con Jarvis")}
+      title={titulo ?? (estado === "off" ? "Toca para activar la voz" : "Hablar con Jarvis")}
       style={{ width: size, height: size, cursor: onToggle ? "pointer" : "default", display: "block" }}
     />
   );
