@@ -17,6 +17,10 @@ importa y saltárselo tiene consecuencias.
 - **Todo el detalle, y las perillas para reajustar la voz, en §13.** Leerlo antes de
   tocar `voz.ts` o `vad.ts`: casi todos esos números están donde están por una prueba
   concreta, no por gusto.
+- **Queda una prueba sin hacer**, y la pidió Hugo: que **solo le calle SU voz**. Está
+  comprobado que el eco de Jarvis no le corta y que la voz de Hugo sí, pero no la tele,
+  otra persona hablando, el teclado ni una respiración fuerte. El fallo sería invisible
+  —parecería que Jarvis "se corta solo"—, así que hay guion de prueba en §13.
 
 ### Lo que se cerró el 2026-09-04 (no rehacerlo)
 - **Sincronización: hecha.** El commit suelto del que avisaba el handoff anterior ya está
@@ -1012,6 +1016,34 @@ ni arranca y los "ok" son falsos.
 Hugo dice "el PM", "el forms", "el keep", "volcar", "el parte", y Jarvis no sabía a qué
 se refería. Hay un glosario, y una regla: **no afirmar "no tienes nada del día X" con una
 sola herramienta vacía** sin cruzarlo con `estado_formularios`.
+
+### PENDIENTE DE COMPROBAR: que solo le calle la voz de Hugo
+Lo que está probado es que **su propio eco** no le corta y que **la voz de Hugo sí**. Lo
+que NO se ha probado todavía, y lo pidió él expresamente, es todo lo demás que suena en
+una habitación real:
+
+- la tele o música de fondo (lo peor: es voz, sostenida, y el VAD no distingue de quién),
+- alguien más hablando en la habitación o una llamada,
+- teclear, la silla, una puerta, el ventilador, ladridos,
+- respirar fuerte o carraspear cerca del micro.
+
+**Por qué importa más de lo que parece:** el fallo no se ve. Jarvis se calla a media
+frase y desde fuera parece que "se ha cortado solo" o que va lento — que es justo la
+queja con la que empezó todo esto. Y como el VAD mide ENERGÍA, no timbre, no tiene forma
+de saber que esa voz no es la de Hugo.
+
+**Cómo comprobarlo, que si no es a ojo:** encender la traza
+(`localStorage.setItem("jarvis.voz.debug","1")` y recargar), pedirle algo largo, y
+mientras habla ir metiendo cada ruido de la lista **sin decir nada**. La traza da el
+nivel contra el umbral cada segundo: se ve cuánto mide cada cosa y cuánto margen queda.
+Un `=> CORTADO por tu voz` con Hugo callado es un falso positivo.
+
+**Si falla:** subir `MINIMO_HABLANDO` en `vad.ts` (hoy 0.038) hasta que el ruido deje de
+llegar, y comprobar después que Hugo sigue pudiendo cortarle sin gritar. Si el problema
+es la tele, el umbral de energía **no lo va a resolver del todo** y habría que atacarlo
+por otro lado (limitar la banda a 200-1000 Hz ayuda con el teclado y el ventilador, no
+con una voz). En ese caso, lo honesto es dejar el corte por voz más sordo y apoyarse en
+el botón, que nunca falla.
 
 ### Qué queda suelto por aquí
 - **`escucha.py` no se tocó.** Sigue con los dos mismos fallos (`SILENCIO_FIN_MS` fijo y
