@@ -250,6 +250,16 @@ def _tool_ejercicio(nombre: str) -> dict:
     e1rms = [(v, f) for v, f in e1rms if v is not None]
     mejor = max(e1rms, default=None)
 
+    # La serie más pesada que SÍ completó, además del e1RM. Son cosas distintas y
+    # confundirlas es un error de bulto: el e1RM de Hugo en banca sale 101,8 kg (estimado
+    # desde 80x4 @RPE6) cuando lo más que ha levantado son 90x1, y un 92,5 que falló.
+    # El modelo de RPE sobreestima al extrapolar desde repes altas con esfuerzo bajo, así
+    # que decirle "tu mejor banca son 101,8" es contarle algo que nunca ha hecho.
+    # Las series falladas (0 repes) no cuentan: sin repetición completada no hay marca.
+    completas = [s for s in filas
+                 if _f(s.get("kg")) is not None and (_f(s.get("reps")) or 0) >= 1]
+    pesada = max(completas, key=lambda s: _f(s["kg"]), default=None)
+
     recientes = [
         {"fecha": str(s.get("fecha")), "ejercicio": s.get("ejercicio"),
          "kg": s.get("kg"), "reps": s.get("reps"), "rpe": s.get("rpe")}
@@ -260,7 +270,13 @@ def _tool_ejercicio(nombre: str) -> dict:
         # Las variantes NO se fusionan: banca competición y banca 3ct son ejercicios
         # distintos, así que se listan para que el modelo no las mezcle al hablar.
         "variantes_encontradas": variantes,
-        "mejor_e1rm": {"valor": mejor[0], "fecha": mejor[1]} if mejor else None,
+        "mejor_e1rm_estimado": {"valor": mejor[0], "fecha": mejor[1],
+                                "aviso": "1RM ESTIMADO a partir de peso/repes/RPE, "
+                                         "NO un peso que haya levantado"} if mejor else None,
+        "serie_mas_pesada_real": {
+            "kg": pesada.get("kg"), "reps": pesada.get("reps"),
+            "rpe": pesada.get("rpe"), "fecha": str(pesada.get("fecha"))[:10],
+        } if pesada is not None else None,
         "series_recientes": recientes,
     }
 

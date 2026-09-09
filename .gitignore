@@ -26,3 +26,6 @@ logs/
 # --- claude / editor / SO ---
 .claude/
 .DS_Store
+
+# Comando local para reanudar la sesión de Claude Code (específico de cada máquina)
+sesion_claude.txt

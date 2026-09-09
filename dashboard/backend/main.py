@@ -4,10 +4,12 @@ import os
 import queue
 import threading
 import time
+from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import chat as chat_mod
@@ -267,3 +269,15 @@ def chat_stream(m: Mensaje):
         # Sin esto, un proxy intermedio podría bufferizar y anular la ganancia.
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# --- servir el frontend ya compilado -----------------------------------------
+# En la VM no hay nginx ni Vite: el backend sirve también el `dist/`, así que todo sale
+# por un único puerto y en el MISMO origen. Eso quita de en medio el CORS y hace que
+# `tailscale serve` solo tenga que exponer un puerto.
+# Va al final a propósito: las rutas de la API se registran antes y tienen prioridad
+# sobre este montaje en "/". En desarrollo no existe `dist/` y no se monta nada, así que
+# Vite sigue funcionando igual.
+_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="frontend")

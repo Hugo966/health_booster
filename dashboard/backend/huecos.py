@@ -16,6 +16,9 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import requests
+
+import entreno_pipeline
 import formularios
 import sheets
 
@@ -74,14 +77,21 @@ def _relleno(fila: dict | None, campos: list[str]) -> bool:
 def _ultima_sesion_keep() -> str | None:
     """Fecha de la última sesión escrita en keep.txt, o None si no se puede leer.
 
-    El keep es un fichero LOCAL: en la máquina que no lo tenga, esta señal no existe y
-    la luz sale en gris, no en rojo.
+    Sale de Drive si hay KEEP_DOC_ID y si no del fichero local; donde no haya ninguno de
+    los dos, esta señal no existe y la luz sale en gris, no en rojo.
     """
-    ruta = os.getenv("KEEP_TXT")
-    if not ruta or not Path(ruta).exists():
+    try:
+        texto = entreno_pipeline.leer_keep()
+    except (OSError, RuntimeError, requests.RequestException) as e:
+        # Drive caído, doc sin compartir o fichero ilegible: la luz sale en gris. Se
+        # acotan los tipos a propósito: un `except Exception` aquí ya tapó un NameError
+        # y la señal desapareció sin que nadie se enterase.
+        print(f"  (aviso) no pude leer el keep: {e}")
+        return None
+    if not texto.strip():
         return None
     fechas = []
-    for linea in Path(ruta).read_text(encoding="utf-8", errors="ignore").splitlines():
+    for linea in texto.splitlines():
         m = _CABECERA_KEEP.match(linea)
         if m:
             fechas.append(m.group(1))

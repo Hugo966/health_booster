@@ -194,7 +194,7 @@ def fetch_duraciones(oldest, newest):
 # El reparto pestaña -> (bloque, semana) está en ep.TAB_ROUTE.
 
 def drive_lookups():
-    """Lee el plan de entreno desde Drive -> {bloque: lookup_de_ejercicios}."""
+    """Lee el plan de entreno desde Drive -> {(plani, bloque): lookup_de_ejercicios}."""
     if not DRIVE_EXCEL_ID:
         return {}
     scopes = ["https://www.googleapis.com/auth/spreadsheets",
@@ -241,13 +241,16 @@ def drive_lookups():
     return ep.extract_exercises(sheets, verbose=True)
 
 def build_entreno():
-    if not (KEEP_TXT and os.path.exists(KEEP_TXT)):
-        print("  (aviso) KEEP_TXT no encontrado; salto entreno.")
+    # El keep sale de Drive si hay KEEP_DOC_ID, y si no del disco. En la VM no hay
+    # fichero local, y entre las dos máquinas de Hugo el fichero se desincronizaba.
+    keep = ep.leer_keep()
+    if not keep.strip():
+        print("  (aviso) keep vacío o no encontrado (ni KEEP_DOC_ID ni KEEP_TXT); salto entreno.")
         return pd.DataFrame(), pd.DataFrame()
     if not DRIVE_EXCEL_ID:
         print("  (aviso) DRIVE_EXCEL_ID no definido en .env; los sets saldrán sin nombres.")
     lookups = ep.apply_basic_swaps(drive_lookups())
-    sets = ep.parse_keep(open(KEEP_TXT, encoding="utf-8").read(), lookups)
+    sets = ep.parse_keep(keep, lookups)
     # sesión: solo sesiones con fecha (las que pueden cruzarse con el resto)
     dated = sets[sets["fecha"].astype(str).str.len() == 10].copy()
     if dated.empty:
@@ -290,9 +293,10 @@ def build_rm1(sets):
     b = sets[(sets["tipo"] == "básico") & sets["e1rm"].notna()]
     if b.empty: return pd.DataFrame()
     # `plani` va en la clave: Hugo REINICIA la numeración de bloques con cada plan, así que
-    # sin él el bloque 3 de PLANI 2 se fusionaría con el bloque 3 de PLANI 1 y los e1RM de
-    # dos etapas distintas saldrían mezclados. Hoy no chocan (P1 usa 3/4, P2 va por el 1),
-    # pero es cuestión de tiempo. El panel de Fuerza ya etiqueta P{plani}B{bloque}S{semana}.
+    # sin él el bloque 2 de PLANI 2 (Build) se fusionaría con el bloque 2 de PLANI 1 y los
+    # e1RM de dos etapas distintas saldrían mezclados. Ya se solapan de verdad desde que
+    # entró Build (P1 usa 1/2/3/4, P2 usa 1/2), así que esto dejó de ser hipotético.
+    # El panel de Fuerza ya etiqueta P{plani}B{bloque}S{semana}.
     piv = (b.groupby(["plani", "bloque", "semana", "ejercicio"])["e1rm"].max()
              .reset_index().rename(columns={"e1rm": "mejor_e1rm"}))
     return piv

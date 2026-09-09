@@ -21,7 +21,8 @@ export type Row = {
   fecha: string;
   horas: number | null;      // dormidas (reloj)
   cama: number | null;       // en cama (formulario)
-  calidad: number | null;
+  calidad: number | null;    // percibida, formulario AM (1-9)
+  score: number | null;      // score del reloj (0-100)
   eficiencia: number | null; // %
 };
 
@@ -29,6 +30,11 @@ const fmtDate = (f: string) => f.slice(8, 10) + "/" + f.slice(5, 7);
 
 const COLOR_DORMIDO = theme.accent;
 const COLOR_DESPIERTO = "#24506b";
+// Dos medidas de LO MISMO desde fuentes distintas: cómo dijo Hugo que durmió y qué dijo
+// el reloj. Se pintan en una escala común (0-100) porque lo que interesa es justo cuándo
+// discrepan; con dos ejes distintos esa comparación se pierde.
+const COLOR_CALIDAD = theme.amber;
+const COLOR_SCORE = "#7b61ff";
 
 // Caja de valor para la línea de objetivo (como los umbrales de readiness).
 function EtiquetaObjetivo({ viewBox }: { viewBox?: { x: number; y: number; width: number } }) {
@@ -46,13 +52,18 @@ function EtiquetaObjetivo({ viewBox }: { viewBox?: { x: number; y: number; width
   );
 }
 
-type Punto = Row & { despierto: number | null; soloCama: number | null };
+type Punto = Row & {
+  despierto: number | null;
+  soloCama: number | null;
+  calidadPct: number | null;  // la percibida (1-9) llevada a 0-100 para comparar
+};
 
 function build(rows: Row[]): Punto[] {
   return rows.map((r) => ({
     ...r,
     despierto: r.horas !== null && r.cama !== null ? Math.max(0, r.cama - r.horas) : null,
     soloCama: r.horas === null && r.cama !== null ? r.cama : null,
+    calidadPct: r.calidad !== null ? (r.calidad * 100) / 9 : null,
   }));
 }
 
@@ -71,7 +82,7 @@ function Chart({ rows, height, legend = false }: { rows: Row[]; height: number |
           tick={{ fill: theme.muted, fontSize: 10 }} axisLine={false} tickLine={false}
         />
         <YAxis
-          yAxisId="q" orientation="right" domain={[0, 9]} width={24}
+          yAxisId="q" orientation="right" domain={[0, 100]} width={28}
           tick={{ fill: theme.muted, fontSize: 10 }} axisLine={false} tickLine={false}
         />
         <Tooltip
@@ -81,7 +92,11 @@ function Chart({ rows, height, legend = false }: { rows: Row[]; height: number |
             if (name === "Dormido") return [`${n.toFixed(2)} h`, "Dormido"];
             if (name === "En dormirte") return [`${Math.round(n * 60)} min`, "En dormirte"];
             if (name === "En cama (sin medir)") return [`${n.toFixed(2)} h`, "En cama, sueño sin medir"];
-            return [n, "Calidad"];
+            // La percibida se dibuja escalada a 0-100; en el tooltip se devuelve a su
+            // escala real, que es la que Hugo rellena en el formulario.
+            if (name === "Calidad (tú)") return [`${(n * 9 / 100).toFixed(1)} / 9`, "Calidad (tú)"];
+            if (name === "Score (reloj)") return [`${Math.round(n)} / 100`, "Score (reloj)"];
+            return [n, name];
           }}
         />
         {legend && <Legend wrapperStyle={{ fontSize: 11 }} />}
@@ -98,8 +113,13 @@ function Chart({ rows, height, legend = false }: { rows: Row[]; height: number |
           strokeOpacity={0.95} label={<EtiquetaObjetivo />}
         />
         <Line
-          yAxisId="q" name="Calidad" type="monotone" dataKey="calidad" stroke={theme.amber} strokeWidth={2}
-          dot={{ r: 2, fill: theme.amber }} connectNulls={false}
+          yAxisId="q" name="Calidad (tú)" type="monotone" dataKey="calidadPct" stroke={COLOR_CALIDAD}
+          strokeWidth={2} dot={{ r: 2, fill: COLOR_CALIDAD }} connectNulls={false}
+          isAnimationActive={anim.on} animationDuration={anim.ms}
+        />
+        <Line
+          yAxisId="q" name="Score (reloj)" type="monotone" dataKey="score" stroke={COLOR_SCORE}
+          strokeWidth={2.4} dot={false} connectNulls={false}
           isAnimationActive={anim.on} animationDuration={anim.ms}
         />
       </ComposedChart>
@@ -166,7 +186,13 @@ export function SleepExpanded({ rows }: { rows: Row[] }) {
       <div className="mb-3 text-[11px] leading-relaxed" style={{ color: theme.muted }}>
         La barra sólida son horas dormidas, que mide el reloj. La difusa de encima es lo que
         <b style={{ color: theme.text }}> tardas en dormirte</b>: el rato en la cama antes de coger el sueño
-        (en cama menos dormido).
+        (en cama menos dormido).{" "}
+        Las dos líneas son <b style={{ color: theme.text }}>qué tal</b> dormiste, no cuánto, y vienen de
+        sitios distintos: la <b style={{ color: COLOR_CALIDAD }}>ámbar</b> es la calidad que pones tú en el
+        formulario de la mañana y la <b style={{ color: COLOR_SCORE }}>violeta</b> el score que calcula el
+        reloj. Comparten el eje de la derecha (0-100, tu 1-9 reescalado) justamente para poder
+        compararlas: lo interesante es <b style={{ color: theme.text }}>cuándo discrepan</b> — noches en
+        las que el reloj puntúa alto y tú te levantaste mal, o al contrario.
       </div>
       <div className="min-h-0 flex-1">
         <Chart rows={rows} height="100%" legend />

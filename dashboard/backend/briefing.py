@@ -181,6 +181,23 @@ def generar() -> str:
         extra = f" — {dentro} su rango normal ({m - sd:.0f}-{m + sd:.0f} ms)"
     partes.append(_linea("HRV", hrv, " ms", extra))
 
+    # FC en reposo: se ingiere desde el principio pero no se pintaba en ningún panel ni
+    # se le pasaba a Jarvis. Va justo detrás del HRV porque son pareja: cuando las dos se
+    # mueven el mismo día en direcciones opuestas (HRV abajo, pulso arriba) la señal es
+    # mucho más fiable que cualquiera de las dos por separado.
+    fc = _ultimo(dd, "fc_reposo")
+    extra = ""
+    histfc = [v for _, v in _serie(dd, "fc_reposo")][-60:]
+    if fc and len(histfc) >= 10:
+        m = _media(histfc)
+        d = fc[0] - m
+        comp = ("por encima de" if d > 1 else "por debajo de" if d < -1 else "en")
+        extra = f" — {comp} su media de {m:.0f} ppm"
+        # Pulso alto + HRV bajo el mismo día es la combinación que de verdad importa.
+        if hrv and histfc and len(hist) >= 10 and d > 2 and hrv[0] < _media(hist):
+            extra += ". OJO: pulso por encima de su media Y HRV por debajo el mismo día"
+    partes.append(_linea("FC en reposo", fc, " ppm", extra))
+
     # Sueño: lo que importa es la media reciente contra el objetivo
     sue = _ultimo(dd, "sueno_horas")
     ult7 = [v for _, v in _serie(dd, "sueno_horas")][-7:]
@@ -190,6 +207,16 @@ def generar() -> str:
         comp = "por debajo de" if m < OBJETIVO_SUENO_H else "por encima de"
         extra = f" — media 7d {m:.1f} h, {comp} su objetivo de {OBJETIVO_SUENO_H} h"
     partes.append(_linea("Sueño", sue, " h", extra))
+
+    # Score de sueño del reloj (0-100). Estaba ingerido y sin usar en ningún sitio. Es la
+    # otra mitad del sueño: las horas dicen CUÁNTO durmió y esto QUÉ TAL, así que sin él
+    # no se distingue una noche corta buena de una corta y mala.
+    sc = _ultimo(dd, "sueno_score")
+    extra = ""
+    histsc = [v for _, v in _serie(dd, "sueno_score")][-30:]
+    if sc and len(histsc) >= 10:
+        extra = f" — su media de 30 días es {_media(histsc):.0f}"
+    partes.append(_linea("Score de sueño (reloj, 0-100)", sc, "", extra))
 
     cal = _ultimo(dd, "sueno_calidad")
     partes.append(_linea("Calidad de sueño (percibida, 1-9: 5 normal, 9 mejor)", cal))

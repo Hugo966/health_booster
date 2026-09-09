@@ -102,6 +102,85 @@ consumir (API de formularios, semáforo, herramientas de voz) está terminado y 
 
 ---
 
+## 0-bis. LA VM DE GCP (montada el 2026-09-09)
+
+El dashboard **ya no depende de que el portátil esté encendido**. Corre en una e2-micro de
+la capa gratuita de GCP y se entra por Tailscale, también desde el móvil.
+
+**Dirección:** `https://jarvis.tailc3e57b.ts.net` — solo dentro del tailnet, no expuesta a
+internet. El móvil de Hugo (`poco-f6-pro`) ya está en el tailnet: basta abrir la app.
+
+| Dato | Valor |
+|---|---|
+| Proyecto | `health-boost-500507` (el mismo del service account) |
+| Instancia | `jarvis`, e2-micro, `us-central1-a`, 30 GB pd-standard |
+| Cuenta | `hugogalvezu96@gmail.com`, config de gcloud `jarvis-personal` |
+| Código | `~/health_booster`, clonado con una **deploy key de solo lectura** |
+
+**Cómo está montado, y por qué así:**
+- **Un solo proceso sirve API y frontend.** `main.py` monta el `dist/` con `StaticFiles` al
+  final del fichero (las rutas de la API se registran antes y ganan). Así todo va por
+  `:8099` y en el MISMO origen: sin CORS, sin contenido mixto, y `tailscale serve` solo
+  tiene que exponer un puerto. En desarrollo no existe `dist/` y no se monta nada, así que
+  Vite sigue igual.
+- **El frontend se compila FUERA y se sube.** `npm run build` se queda sin memoria en 1 GB.
+  Se manda el `dist/` en un tar por `gcloud compute scp` (está en `.gitignore`).
+- **2 GB de swap.** Con 969 MB de RAM, `pip install pandas` reventaba. En marcha se usan
+  ~530 MB con los dos servicios.
+- **El servicio de voz corre AQUÍ, no en el portátil.** Lo que ataba `servidor_voz.py` a la
+  3060 era el respaldo XTTS, que se carga perezosamente; **ElevenLabs es una API en la nube
+  y no necesita GPU**. Por eso la voz buena funciona en el móvil sin encender el portátil.
+  Aquí XTTS nunca se cargará: si ElevenLabs falla, `voz.ts` cae a la voz del navegador.
+  El aviso del handoff de que "el audio fundiría" el giga de egress gratis no se sostiene:
+  MP3 a 128 kbps son ~16 KB/s, o sea ~145 MB/mes a 30 respuestas diarias, un 15%.
+- **`tailscale serve` enruta por rutas**: `/` → `:8099` y `/tts` → `:8123`. El frontend se
+  compila con `VITE_API_BASE=` y `VITE_TTS_URL=/tts`, ambos relativos al mismo origen.
+- **Los dos servicios escuchan solo en `127.0.0.1`.** Lo único que los expone es el tailnet.
+- `systemd`: `jarvis` (backend, cwd en `dashboard/backend` porque los imports son planos) y
+  `jarvis-voz`. Ambos con `Restart=always`.
+- **Cron cada 3 horas** (minuto 17) pasando `status_pipeline.py`, log en `~/pipeline.log`.
+  Más a menudo no serviría: Intervals solo refresca el HRV cuando Hugo abre SU app.
+
+**El keep vive ahora en Drive.** Documento de Google llamado **Entreno**
+(`KEEP_DOC_ID=1IuHf7hcu00huaFd-SQQDAE1faQaEjBR7h4UQUPZzx0M`), compartido con el service
+account y exportado como `text/plain` por `entreno_pipeline.leer_keep()`. Resuelve dos
+cosas de golpe: la VM no tiene fichero local, y las dos máquinas de Hugo dejan de
+desincronizarse. Si no hay `KEEP_DOC_ID`, se sigue leyendo `KEEP_TXT` del disco.
+
+**Google Docs "corrige" al escribir y eso rompía el parser en silencio**: convierte el
+guion de separar series en raya (`–`) y la comilla de los tempos (`2"`) en tipográfica,
+y añade un BOM. `normalizar_texto()` lo deshace **al leer**, no en el parser, para que el
+keep local siga comportándose igual. Es la trampa más probable si algún día el keep de
+Drive deja de parsear.
+
+### Lo que falta en la VM
+- **`ANTHROPIC_API_KEY` y `ELEVENLABS_API_KEY`.** Solo existen en el `.env` del portátil
+  (los proveedores no las vuelven a mostrar), así que hay que llevarlas desde allí:
+  ```bash
+  grep -E '^(ANTHROPIC_API_KEY|ELEVENLABS_API_KEY|ELEVENLABS_VOICE_ID|ELEVENLABS_MODELO)=' .env > /tmp/claves.env
+  gcloud compute scp /tmp/claves.env jarvis:~/ --zone=us-central1-a --project=health-boost-500507
+  gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
+    --command="cat ~/claves.env >> ~/health_booster/.env && rm ~/claves.env && sudo systemctl restart jarvis jarvis-voz"
+  rm /tmp/claves.env
+  ```
+  Correcto cuando `/tts/salud` diga `"elevenlabs": true`. Sin ellas el chat no responde y
+  la voz cae a la del navegador; el resto del dashboard funciona entero.
+- **Alerta de presupuesto**: la capa gratuita pide tarjeta. Conviene una alerta a 1 €.
+- **Probar el chat por el tailnet**: va por SSE (`/chat/stream`). El código manda
+  `X-Accel-Buffering: no`, pero quien tiene que no bufferizar ahora es `tailscale serve`.
+  Si el texto llega de golpe en vez de fluido, es eso.
+- **No quitarle la IP externa efímera**: sin ella la VM no llega a Sheets ni a Intervals, y
+  Cloud NAT sí se cobra. Es gratis mientras la instancia está encendida.
+
+### Actualizar la VM
+```bash
+gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
+  --command="cd ~/health_booster && git pull && sudo systemctl restart jarvis jarvis-voz"
+```
+Si cambió el frontend, además hay que compilar fuera y subir el `dist/`.
+
+---
+
 ## 1. Objetivo del proyecto
 Dashboard personal de bienestar ("Jarvis") que consolida datos de salud y entreno
 de Hugo para leer de un vistazo su estado (readiness, HRV, sueño, carga de entreno,

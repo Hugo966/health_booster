@@ -48,17 +48,26 @@ canal de sincronización, así que:
   ACWR ni con tonelaje. El ACWR se pegaba a su techo de 4.0 por falta de datos de duración.
 - **Las variantes de ejercicio son ejercicios distintos.** Banca competición, banca 3 ct
   y banca mid grip no se fusionan nunca.
-- **El plan de entreno de Drive mezcla todos los bloques en una hoja**, distinguidos solo
+- **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
-  (bloque, semana). Al empezar un bloque nuevo hay que añadir ahí su patrón, o sus
-  sesiones entran sin nombre de ejercicio. Hugo **reinicia la numeración con cada plan**,
-  así que el número de bloque debe cuadrar con el que él escribe en el keep, no ser
-  correlativo. Hoy: `Semana N`→3 y `Peaking SN`→4 (PLANI 1); `Offseason SN`→1 (PLANI 2,
-  su primera etapa). El **plan** lo marca la cabecera `PLANI N` del keep; `parse_keep` lo
-  captura en la columna `plani` de `entreno_sets`, y el panel de Fuerza etiqueta el eje
-  `P{plani}B{bloque}S{semana}` (P2B1S1) ordenado **por fecha**, no por nº de bloque. Aún
-  pendiente: `rm1` agrupa por (bloque, semana) sin plani, así que ahí sí colisionarían dos
-  planes con el mismo bloque; hoy no pasa (P1 usa 3/4, P2 usa 1).
+  **(plani, bloque)**, y el número capturado es la semana. Al empezar una etapa nueva hay
+  que añadir ahí su patrón, o sus sesiones entran sin nombre de ejercicio. Hugo
+  **reinicia la numeración de bloques con cada plan**, así que el número debe cuadrar con
+  el que él escribe en el keep, no ser correlativo. Hoy: `Semana N`→(1,3) y
+  `Peaking SN`→(1,4); `Offseason SN`→(2,1) y `Build SN`→(2,2). También se enruta ya el
+  formato **`PxBySz`** que Hugo quiere usar cuando migre el plan a una hoja propia,
+  aunque todavía no exista ninguna pestaña así.
+- **La clave del lookup lleva el PLAN, no solo el bloque, y no es opcional.** Indexando
+  solo por bloque, PLANI 1 bloque 1 cogía los nombres de las pestañas Offseason (que son
+  de PLANI 2): 313 series mal etiquetadas y **21 de 67 ejercicios con una "mejor marca"
+  imposible** —plancha copenhague a 101 kg, banca de 178 cuando la real son 101,8—.
+  Arreglado el 2026-09-09. Esas series no tienen fecha, así que nunca llegaron a
+  `derived_diario`; el daño estaba en `entreno_sets`, o sea en el panel de Fuerza y en la
+  herramienta `ejercicio` de Jarvis. `build_rm1` ya agrupaba con `plani`, ahí no había
+  colisión.
+- **El plan** lo marca la cabecera `PLANI N` del keep; `parse_keep` lo captura en la
+  columna `plani` de `entreno_sets`, y el panel de Fuerza etiqueta el eje
+  `P{plani}B{bloque}S{semana}` (P2B1S1) ordenado **por fecha**, no por nº de bloque.
 - **El dolor de una sesión vive en DOS columnas, y la del keep es solo un borrador.**
   Hugo escribe `Dolores sesión: ...` en el keep al acabar de entrenar y **más tarde copia
   ese mismo texto** al campo "dolor de entreno" del **formulario PM**. De ahí salen

@@ -10,35 +10,43 @@ Pipeline de entreno v2 — consciente de BLOQUES.
     tempo (3x12x2"), peso suelto sin reps (105), distancia (20m), RIR8+,
     e intensidades no parseables (RIRmario) -> flag, nunca se inventa.
 """
-import re, sys, unicodedata
+import os, re, sys, unicodedata
+
 import pandas as pd
-from openpyxl import load_workbook
+import requests
 
 # El plan de TODOS los bloques vive en la misma hoja ("Hugo the GOAT"): las pestañas
-# "Semana N" son el bloque 3 y las "Peaking SN" el bloque 4. El bloque no se puede
-# deducir del número (Semana 3 y Peaking S3 colisionarían), así que cada familia de
-# pestañas se enruta por regla; el número capturado es la semana dentro del bloque.
-# Al empezar un bloque 5 basta con añadir aquí su patrón de pestaña.
+# Pestaña del plan -> (PLAN, bloque). El plan es imprescindible en la clave: Hugo
+# REINICIA la numeración de bloques con cada plan, así que "BLOQUE 1" de PLANI 1 y de
+# PLANI 2 son etapas distintas. Indexando solo por bloque se pisaban: las sesiones de
+# PLANI 1 bloque 1 estaban cogiendo los nombres de las pestañas Offseason (PLANI 2), y
+# 21 de 67 ejercicios acababan con una "mejor marca" imposible —plancha copenhague a
+# 101 kg, o una banca de 178 kg cuando la real son 101,8—. Verificado el 2026-09-09.
+# El número de bloque debe cuadrar con el que Hugo escribe en SU keep, no ser correlativo.
+# Al empezar una etapa nueva basta con añadir aquí su patrón de pestaña.
 PLAN_TAB_RULES = [
-    (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      3),
-    (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 4),
-    # Offseason (S1-S5): es la PRIMERA etapa de PLANI 2, el plan nuevo. Hugo reinicia
-    # la numeración de bloques con cada plan, así que en su keep esta etapa es
-    # "BLOQUE 1" (no la continuación 3/4/5 de PLANI 1) — el número aquí debe cuadrar
-    # con el del keep o el join se queda sin nombres. Tolera "offseason"/"offseasion"
-    # y separadores sueltos porque la pestaña la escribe a mano cada semana.
-    # PENDIENTE: cuando PLANI 2 añada su etapa de volumen/peaking, sus "BLOQUE 2/3…"
-    # chocarán con los de PLANI 1 (3=Semana, 4=Peaking). Habrá que meter dimensión de
-    # plan; hoy no hace falta porque bloque 1 y 2 están libres.
-    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 1),
+    (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      1, 3),
+    (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 1, 4),
+    # Offseason (S1-S5): primera etapa de PLANI 2. Tolera "offseason"/"offseasion" y
+    # separadores sueltos porque la pestaña la escribe a mano cada semana.
+    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 1),
+    # Build (S1-S5): segunda etapa de PLANI 2, la que viene después del Offseason.
+    (re.compile(r'^\s*build\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 2),
+    # Formato "P2B2S3": el que Hugo quiere usar cuando migre el plan del entrenador a
+    # una hoja suya. Aún no existe ninguna pestaña así; se enruta ya para que ese día
+    # no haya que tocar nada, y porque lleva el plan y el bloque dentro del nombre.
+    (re.compile(r'^\s*p\s*0*(\d+)\s*b\s*0*(\d+)\s*s\s*0*(\d+)\s*$', re.I), None, None),
 ]
 
 def route_tab(title):
-    """Título de pestaña -> (bloque, semana) o None si no es una semana de plan."""
-    for rx, bloque in PLAN_TAB_RULES:
+    """Título de pestaña -> (plani, bloque, semana), o None si no es una semana de plan."""
+    for rx, plani, bloque in PLAN_TAB_RULES:
         m = rx.match(title)
-        if m:
-            return bloque, m.group(1)
+        if not m:
+            continue
+        if plani is None:            # formato PxBySz: los tres números van en el título
+            return int(m.group(1)), int(m.group(2)), m.group(3)
+        return plani, bloque, m.group(1)
     return None
 
 # Fuente local del plan (solo para el modo __main__ de depuración; el pipeline real
@@ -46,15 +54,15 @@ def route_tab(title):
 PLAN_XLSX = "/home/hugo/Desktop/Hugo the GOAT.xlsx"
 
 # Correcciones puntuales: semanas donde desviaste el plan del Excel.
-# (bloque, semana): {dia_que_entrenaste: dia_del_que_sacaste_los_BÁSICOS}
+# (plani, bloque, semana): {dia_que_entrenaste: dia_del_que_sacaste_los_BÁSICOS}
 # Solo rotan los básicos; los accesorios se quedan en su día.
 BASIC_SWAP = {
-    (3, '4'): {'2': '3', '3': '4', '4': '2'},   # B3-SEM4: básicos rotados DIA2<-3, DIA3<-4, DIA4<-2
+    (1, 3, '4'): {'2': '3', '3': '4', '4': '2'},   # P1-B3-SEM4: básicos rotados DIA2<-3, DIA3<-4, DIA4<-2
 }
 
-def apply_basic_swaps(lk_by_bloque):
-    for (bloque, sem), mapping in BASIC_SWAP.items():
-        lk = lk_by_bloque.get(bloque)
+def apply_basic_swaps(lk_by_etapa):
+    for (plani, bloque, sem), mapping in BASIC_SWAP.items():
+        lk = lk_by_etapa.get((plani, bloque))
         if not lk:
             continue
         nuevo = {}
@@ -64,7 +72,7 @@ def apply_basic_swaps(lk_by_bloque):
             nuevo[(sem, perf_dia)] = [dict(order=i, name=e['name'], block=e['block'], bw=e['bw'])
                                       for i, e in enumerate(basicos + access, 1)]
         lk.update(nuevo)
-    return lk_by_bloque
+    return lk_by_etapa
 
 RPE_TABLE = {
     10.0:[100,95.5,92.2,89.2,86.3,83.7,81.1,78.6,76.2,73.9,70.7,68.0],
@@ -174,12 +182,74 @@ SES_RE  = re.compile(r'sesi[oó]n\s*0*(\d+)', re.I)
 
 def _colA_from_xlsx(path):
     """Genera (titulo_pestaña, [valores columna A]) desde un .xlsx local."""
+    # Import perezoso: openpyxl solo hace falta para el modo de depuración con el xlsx
+    # local. El pipeline real lee el plan de Drive, y la VM no tiene esa dependencia.
+    from openpyxl import load_workbook
     wb=load_workbook(path, read_only=True, data_only=True)
     for sh in wb.sheetnames:
         yield sh, [(row[0] if row else None) for row in wb[sh].iter_rows(values_only=True)]
 
+# ---------------------------------------------------------------------------
+# Origen del keep: documento de Drive o fichero local
+# ---------------------------------------------------------------------------
+# El keep vivía solo en disco, y eso ataba el pipeline a una máquina concreta: las dos
+# de Hugo se desincronizaban sin avisar, y en la VM directamente no existe. Con
+# KEEP_DOC_ID pasa a ser un documento de Google que él edita desde donde quiera (el
+# móvil incluido) y que el pipeline exporta como texto plano.
+
+# Google Docs "corrige" al escribir, y sus sustituciones rompen el parser en silencio:
+# el guion de separar series se convierte en raya (– —) y el split de `parse_keep` deja
+# de cortar, y la comilla de los tempos (3x8x2"RIR0) se vuelve tipográfica. Se
+# normalizan al leer, no en el parser, para que el keep local siga comportándose igual.
+_TIPOGRAFICOS = {
+    '\u2013': '-', '\u2014': '-', '\u2212': '-',      # – — −  -> guion normal
+    '\u201c': '"', '\u201d': '"', '\u201e': '"', '\u2033': '"',   # comillas dobles
+    '\u2018': "'", '\u2019': "'", '\u2032': "'",      # comillas simples
+    '\u00a0': ' ', '\u202f': ' ', '\u2009': ' ',      # espacios duros y finos
+    '\u2026': '...',
+}
+
+def normalizar_texto(t):
+    t = t.lstrip('\ufeff')
+    for malo, bueno in _TIPOGRAFICOS.items():
+        t = t.replace(malo, bueno)
+    return t
+
+
+def leer_keep(sa_json=None, doc_id=None, ruta=None):
+    """Devuelve el contenido del keep, de Drive si hay KEEP_DOC_ID y si no del disco.
+
+    Se exporta como `text/plain` con las credenciales del service account, así que el
+    documento tiene que estar COMPARTIDO con él (el mismo `client_email` que ya lee el
+    plan del entrenador); si no, Drive responde 404 y no se distingue de "no existe".
+    """
+    doc_id = doc_id or os.getenv("KEEP_DOC_ID", "").strip()
+    ruta = ruta or os.getenv("KEEP_TXT", "")
+    if doc_id:
+        from google.auth.transport.requests import Request as _Req
+        from google.oauth2.service_account import Credentials as _Cred
+        creds = _Cred.from_service_account_file(
+            sa_json or os.environ["GOOGLE_SA_JSON"],
+            scopes=["https://www.googleapis.com/auth/drive.readonly"])
+        creds.refresh(_Req())
+        r = requests.get(
+            f"https://www.googleapis.com/drive/v3/files/{doc_id}/export",
+            params={"mimeType": "text/plain"},
+            headers={"Authorization": f"Bearer {creds.token}"}, timeout=30)
+        if r.status_code == 404:
+            raise RuntimeError(
+                f"Drive no encuentra el documento {doc_id}. Lo más probable es que no esté "
+                "compartido con el service account que lee el plan.")
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        return normalizar_texto(r.text)
+    if not ruta or not os.path.exists(ruta):
+        return ""
+    return normalizar_texto(open(ruta, encoding="utf-8").read())
+
+
 def extract_exercises(source, verbose=False):
-    """Lee el plan y devuelve {bloque: {(semana, dia): [ejercicios]}}.
+    """Lee el plan y devuelve {(plani, bloque): {(semana, dia): [ejercicios]}}.
 
     `source`: ruta a .xlsx local ó iterable de (titulo, columna_A) (p.ej. leído de
     Google Drive vía gspread). Solo se usa la columna A. Las pestañas que no sean
@@ -191,9 +261,9 @@ def extract_exercises(source, verbose=False):
         dest = route_tab(sh)
         if dest is None:
             skipped.append(sh); continue
-        bloque, wk = dest
-        mapping.append((sh, bloque, wk))
-        lk = out.setdefault(bloque, {})
+        plani, bloque, wk = dest
+        mapping.append((sh, plani, bloque, wk))
+        lk = out.setdefault((plani, bloque), {})
         dia=0; order=0; block=None
         for a in colA:
             if not isinstance(a,str): continue
@@ -213,7 +283,7 @@ def extract_exercises(source, verbose=False):
                                                    bw=any(k in low for k in BW)))
     if verbose:
         src = source.split('/')[-1] if isinstance(source,str) else 'drive'
-        print(f"  [Plan {src}] pestaña -> (bloque, semana): {mapping}")
+        print(f"  [Plan {src}] pestaña -> (plani, bloque, semana): {mapping}")
         print(f"  [Plan] pestañas ignoradas: {skipped}")
     return out
 
@@ -406,7 +476,7 @@ def parse_keep(text, lookups):
             flush_no_hechos()   # cierra la sesión anterior antes de empezar la nueva
             week,dia=h.group(1),h.group(2); slot=0
             ex=re.search(r'-\s*(\d{4}-\d{2}-\d{2})',line); cur_fecha=ex.group(1) if ex else ''
-            exs=lookups.get(bloque,{}).get((week,dia),[]); continue
+            exs=lookups.get((plani,bloque),{}).get((week,dia),[]); continue
         # línea de dolores de sesión -> metadato de la sesión, NO un ejercicio
         md=re.match(r'\s*dolor(?:es)?\b', line, re.I)
         if md:

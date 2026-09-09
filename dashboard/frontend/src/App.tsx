@@ -136,7 +136,9 @@ export default function App() {
   );
 
   const hrvRows = useMemo(
-    () => dd.map((r) => ({ fecha: String(r.fecha), hrv: num(r.hrv_rmssd) })),
+    () => dd.map((r) => ({
+      fecha: String(r.fecha), hrv: num(r.hrv_rmssd), fc: num(r.fc_reposo),
+    })),
     [dd],
   );
 
@@ -147,6 +149,7 @@ export default function App() {
         horas: num(r.sueno_horas),
         cama: num(r.tiempo_en_cama_h),
         calidad: num(r.sueno_calidad),
+        score: num(r.sueno_score),
         eficiencia: num(r.eficiencia_sueno),
       })),
     [dd],

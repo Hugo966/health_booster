@@ -15,7 +15,7 @@ import { anim, theme, tooltipStyle } from "../lib/theme";
 const WINDOW = 7;
 const MIN_PTS = 3;
 
-type Row = { fecha: string; hrv: number | null };
+type Row = { fecha: string; hrv: number | null; fc: number | null };
 type Zona = "alto" | "normal" | "bajo";
 
 const COLOR_ZONA: Record<Zona, string> = {
@@ -23,6 +23,10 @@ const COLOR_ZONA: Record<Zona, string> = {
   normal: theme.accent,
   bajo: theme.alert,
 };
+// La FC en reposo NO usa el cian del HRV: si comparten color, en el gráfico
+// parecen la misma métrica en dos escalas.
+const COLOR_FC = theme.amber;
+
 const FLECHA: Record<Zona, string> = { alto: "▲", normal: "●", bajo: "▼" };
 const ETIQUETA: Record<Zona, string> = {
   alto: "por encima de tu rango",
@@ -44,11 +48,12 @@ function addDays(iso: string, n: number): string {
 /** Rellena los días ausentes entre la primera y la última fecha con hrv = null. */
 function toDaily(rows: Row[]): Row[] {
   if (rows.length === 0) return [];
-  const byDate = new Map(rows.map((r) => [r.fecha, r.hrv]));
+  const byDate = new Map(rows.map((r) => [r.fecha, r]));
   const out: Row[] = [];
   const last = rows[rows.length - 1].fecha;
   for (let d = rows[0].fecha; d <= last; d = addDays(d, 1)) {
-    out.push({ fecha: d, hrv: byDate.get(d) ?? null });
+    const r = byDate.get(d);
+    out.push({ fecha: d, hrv: r?.hrv ?? null, fc: r?.fc ?? null });
   }
   return out;
 }
@@ -56,6 +61,7 @@ function toDaily(rows: Row[]): Row[] {
 type Point = {
   fecha: string;
   hrv: number | null;
+  fc: number | null;        // FC en reposo, eje derecho
   ausente: number | null; // punto gris a la altura de la media, si no hubo medición
   lower: number | null;
   band: number | null;    // altura de la banda (upper - lower), apilada sobre lower
@@ -168,6 +174,11 @@ function TooltipHrv({ active, payload, label }: any) {
         {hrv == null ? "sin medición" : `HRV ${Math.round(hrv)}`}
         {hrv != null && z && <span style={{ fontWeight: 400 }}> · {ETIQUETA_CORTA[z]}</span>}
       </div>
+      {row.fc != null && (
+        <div style={{ color: COLOR_FC, fontSize: 11, marginTop: 2 }}>
+          FC en reposo {Math.round(row.fc)} ppm
+        </div>
+      )}
       {row._lower != null && row._upper != null && (
         <div style={{ color: theme.muted, fontSize: 11, marginTop: 2 }}>
           tu rango normal: {Math.round(row._lower)}–{Math.round(row._upper)}
@@ -193,6 +204,7 @@ function Leyenda() {
       <Punto color={theme.accent} label="dentro = normal" />
       <Punto color={theme.alert} label="debajo = ojo" />
       <span>· banda = tu rango normal (7d ± 1σ)</span>
+      <span style={{ color: COLOR_FC }}>— FC en reposo (eje dcho.)</span>
     </div>
   );
 }
@@ -206,6 +218,11 @@ function Chart({ data, height }: { data: Point[]; height: number | string }) {
   const ys = data.flatMap((d) =>
     [d.hrv, d._lower, d._upper].filter((v): v is number => v !== null),
   );
+  const fcs = data.map((d) => d.fc).filter((v): v is number => v !== null);
+  const domFc: [number, number] = fcs.length
+    ? [Math.floor((Math.min(...fcs) - 3) / 5) * 5, Math.ceil((Math.max(...fcs) + 3) / 5) * 5]
+    : [40, 80];
+
   const dom: [number, number] = ys.length
     ? [Math.floor((Math.min(...ys) - 5) / 10) * 10, Math.ceil((Math.max(...ys) + 5) / 10) * 10]
     : [0, 100];
@@ -236,24 +253,37 @@ function Chart({ data, height }: { data: Point[]; height: number | string }) {
           tick={{ fill: theme.muted, fontSize: 10 }} stroke={theme.grid}
         />
         <YAxis
-          width={34} domain={dom} allowDataOverflow
+          yAxisId="hrv" width={34} domain={dom} allowDataOverflow
           tick={{ fill: theme.muted, fontSize: 10 }} stroke={theme.grid}
+        />
+        {/* La FC en reposo va en SU PROPIO eje: comparte el día con el HRV pero no la
+            escala (50-75 ppm contra 25-100 ms). Con un solo eje, una de las dos series
+            queda aplastada contra el borde y no se le ve la forma. */}
+        <YAxis
+          yAxisId="fc" orientation="right" width={30} domain={domFc} allowDataOverflow
+          tick={{ fill: COLOR_FC, fontSize: 10 }} stroke={theme.grid}
         />
         <Tooltip content={<TooltipHrv />} />
         {/* banda = dos áreas apiladas: la inferior invisible, la de altura visible */}
-        <Area dataKey="lower" stackId="baseline" stroke="none" fill="transparent" isAnimationActive={false} />
+        <Area yAxisId="hrv" dataKey="lower" stackId="baseline" stroke="none" fill="transparent" isAnimationActive={false} />
         <Area
-          dataKey="band" stackId="baseline" stroke="none" fill={theme.accent} fillOpacity={0.1}
+          yAxisId="hrv" dataKey="band" stackId="baseline" stroke="none" fill={theme.accent} fillOpacity={0.1}
           isAnimationActive={false}
         />
         {/* días sin medición: punto gris a la altura de la media */}
         <Line
-          dataKey="ausente" stroke="none" isAnimationActive={false} activeDot={false}
+          yAxisId="hrv" dataKey="ausente" stroke="none" isAnimationActive={false} activeDot={false}
           dot={{ r: 1.8, fill: theme.muted, stroke: "none" } as any}
         />
         <Line
-          dataKey="hrv" stroke={theme.accent} strokeWidth={1.8} connectNulls={false}
+          yAxisId="hrv" dataKey="hrv" stroke={theme.accent} strokeWidth={1.8} connectNulls={false}
           dot={renderDot} activeDot={{ r: 5 }} isAnimationActive={anim.on} animationDuration={anim.ms}
+        />
+        {/* Sin puntos: acompaña al HRV sin competir con sus dots de zona. */}
+        <Line
+          yAxisId="fc" dataKey="fc" stroke={COLOR_FC} strokeWidth={2.4}
+          connectNulls={false} dot={false} activeDot={{ r: 4 }}
+          isAnimationActive={anim.on} animationDuration={anim.ms}
         />
       </ComposedChart>
     </ResponsiveContainer>
@@ -327,7 +357,13 @@ export function HrvExpanded({ rows }: { rows: Row[] }) {
         últimos 7 días ± 1 desviación típica. El HRV alto suele indicar buena recuperación; una caída
         <b style={{ color: theme.alert }}> por debajo</b> de tu rango es señal de fatiga, estrés, mal
         sueño o algo incubándose. Presta atención si encadenas <b style={{ color: theme.text }}>3 o más</b> días
-        seguidos por debajo.
+        seguidos por debajo.{" "}
+        La línea <b style={{ color: COLOR_FC }}>ámbar</b> es tu{" "}
+        <b style={{ color: COLOR_FC }}>frecuencia cardiaca en reposo</b>, en el eje de la derecha y en
+        su propia escala. Va aquí porque es la pareja del HRV y se leen juntas: lo normal es que se
+        muevan al revés. Cuando el <b style={{ color: theme.text }}>pulso sube y el HRV baja el mismo
+        día</b>, las dos señales apuntan a lo mismo y eso es mucho más fiable que cualquiera de ellas
+        por separado.
         {hoy && (
           <>
             {" "}Hoy estás en <b style={{ color: COLOR_ZONA[hoy.zona] }}>{Math.round(hoy.hrv)}, {ETIQUETA[hoy.zona]}</b>.
