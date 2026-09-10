@@ -73,7 +73,17 @@ portátil, el navegador llama al TTS por la IP de tailnet del portátil — hay 
 dónde apunta `voz.ts`.
 
 ### 3. Investigar si Intervals se actualiza al toque
-Pendiente de Hugo. Lo que ya se sabe (2026-08-21): Intervals **no guarda el HRV**, lo
+Sigue haciendo falta **entrar y pulsar refrescar**; no basta con abrir la app. El
+2026-09-10 el HRV entró en el tercer intento del pipeline (t+156 s) y pareció que había
+entrado solo — pero Hugo lo había refrescado a mano esa mañana, así que ese caso **no es
+evidencia de nada**. Lo único demostrado sigue siendo que el bucle de reintentos aguanta
+el rato que tarda la sincronización en aterrizar, no que la dispare.
+
+**Para saberlo de verdad hace falta un día en que Hugo NO lo toque**, y comprobar si el
+pipeline acaba viendo el HRV. Hasta entonces, no darlo por resuelto: es el cuello de
+botella del cron, porque con la máquina sola no hay quien pulse ese botón.
+
+Lo que ya se sabe (2026-08-21): Intervals **no guarda el HRV**, lo
 busca al proveedor de forma perezosa y **solo cuando se refresca SU interfaz** (la app o
 la web de Intervals.icu; la de Zepp se probó y no vale). Por la API no hay forma de
 dispararlo. El campo `updated` distingue "no hay dato arriba" de "me sirven caché". Falta
@@ -138,8 +148,19 @@ internet. El móvil de Hugo (`poco-f6-pro`) ya está en el tailnet: basta abrir 
 - **Los dos servicios escuchan solo en `127.0.0.1`.** Lo único que los expone es el tailnet.
 - `systemd`: `jarvis` (backend, cwd en `dashboard/backend` porque los imports son planos) y
   `jarvis-voz`. Ambos con `Restart=always`.
-- **Cron cada 3 horas** (minuto 17) pasando `status_pipeline.py`, log en `~/pipeline.log`.
-  Más a menudo no serviría: Intervals solo refresca el HRV cuando Hugo abre SU app.
+- **Cron a las 00:00 y cada hora de 6:00 a 23:00** (`0 0,6-23 * * *`, zona
+  `Europe/Madrid`), log en `~/pipeline.log`. De 1:00 a 5:00 no se pasa: no hay
+  formularios ni entrenos nuevos a esas horas y cada pase quemaría los 5 min completos de
+  reintentos contra Intervals esperando un HRV que aún no existe. Coste medido por pase: ~2 llamadas a Intervals, 26
+  lecturas de pestañas del plan en Drive y 12 de la hoja; la cuota de Sheets son 300
+  peticiones **por minuto** y sin tope diario, así que sobra de largo.
+- **Despliegue: `./desplegar.sh`.** Compila, sube el `dist`, hace `git pull` en la VM,
+  reinicia y comprueba las cuatro rutas. Existe porque el 2026-09-09 se desplegó dos veces
+  un bundle compilado a mano sin las variables de Vite: quedó con `http://localhost:8099`
+  dentro y desde el móvil **la página cargaba pero todo fallaba con "Failed to fetch"**
+  (localhost es el móvil). Ahora la configuración vive en
+  `dashboard/frontend/.env.production`, que Vite lee sola en `npm run build`, y el script
+  **aborta antes de subir** si detecta un localhost en el bundle.
 
 **El keep vive ahora en Drive.** Documento de Google llamado **Entreno**
 (`KEEP_DOC_ID=1IuHf7hcu00huaFd-SQQDAE1faQaEjBR7h4UQUPZzx0M`), compartido con el service
@@ -152,6 +173,33 @@ guion de separar series en raya (`–`) y la comilla de los tempos (`2"`) en tip
 y añade un BOM. `normalizar_texto()` lo deshace **al leer**, no en el parser, para que el
 keep local siga comportándose igual. Es la trampa más probable si algún día el keep de
 Drive deja de parsear.
+
+### Pendientes que salieron del despliegue (2026-09-10)
+
+**1. El readiness del día llega tarde, y el cron solo lo tapa.**
+El readiness sale de `derived_diario`, que solo regenera el pipeline. Hugo rellena el
+formulario AM cuando se levanta, a hora variable, así que hasta el siguiente pase de cron
+sigue viendo el de AYER. Pasó el 2026-09-10: a las 7:37 el dashboard decía 62 (el del 09)
+cuando con su formulario de esa mañana salía 73,3.
+
+Parcheado subiendo el cron a **cada hora** (00:00 y 6:00-23:00), pero eso es tapar el síntoma:
+sigue habiendo hasta una hora de desfase.
+
+El arreglo de verdad es **calcular el readiness en vivo desde `wellness_am`/`wellness_pm`**,
+el mismo patrón que ya usa `huecos.py` (leer las pestañas ORIGEN, no la tabla derivada).
+Con eso sería correcto al instante y sin depender de ningún cron.
+**El peligro es duplicar la fórmula**, y este proyecto ya se quemó con eso: el panel de
+Carga calculaba el sRPE en TypeScript mientras la hoja guardaba otra fórmula con el mismo
+nombre, y Jarvis contradecía a la pantalla. Así que **no reescribirla**: hay que extraer
+`readiness()` de dentro de `consolidate()` (`status_pipeline.py`) a una función que usen
+los dos, y que siga habiendo una sola definición.
+
+**2. `write_tab` vacía la pestaña antes de escribirla.**
+Hace `ws.clear()` y luego `update()`, con ~1 s de pestaña vacía entre medias. Si el hilo
+`_mantener_datos_calientes` del backend refresca justo en esa ventana, **cachea el vacío y
+el dashboard sale en blanco hasta 4 minutos**. Con dos pases al día era despreciable; con
+18 son 90 ventanas diarias. Se arregla escribiendo desde A1 sin `clear()` y limpiando solo
+el sobrante.
 
 ### Lo que falta en la VM
 - **`ANTHROPIC_API_KEY` y `ELEVENLABS_API_KEY`.** Solo existen en el `.env` del portátil
