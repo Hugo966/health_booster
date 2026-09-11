@@ -273,6 +273,11 @@ def build_entreno():
             vals = vals[vals != ""]
             if not vals.empty: dolor = vals.iloc[0]
         return pd.Series(dict(
+            # `plani` se quedó fuera cuando se agregó por sesión, y sin él "bloque 2" es
+            # ambiguo: Hugo reinicia la numeración con cada plan. Hace falta para poder
+            # traducir (plan, bloque) al nombre de la etapa — Build, Peaking… — en el
+            # parte de estado de Jarvis.
+            plani=g["plani"].iloc[0],
             semana=g["semana"].iloc[0], dia=g["dia"].iloc[0], bloque=g["bloque"].iloc[0],
             volumen_total=g["volumen"].sum(min_count=1),
             n_series_total=g["n_series"].sum(min_count=1),

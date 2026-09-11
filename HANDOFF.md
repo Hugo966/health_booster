@@ -3,10 +3,42 @@
 > Resumen autocontenido para continuar el proyecto en una sesión nueva.
 > Usuario: Hugo (powerlifter). Idioma de trabajo: español. Código y comentarios en español.
 
-## 0. LO PRIMERO — pendientes del 2026-09-06 (leer antes de tocar nada)
+## 0. LO PRIMERO — pendientes del 2026-09-11 (leer antes de tocar nada)
 
 Escrito en el portátil al cerrar la sesión. Cada punto lleva el porqué, porque el orden
 importa y saltárselo tiene consecuencias.
+
+### Lo que se cerró el 2026-09-11 (no rehacerlo)
+- **La VM ya es usable de verdad**: las claves de Anthropic y ElevenLabs están puestas,
+  el chat responde con Sonnet y la voz sale por ElevenLabs. `/tts/salud` dice
+  `"elevenlabs": true`. La memoria de la VM **empieza de cero a propósito** (decisión de
+  Hugo): la del portátil no se migra, se va llenando con el uso. Comprobado que
+  `recordar` dispara y guarda bien.
+- **El personaje está partido en dos constantes** (`personalidad.py`): `PERSONAJE` (2.938
+  car., solo carácter) y `OPERACION` (5.776 car., el manual de herramientas). Había
+  crecido a nueve secciones de las que **solo tres iban del personaje**, y los formularios
+  solos ocupaban más que el tono, la voz y el bajar el tono juntos; mezclados, tocar el
+  carácter arriesgaba el manejo de herramientas y al revés. **Fue una reorganización pura,
+  verificada línea a línea: 123 antes, 123 después, ninguna perdida ni añadida.** Para
+  iterar el tono ahora se toca `PERSONAJE` y ya.
+- **Lo que caduca sale de los datos, no del prompt** (principio de Hugo). `QUÉ SABES DE ÉL`
+  decía "acaba de peaking y entra en offseason" desde julio, y Jarvis lo afirmaba tan
+  tranquilo en septiembre estando en Build. Ahora el prompt solo lleva lo permanente y
+  **la etapa la dice el parte de estado**. Para eso hicieron falta dos cosas:
+  `PLAN_TAB_RULES` gana una 4ª columna con el NOMBRE de la etapa (Build, Peaking,
+  Offseason, Volumen), y `entreno_sesion` gana la columna **`plani`**, que se había
+  quedado fuera al agregar por sesión — sin ella "bloque 2" es ambiguo, porque Hugo
+  reinicia la numeración con cada plan.
+- **Otro `except` ancho tapando un `ImportError`**: `briefing.py` importaba
+  `entreno_pipeline` confiando en que otro módulo hubiera metido la raíz en `sys.path`, y
+  cuando fallaba el nombre de la etapa desaparecía en silencio. Ahora el `sys.path` se
+  ajusta explícito y el import va arriba, sin `try`.
+- **`anthropic` deja de estar comentado en `requirements.txt`.** El import sigue siendo
+  perezoso, pero con Anthropic como proveedor por defecto en todas las máquinas, no
+  tenerlo hace que el chat responda 500 en cuanto alguien escribe.
+
+**Al tocar el prompt, reiniciar el servicio.** `sudo systemctl restart jarvis` — se quedó
+sin reiniciar y se estuvo probando contra el Jarvis viejo un buen rato.
 
 ### Lo que se cerró el 2026-09-06 (no rehacerlo)
 - **A Jarvis ya se le puede interrumpir** —con el botón y hablándole encima— y **espera a

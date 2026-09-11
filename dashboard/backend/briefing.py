@@ -16,9 +16,19 @@ Dos criterios de diseño que no son negociables:
      >65 READY) y las bandas de carga son percentiles del histórico propio,
      igual que en LoadPanel.
 """
+import sys
 from datetime import date, datetime
+from pathlib import Path
 
 from sheets import fetch_all
+
+# La raíz del proyecto en el path: el backend arranca con cwd en dashboard/backend, así
+# que `entreno_pipeline` (que vive en la raíz) no se encuentra solo. Se hace aquí de forma
+# explícita y no confiando en que otro módulo lo haya hecho antes.
+_RAIZ = str(Path(__file__).resolve().parents[2])
+if _RAIZ not in sys.path:
+    sys.path.insert(0, _RAIZ)
+import entreno_pipeline  # noqa: E402
 
 OBJETIVO_SUENO_H = 7.5
 # Días de la ventana de carga. Es el mismo 7 que usan `sRPE_series_7d` en el pipeline y
@@ -310,9 +320,22 @@ def generar() -> str:
     ses = [r for r in data.get("entreno_sesion", []) if r.get("bloque") not in ("", None)]
     if ses:
         u = ses[-1]
+        # El nombre de la etapa sale del enrutado del plan, no de aquí: "bloque 2" no
+        # significa nada para Hugo, que la llama Build. Antes esto estaba escrito a mano
+        # en el prompt y se quedaba viejo — en septiembre Jarvis seguía diciendo que
+        # estaba en offseason.
+        etapa = entreno_pipeline.nombre_etapa(u.get("plani"), u.get("bloque"))
+        # Cuántas semanas lleva ya en esta etapa: sitúa el "semana 2" sin inventarse
+        # cuántas tiene en total, que eso solo lo sabe el plan del entrenador.
+        mismas = {str(r.get("semana")) for r in ses
+                  if str(r.get("bloque")) == str(u.get("bloque"))
+                  and str(r.get("plani")) == str(u.get("plani"))}
+        como = f"{etapa}" if etapa else f"bloque {u.get('bloque')}"
         linea = (
-            f"- Último entreno registrado: bloque {u.get('bloque')} semana "
-            f"{u.get('semana')} ({u.get('fecha')})"
+            f"- Momento del plan: {como} (plan {u.get('plani')}, bloque "
+            f"{u.get('bloque')}), semana {u.get('semana')} — lleva {len(mismas)} "
+            f"semana(s) en esta etapa"
+            f"\n- Último entreno registrado: {u.get('fecha')}"
         )
         # Cómo FUE la sesión, no solo cuándo. Los agregados (volumen, series) bajan cuando
         # algo se tuerce, pero no dicen por qué, así que Jarvis daba por normal una sesión

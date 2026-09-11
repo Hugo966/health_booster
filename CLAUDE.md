@@ -120,6 +120,18 @@ canal de sincronización, así que:
   sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
   entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
   entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
+- **El prompt de Jarvis son DOS constantes** (`personalidad.py`): `PERSONAJE` (quién es:
+  tono, voz, cuándo deja de bromear) y `OPERACION` (el manual: herramientas, vocabulario,
+  formularios). Se separaron el 2026-09-11 porque el bloque único había crecido a nueve
+  secciones de las que solo tres iban del personaje. **No volver a mezclarlas**: iterar el
+  tono no debe arriesgar el manejo de herramientas.
+- **En el prompt solo va lo PERMANENTE.** Lo que caduca —en qué bloque entrena, qué le
+  duele, qué le pasó ayer— sale de los datos o de la memoria. `QUÉ SABES DE ÉL` llevaba
+  desde julio diciendo "entra en offseason" y Jarvis lo afirmaba en septiembre estando en
+  Build. La etapa la resuelve `entreno_pipeline.nombre_etapa(plani, bloque)` desde la 4ª
+  columna de `PLAN_TAB_RULES`, y llega por el parte de estado.
+- **Al tocar `personalidad.py` hay que reiniciar el backend** (`systemctl restart jarvis`
+  en la VM): el prompt se lee al importar, no en cada mensaje.
 - **Alturas de panel en px fijos, nunca en %.** `ResponsiveContainer height="100%"` dentro
   de un `flex-1` sin altura definida provoca un bucle de ResizeObserver.
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.

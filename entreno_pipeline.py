@@ -24,29 +24,48 @@ import requests
 # 101 kg, o una banca de 178 kg cuando la real son 101,8—. Verificado el 2026-09-09.
 # El número de bloque debe cuadrar con el que Hugo escribe en SU keep, no ser correlativo.
 # Al empezar una etapa nueva basta con añadir aquí su patrón de pestaña.
+# La 4ª columna es el NOMBRE de la etapa, y no es decoración: sin él, lo único que
+# llega a Jarvis es "bloque 2", que no significa nada para Hugo —él la llama Build—.
+# Va aquí para que al dar de alta una etapa nueva su nombre entre solo.
 PLAN_TAB_RULES = [
-    (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      1, 3),
-    (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 1, 4),
+    (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      1, 3, "Volumen"),
+    (re.compile(r'^\s*peaking\s*s\s*0*(\d+)\s*$', re.I), 1, 4, "Peaking"),
     # Offseason (S1-S5): primera etapa de PLANI 2. Tolera "offseason"/"offseasion" y
     # separadores sueltos porque la pestaña la escribe a mano cada semana.
-    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 1),
+    (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 1, "Offseason"),
     # Build (S1-S5): segunda etapa de PLANI 2, la que viene después del Offseason.
-    (re.compile(r'^\s*build\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 2),
+    (re.compile(r'^\s*build\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 2, "Build"),
     # Formato "P2B2S3": el que Hugo quiere usar cuando migre el plan del entrenador a
     # una hoja suya. Aún no existe ninguna pestaña así; se enruta ya para que ese día
     # no haya que tocar nada, y porque lleva el plan y el bloque dentro del nombre.
-    (re.compile(r'^\s*p\s*0*(\d+)\s*b\s*0*(\d+)\s*s\s*0*(\d+)\s*$', re.I), None, None),
+    (re.compile(r'^\s*p\s*0*(\d+)\s*b\s*0*(\d+)\s*s\s*0*(\d+)\s*$', re.I), None, None, None),
 ]
 
 def route_tab(title):
     """Título de pestaña -> (plani, bloque, semana), o None si no es una semana de plan."""
-    for rx, plani, bloque in PLAN_TAB_RULES:
+    for rx, plani, bloque, _ in PLAN_TAB_RULES:
         m = rx.match(title)
         if not m:
             continue
         if plani is None:            # formato PxBySz: los tres números van en el título
             return int(m.group(1)), int(m.group(2)), m.group(3)
         return plani, bloque, m.group(1)
+    return None
+
+
+def nombre_etapa(plani, bloque):
+    """(plan, bloque) -> 'Build', 'Peaking'… o None si esa etapa no tiene nombre.
+
+    Existe para que el parte de estado pueda decir "Build" en vez de "bloque 2": el
+    número es interno del pipeline, el nombre es como lo llama Hugo.
+    """
+    try:
+        plani, bloque = int(plani), int(bloque)
+    except (TypeError, ValueError):
+        return None
+    for _, p, b, nombre in PLAN_TAB_RULES:
+        if p == plani and b == bloque:
+            return nombre
     return None
 
 # Fuente local del plan (solo para el modo __main__ de depuración; el pipeline real
