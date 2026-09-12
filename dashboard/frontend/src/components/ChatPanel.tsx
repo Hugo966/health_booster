@@ -184,6 +184,18 @@ function potenciaDe(proveedor: string): number {
   return i < 0 ? 0 : i;
 }
 
+// Flecha del desplegable del hilo. SVG y no el carácter "▲", que cada móvil dibuja a su
+// manera y se ve como un emoji.
+function Chevron({ arriba }: { arriba: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+         style={{ transform: arriba ? undefined : "rotate(180deg)", transition: "transform .2s ease" }}>
+      <path d="M3 10.5 8 5.5l5 5" />
+    </svg>
+  );
+}
+
 // Micrófono tachado: "corta, que ya está". SVG a mano porque el proyecto no arrastra
 // ninguna librería de iconos.
 function MicroTachado() {
@@ -461,10 +473,13 @@ export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
         type="button"
         data-no-expand
         onClick={() => fijarP(pRef.current > 0.5 ? 0 : 1)}
-        className="mx-auto mb-2 shrink-0 rounded-lg px-3 py-1 text-[11px]"
-        style={{ color: theme.muted }}
+        className="jarvis-back mx-auto mb-2 flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1 text-[11px]"
       >
-        {p > 0.5 ? "▲  Ocultar conversación" : "▼  Ver conversación"}
+        {/* La flecha apunta a DÓNDE VA el hilo, no a un convenio de plegables: la
+            conversación vive DEBAJO del orbe, así que para verla sube y para ocultarla
+            baja. Estaba al revés. */}
+        <Chevron arriba={p <= 0.5} />
+        {p > 0.5 ? "Ocultar conversación" : "Ver conversación"}
       </button>
       {/* La caja azul: solo el hilo escrito. Mide 0 al entrar, así el chat ni asoma. */}
       <div

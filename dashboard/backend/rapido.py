@@ -49,27 +49,45 @@ _ETIQUETA = re.compile(r"\[([^\]]{1,30})\]")
 BASE_URL = os.environ.get("GROQ_URL", "https://api.groq.com/openai/v1").rstrip("/")
 API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 MODELO = os.environ.get("GROQ_MODELO", "").strip()
-# Plazo duro. Si no llega a tiempo NO sirve de nada, porque la muletilla existe justo para
-# tapar un silencio: una que llega tarde es el silencio más la muletilla.
-TIMEOUT_S = float(os.environ.get("GROQ_TIMEOUT_MS", "1200")) / 1000
+# Plazo duro. El tope de verdad lo marca `ESPERA_MULETILLA_MS` de `voz.ts` (4,5 s): pasado
+# eso el navegador ya no la diría, así que llegar más tarde no sirve de nada.
+# Estuvo en 1200 ms y era un apretón sin motivo —heredado de cuando esto se pedía en línea
+# y sí bloqueaba—; con ese plazo se descartaba 2 de cada 5 respuestas de un modelo que
+# escribe mejor. Ahora va en su propio hilo y no le quita tiempo a nadie.
+TIMEOUT_S = float(os.environ.get("GROQ_TIMEOUT_MS", "3000")) / 1000
 
 # Corto a propósito. El límite de Groq es de TOKENS DE ENTRADA por minuto (7000 en el plan
 # gratis), no de peticiones: cada palabra de aquí se paga en cada llamada y recorta cuántas
 # caben. Medido el 2026-09-12: con ~500 tokens por llamada, 14 seguidas agotan el minuto.
+# Los EJEMPLOS son la parte que de verdad hace el trabajo. Están copiados de las
+# muletillas pregrabadas de `dashboard/tts/servidor_voz.py`, que las escribió Hugo a mano
+# y son literalmente el tono que quiere. Describir un tono con adjetivos ("con retintín")
+# no le sirve a un modelo pequeño: se lo inventa. Enseñárselo, sí.
+# Si algún día se retoca el personaje, estos ejemplos hay que retocarlos con él.
 _SISTEMA = """\
-Eres Jarvis. Solo haces una cosa: soltar la frase de relleno que se dice mientras se
-piensa la respuesta de verdad. Ganas tiempo, no contestas.
+Eres Jarvis, el asistente de Hugo: su colega, con confianza y sarcasmo. Aquí solo haces
+UNA cosa: soltar la frase que se dice mientras se piensa la respuesta de verdad. Ganas
+tiempo, no contestas.
 
-- UNA frase, menos de doce palabras. Español, tuteando, con confianza y retintín.
-- Menciona de refilón lo que él acaba de decir: es tu única ventaja sobre una frase de bote.
+Así habla Jarvis cuando gana tiempo (imita ESTE tono, no lo copies literal):
+  "Déjame que mire eso un segundo, que tus datos y yo tenemos una relación complicada."
+  "A ver qué tenemos por aquí… dame un momento, que estoy rebuscando entre tus números."
+  "Espera, que lo estoy mirando. No te muevas, que esto tarda menos de lo que parece."
+  "Dame un segundo, que estoy cruzando datos como un poseso."
+  "Espera que lo compruebo, no vaya a inventarme algo y luego me la líes."
+  "Un momento, que no quiero decirte una burrada sin mirarlo."
+
+Reglas:
+- UNA frase, menos de quince palabras. Español de España, tuteando.
+- Menciona de refilón lo que acaba de decir: es tu única ventaja sobre una frase de bote.
 - NO des datos ni números: aún no sabes la respuesta.
 - NO preguntes nada: se pondría a contestarte encima de la respuesta real.
 - Si habla de dolor, lesión o de estar jodido: sobrio, sin bromas y sin etiqueta.
 - Puedes abrir con UNA de estas seis etiquetas, tal cual: [curious] [sarcastic]
   [mischievously] [laughs] [sighs] [excited]. Ninguna otra. Si dudas, ninguna.
 - Nunca devuelvas solo la etiqueta: siempre tiene que haber frase.
-
-Ej.: "¿qué tal he dormido?" -> Déjame mirar tus noches, que prometen poco.
+- Nada de traducciones raras ni de palabras que no existan: si no te sale natural en
+  español, di algo simple.
 """
 
 

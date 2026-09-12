@@ -67,9 +67,21 @@ const CORTA_VALIDA = /^(?:\d+(?:[.,]\d+)?|s[ií]|no|ya|ok|vale)$/i;
 // el reloj de silencio vence antes de que el reconocedor entregue lo último que oyó.
 // Solo se suma en ese caso, así que no penaliza el camino normal.
 const ESPERA_FINAL_MS = 600;
-// Techo duro. Si algo se atasca (el reconocedor se queda mudo, un interino que no cierra),
-// el comando sale igual en vez de perderse para siempre sin que Hugo sepa por qué.
-const MAX_ESPERA_BUFFER_MS = 12000;
+// Red de seguridad por si algo se atasca (el reconocedor se queda mudo, un interino que
+// no cierra): el comando sale igual en vez de perderse para siempre sin que Hugo sepa por
+// qué.
+//
+// Cuenta desde LO ÚLTIMO QUE SE OYÓ, no desde que abre la boca. Antes eran 12 s desde el
+// principio del turno y se disparaba **en mitad de la frase**: hablando seguido, a los 12 s
+// mandaba lo que llevara y a Jarvis le llegaba media idea. Hugo, 2026-09-12: "me corta si
+// la frase es muy larga, a los x segundos corta sí o sí; yo quiero enviar un minuto de
+// mensaje sin problema". Ahora puede hablar lo que quiera: mientras siga oyéndosele, el
+// reloj se reinicia.
+//
+// 15 s de SILENCIO absoluto. Es mucho más que `FIN_TURNO_MS` a propósito: si el camino
+// normal funciona, esto no llega a dispararse nunca. Solo está para que un fallo raro no
+// se trague el turno entero.
+const MAX_SILENCIO_MUERTO_MS = 15000;
 
 // Palabras con las que nadie termina una idea. No se mira la puntuación final, porque en
 // es-ES Chrome no puntúa.
@@ -367,6 +379,8 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // `parar` se define más abajo; el VAD necesita llamarlo desde su bucle.
   const pararRef = useRef<() => void>(() => {});
   const vadRef = useRef<Vad | null>(null);
+  // Quien esté esperando a que el reconocedor suelte el micro (lo avisa su `onend`).
+  const finRecRef = useRef<(() => void) | null>(null);
 
   // Detector de voz: lo único que permite callar a Jarvis HABLANDO, sin tocar nada. El
   // reconocedor de Chrome no sirve para esto porque tarda de 300 ms a 1 s en soltar el
@@ -477,9 +491,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     (texto: string) => {
       bufferRef.current = texto;
       setHayPendiente(true);
-      if (!limiteRef.current) {
-        limiteRef.current = window.setTimeout(despachar, MAX_ESPERA_BUFFER_MS);
-      }
+      // Se REARMA en cada trozo nuevo, no solo la primera vez. Así el techo mide silencio
+      // muerto y no duración del turno: puede hablar un minuto seguido.
+      if (limiteRef.current) window.clearTimeout(limiteRef.current);
+      limiteRef.current = window.setTimeout(despachar, MAX_SILENCIO_MUERTO_MS);
       armar();
     },
     [armar, despachar],
@@ -571,6 +586,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
 
     r.onend = () => {
       traza("rec: sesión cerrada");
+      // Avisa a quien esté esperando para coger el micro (ver `soltarReconocedor`).
+      const avisar = finRecRef.current;
+      finRecRef.current = null;
+      avisar?.();
       // Lo dicho hasta aquí pasa al arrastre: al reabrir, `ev.results` viene vacío y la
       // reconstrucción empezaría de cero. Sin esto, una frase partida por el cierre
       // automático de Android perdería su primera mitad.
@@ -682,7 +701,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     // Soltar el micro del detector ANTES de reabrir el reconocedor. En Android los dos se
     // excluyen, y a partir de aquí el que importa es el reconocedor: lo siguiente que pasa
     // es que habla Hugo. Ya no hay nada que cortar, así que el detector no hace falta.
-    vadRef.current?.parar();
+    // Se ESPERA a que esté suelto de verdad (`close()` del contexto es asíncrono): si se
+    // reabre el reconocedor con el micro aún cogido, arranca sordo y se come el principio
+    // de la frase — "no pilla el principio cuando le interrumpo" (Hugo, 2026-09-12).
+    const micLibre = vadRef.current?.parar() ?? Promise.resolve();
     // Tirar TODO lo que el reconocedor haya oído durante el turno. La ventana de gracia
     // por tiempo no bastaba: bloquea lo que LLEGA en ese rato, pero Chrome tarda más de
     // un segundo en dar una frase por final, así que la cola de la propia voz de Jarvis
@@ -698,7 +720,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     ignorarHastaRef.current = conGracia ? Date.now() + GRACIA_MS : 0;
     if (activaRef.current) {
       irA("activo"); // tras contestar se queda escuchando (Hugo)
-      relanzar();
+      void micLibre.then(() => {
+        traza("micro libre: reabro el reconocedor");
+        relanzar();
+      });
     } else {
       irA("off");
     }
@@ -714,17 +739,41 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // aprovecha para aprender el ruido de la habitación. Si se abriera con la primera nota,
   // arrancaría con el suelo por defecto y el umbral saldría demasiado alto justo al
   // principio, que es cuando más se interrumpe.
+  // Cierra el reconocedor y resuelve cuando de VERDAD ha soltado el micro (su `onend`).
+  // El plazo es la red por si ya estaba parado y `onend` no llega nunca: no vamos a dejar
+  // el turno colgado por esto.
+  const soltarReconocedor = useCallback(
+    () =>
+      new Promise<void>((res) => {
+        const r = recRef.current;
+        if (!r) return res();
+        let hecho = false;
+        const acabar = () => {
+          if (hecho) return;
+          hecho = true;
+          res();
+        };
+        finRecRef.current = acabar;
+        try {
+          r.abort();
+        } catch {
+          acabar();
+        }
+        window.setTimeout(acabar, 300);
+      }),
+    [],
+  );
+
   const empezarAHablar = useCallback(() => {
     irA("hablando");
-    try {
-      recRef.current?.abort();
-    } catch {
-      /* no estaba escuchando */
-    }
-    void asegurarVad()
-      .arrancar()
+    // Se ESPERA a que el reconocedor suelte el micro antes de abrir el detector. En
+    // Android son excluyentes: si se abre encima, el detector mide ceros y el corte por
+    // voz no funciona — sin dar ningún error. Es la misma trampa que en `finHabla`, en la
+    // otra dirección.
+    void soltarReconocedor()
+      .then(() => asegurarVad().arrancar())
       .then((ok) => traza(ok ? "VAD: micro abierto (barge-in)" : "VAD: NO se pudo abrir"));
-  }, [irA, asegurarVad]);
+  }, [irA, asegurarVad, soltarReconocedor]);
 
   // Turno de habla: cada `decir` incrementa este contador. La tubería de frases lleva
   // su propio número y se aborta en cuanto deja de ser el turno vigente (barge-in,

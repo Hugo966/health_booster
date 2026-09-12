@@ -61,7 +61,7 @@ Hugo probó lo anterior desde el móvil y salieron tres fallos más, ya arreglad
 
 **Pieza nueva: `rapido.py`**, un modelo de Groq que escribe la muletilla a medida en vez
 de sacarla del bote de pregrabadas. **Ya está configurado y probado con la clave de Hugo**
-(`GROQ_MODELO=qwen/qwen3.8-27b`, ~280 ms). Falta lo único que no se puede medir: si a él
+(`GROQ_MODELO=groq/compound-mini`, ~1,5 s). Falta lo único que no se puede medir: si a él
 le gusta más una coletilla a medida pero plana que una pregrabada con retintín pero
 genérica. Si no le convence **se apaga vaciando `GROQ_MODELO`**, sin tocar código.
 Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya**.
@@ -1210,9 +1210,10 @@ Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.*
 |---|---|---|---|
 | `voz.ts` | `FIN_TURNO_MS` | 1500 | 1100 cortaba · 1800 se hacía incómodo · 1200 iba bien en el portátil pero le cortaba en el móvil · 1500 es el punto medio, **no subirlo sin que lo pida él** |
 | `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2800 | Frase acabada en "…y", una duda suelta, **o una duda al final de lo acumulado** (`DUDA_FINAL`, §16) |
+| `voz.ts` | `MAX_SILENCIO_MUERTO_MS` | 15000 | Red por si el reconocedor se atasca. Cuenta desde LO ÚLTIMO OÍDO, no desde el principio del turno: contado mal cortaba las frases largas a los 12 s |
 | `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras. **Con la excepción de `CORTA_VALIDA`** |
 | `voz.ts` | `ESPERA_MULETILLA_MS` | 4500 | Lo pidió él: el orbe en "pensando" 4-5 s. De rebote, si la respuesta real llega antes, la muletilla ya no se dice. **Y es lo que da tiempo al modelo rápido de §16** |
-| `.env` | `GROQ_TIMEOUT_MS` | 1200 | Plazo duro de la muletilla a medida. Pasado, se tira de las pregrabadas: una muletilla tarde es el silencio MÁS la muletilla |
+| `.env` | `GROQ_TIMEOUT_MS` | 3000 | Plazo duro de la muletilla a medida. Pasado, se tira de las pregrabadas: una muletilla tarde es el silencio MÁS la muletilla |
 | `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
 | `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
 | `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA. En el MÓVIL puede sobrar: su voz medía 0,0365-0,0755, o sea que una de las dos medidas queda POR DEBAJO del umbral. Sin confirmar |
@@ -1360,11 +1361,25 @@ reconocedor le llegaba silencio. En el portátil los dos conviven; por eso solo 
 el teléfono.
 
 Arreglo: **el VAD solo abre el micro mientras Jarvis habla**, que es lo único para lo que
-sirve (`alHablar` ya se desentendía salvo que estuviera sonando su voz). El relevo va
-ordenado y explícito en los dos sentidos — `empezarAHablar` suelta el reconocedor y luego
-abre el VAD; `finHabla` cierra el VAD antes de reabrir el reconocedor. **Al revés, el
-sistema puede no haber liberado el micro y el detector se queda midiendo ceros, sin
-barge-in y sin ningún síntoma.**
+sirve (`alHablar` ya se desentendía salvo que estuviera sonando su voz).
+
+> **EL RELEVO DEL MICRO HAY QUE ESPERARLO, NO SOLO ORDENARLO.** Esto costó dos rondas más
+> (2026-09-12, tarde). No basta con "primero suelto uno y luego abro el otro": las dos
+> operaciones son **asíncronas** y hacerlas seguidas deja al segundo arrancando sobre un
+> micro que todavía está cogido. Y no da error — arranca sordo.
+> - `vad.parar()` **devuelve una promesa**: `track.stop()` sí es síncrono, pero
+>   `ctx.close()` no, y hasta que no resuelve el contexto sigue enganchado.
+>   `finHabla` espera a esa promesa antes de reabrir el reconocedor.
+> - `soltarReconocedor()` espera al **`onend`** del reconocedor (con un plazo de 300 ms de
+>   red, por si ya estaba parado y `onend` no llega). `empezarAHablar` lo espera antes de
+>   abrir el VAD.
+>
+> Los dos síntomas parecían cosas distintas y no tenían nada que ver con lo que parecían:
+> - Reabrir el reconocedor demasiado pronto → **se come el principio de la frase** al
+>   cortarle ("no pilla el principio cuando le interrumpo").
+> - Abrir el VAD demasiado pronto → mide **ceros**, y el corte por voz no va. Ese
+>   `nivel 0.0000` llevaba dos días en las trazas **pareciendo una buena noticia** sobre la
+>   cancelación de eco.
 
 Detalle que parece un problema y no lo es: el VAD arranca de cero en cada turno con el
 suelo de ruido por defecto. No pasa nada porque `hablandoJarvis()` sigue siendo falso
@@ -1601,7 +1616,7 @@ sintetizarlo antes de que haga falta.
   catálogos cambian (Groq retiró varios en agosto de 2026) y un identificador quemado se
   pudre en silencio. Sin él, la función sencillamente no se activa.
 - **Falla hacia el lado bueno.** Sin clave, con error, con la URL mal o pasado
-  `GROQ_TIMEOUT_MS` (1200 ms por defecto), devuelve `None` y **se tiran las pregrabadas
+  `GROQ_TIMEOUT_MS` (3000 ms por defecto), devuelve `None` y **se tiran las pregrabadas
   de siempre**. Una muletilla que llega tarde es el silencio MÁS la muletilla: peor que no
   tenerla. El plazo es duro y está probado que corta de verdad.
 - Recorta lo que devuelven los modelos pequeños cuando se emocionan (comillas, varias
@@ -1625,11 +1640,17 @@ benchmark**:
 
 | Modelo | Mediana | Qué pasa |
 |---|---|---|
-| `qwen/qwen3.8-27b` | **281 ms** | **El elegido.** Rápido y escribe en español |
+| `qwen/qwen3.8-27b` | 281 ms | El más rápido, y **descartado por Hugo**: "lamentable, nada que ver con el tono". Soltaba "no se te escapa el pinto" y, a un "estoy hecho polvo", "pareces un desastre" |
 | `allam-2-7b` | 367 ms | Rápido pero escribe mal ("el largo dormimiento") |
 | `openai/gpt-oss-20b` / `120b` | 407 / 422 ms | **Devuelven texto VACÍO**: razonan, y con `max_tokens: 40` no queda nada para la respuesta |
 | `qwen/qwen3.6-27b` | 430 ms | Escupe su razonamiento (`<think>…`) dentro del contenido, en inglés |
-| `groq/compound-mini` | 1078 ms | Escribe bien pero va justo de plazo |
+| `groq/compound-mini` | ~1,5 s | **El elegido.** Es el que escribe como Jarvis. Lento solo en apariencia: hay 4,5 s de margen |
+
+**La velocidad NO es el criterio.** El primer elegido fue el más rápido y Hugo lo tiró a
+la basura al oírlo. Lo que hace que suene a Jarvis no es el modelo: son los **ejemplos**
+del prompt, que ahora son las muletillas pregrabadas que escribió él a mano. Describir un
+tono con adjetivos ("con retintín") no le sirve a un modelo pequeño — se lo inventa.
+Si algún día se retoca el personaje, esos ejemplos hay que retocarlos con él.
 
 De ahí salen **tres defensas en `rapido.py` que no son paranoia, son cosas que pasaron**:
 1. Se quita el bloque `<think>…</think>` antes de nada.

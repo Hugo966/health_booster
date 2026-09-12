@@ -48,7 +48,8 @@ const SUBIDA_SUELO = 0.0006;
 export type Vad = {
   /** Enciende el micro. Hay que llamarlo DENTRO de un gesto del usuario. */
   arrancar: () => Promise<boolean>;
-  parar: () => void;
+  /** Suelta el micro. La promesa se cumple cuando está libre de verdad. */
+  parar: () => Promise<void>;
   /** Energía actual, 0-1 aprox. Para pintarla y para depurar. */
   nivel: () => number;
   /** Ruido de fondo aprendido, para depurar. */
@@ -173,24 +174,34 @@ export function crearVad(opciones: {
         return false;
       }
     },
-    parar() {
+    // Devuelve una promesa que se cumple cuando el micro está SOLTADO DE VERDAD. Importa
+    // en Android, donde el reconocedor y esto se pelean por el único micro: si se reabre
+    // el reconocedor antes de que esto haya soltado, arranca sordo y se come el principio
+    // de la frase. Quien lo reabra debe esperar a esta promesa (ver `finHabla`).
+    parar(): Promise<void> {
       vivo = false;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
+      // `stop()` de la pista es lo que libera el micro, y es síncrono.
       try {
         stream?.getTracks().forEach((t) => t.stop());
       } catch {
         /* ya estaba cerrado */
       }
-      try {
-        void ctx?.close();
-      } catch {
-        /* idem */
-      }
+      // `close()` no lo es: devuelve promesa y hasta que no resuelve el contexto sigue
+      // enganchado al dispositivo.
+      const cerrado = (async () => {
+        try {
+          await ctx?.close();
+        } catch {
+          /* ya estaba cerrado */
+        }
+      })();
       stream = null;
       ctx = null;
       analizador = null;
       buf = null;
+      return cerrado;
     },
     nivel: () => nivelActual,
     suelo: () => suelo,
