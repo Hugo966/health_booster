@@ -67,6 +67,19 @@ genérica. Si no le convence **se apaga vaciando `GROQ_MODELO`**, sin tocar cód
 Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya**.
 El porqué de cada decisión, al final de §16.
 
+### LO SIGUIENTE: la voz del móvil sigue perdiendo palabras (§17)
+**No está resuelto y hay una pista nueva que cambia el diagnóstico.** Hugo dice que suena
+"turum, turum" todo el rato: es el pitido de Android al abrir y cerrar su reconocedor, o
+sea que **se reinicia sin parar**. `continuous = true` NO se respeta ahí, así que "el
+reconocedor escucha siempre" —la premisa del modo cascos— es falsa, y cada reinicio deja
+un hueco sordo. Ése, y no el relevo del micro, es el que se come las primeras palabras.
+
+**Empezar por MEDIRLO con la traza** (cuántos reinicios por minuto y de cuánto es el
+hueco) antes de tocar nada; ya se ha fallado dos veces adivinando la causa. La salida que
+probablemente valga —grabar el audio nosotros y transcribir con Whisper en Groq, que ya
+está pagado— se lleva por delante de una vez TODOS los problemas de Android de §14 y §16.
+Con sus pegas, todo en **§17**.
+
 ### Lo que se cerró el 2026-09-11 (no rehacerlo)
 - **La VM ya es usable de verdad**: las claves de Anthropic y ElevenLabs están puestas,
   el chat responde con Sonnet y la voz sale por ElevenLabs. `/tts/salud` dice
@@ -1717,3 +1730,71 @@ Google Sheets. En `scratchpad/test_notas.py` está la forma correcta — sustitu
 `formularios.guardar` por un espía y **comprobar al final que la lista de escrituras está
 vacía**. Sin eso, cualquier guion de prueba que roce un formulario escribe en los datos de
 salud de Hugo.
+
+---
+
+## 17. PENDIENTE — el reconocedor de Android se reinicia sin parar (2026-09-12, cierre)
+
+**Estado: SIN RESOLVER.** Lo de arriba (§14, §16, el modo cascos) mejoró cosas, pero el
+síntoma principal sigue: **se pierden las primeras palabras al cortarle**, en los DOS
+modos, con cascos y con altavoz.
+
+### El dato nuevo, y por qué lo cambia todo
+Hugo: *"suena todo el rato turum, turum, como de abrir y cerrar el micrófono"*.
+
+Ese es el pitido con el que Android avisa de que abre y cierra su reconocedor. Si suena
+constantemente, **se está reiniciando sin parar**. Y eso tira abajo la premisa sobre la
+que se construyó el modo cascos:
+
+> **`continuous = true` NO se respeta en Android.** La sesión se cierra sola —por
+> silencio, por fin de frase, o por nada— y `onend` la relanza a los 250 ms. "Que el
+> reconocedor escuche siempre" **no existe** ahí: lo que hay es un bucle de sesiones
+> cortas, cada una con su pitido y con **su hueco sordo de unos cientos de ms**.
+
+O sea que el ladrón de las primeras palabras **no es (solo) el relevo del micro**, que es
+lo que se arregló en `fa1c699`: son los huecos entre reinicios, que ocurren todo el rato y
+también sin que nadie interrumpa a nadie. El `aplazar()` del hueco sordo compensa el
+RELOJ, pero no recupera el audio perdido — eso no se puede.
+
+### Antes de tocar nada: MEDIRLO
+La traza ya registra `rec: arrancado` / `micro capturando` / `sesión cerrada`. Con
+`?vozdebug=1`, hablar un minuto y contar:
+- cuántos reinicios por minuto,
+- cuánto dura el hueco entre `micro suelto` y `micro capturando`.
+
+Eso dice si el problema es de 200 ms o de 1 s, y si merece la pena lo de abajo. **No
+optimizar a ciegas otra vez**: ya se ha fallado dos veces adivinando la causa.
+
+### La salida que probablemente valga: quitar la Web Speech API de en medio
+Capturar el audio nosotros (`MediaRecorder` sobre el mismo `getUserMedia` que ya usa
+`vad.ts`) y transcribir en el servidor. **Se lleva por delante, de una vez, TODOS los
+problemas de Android que llevamos tres sesiones persiguiendo:**
+
+| Problema | Qué pasa con esto |
+|---|---|
+| Micro exclusivo, relevo VAD ↔ reconocedor (§14) | Desaparece: un solo `getUserMedia`, el VAD y la grabación comparten pista |
+| Reinicios, pitidos y huecos sordos (esto) | Desaparecen: la captura no se corta |
+| La frase entera repetida en cada resultado (§14) | Desaparece: `reconstruir()` dejaría de hacer falta |
+| Los números dictados como dígitos (§14) | Depende del modelo, pero `CORTA_VALIDA` ya lo cubre |
+| El interruptor cascos/altavoz (§14) | Probablemente sobra: el corte por voz lo seguiría haciendo el VAD |
+
+**Y la pieza ya está medio puesta**: Hugo tiene clave de Groq, y en su catálogo aparecen
+`whisper-large-v3-turbo` y `whisper-large-v3`. Mismo proveedor, misma clave, mismo cliente
+compatible con OpenAI que ya hay en `rapido.py`.
+
+Lo que habría que resolver, y hay que decirlo antes de vendérselo:
+- **Deja de ser en directo.** Hoy se van viendo los parciales; con esto habría que trocear
+  (mandar cada ~2-3 s) o esperar al final del turno. El fin de turno lo puede marcar el
+  VAD, que ya detecta cuándo deja de hablar.
+- **Latencia nueva**: subir el audio + transcribir. Whisper turbo es rápido, pero hay que
+  MEDIRLO con un trozo de 10 s antes de decidir.
+- **Coste**: hoy la transcripción es gratis (la pone el navegador). Pasaría a facturarse
+  por minuto de audio.
+- El respaldo de la Web Speech API conviene dejarlo: en el portátil funciona bien y no
+  tiene ninguno de estos problemas.
+
+### Lo que NO hay que volver a intentar
+- **Afinar el relevo del micro.** Ya se hizo (esperar a `ctx.close()`, esperar al `onend`)
+  y no era eso. Está en `fa1c699` y se queda porque es correcto, pero no resuelve esto.
+- **Dar por hecho que el reconocedor puede quedarse escuchando.** No puede. Es lo que se
+  supuso al hacer el modo cascos y es falso.
