@@ -128,6 +128,15 @@ def recordar(tema: str, texto: str) -> int:
         return cur.lastrowid
 
 
+# Los hechos sobre gente van con el tema `persona:<nombre>` (ver la sección de
+# personalidad.py que le dice a Jarvis que pregunte por quien no conoce). Se tratan
+# distinto en `hechos_relevantes`: NO rotan.
+PREFIJO_PERSONA = "persona:"
+# Tope por si algún día son muchas. A partir de aquí entran las de mención más reciente:
+# más vale olvidar a alguien de hace dos años que quedarse sin sitio para el resto.
+MAX_PERSONAS = 40
+
+
 def hechos_relevantes(limite: int = 30) -> list[dict]:
     """Los hechos que van al prompt.
 
@@ -135,30 +144,50 @@ def hechos_relevantes(limite: int = 30) -> list[dict]:
     recientes con los que llevan más tiempo sin mencionarse: los primeros dan
     contexto de lo que pasa ahora, los segundos son los que permiten que Jarvis
     saque un tema que Hugo daba por olvidado, que es justo la gracia.
+
+    EXCEPCIÓN: la gente (`persona:*`) va SIEMPRE, y no cuenta contra `limite`.
+    Esa rotación es buena para "está leyendo Shogun" y pésima para "Daniel es su
+    primo": si un día no le toca, Jarvis no sabe quién es Daniel y **vuelve a
+    preguntarlo**, que es justo la pesadez que la función pretende evitar. Son
+    pocas y valen mucho por carácter, así que se pagan aparte.
     """
     with _conn() as con:
-        total = con.execute("SELECT COUNT(*) c FROM hechos").fetchone()["c"]
+        personas = con.execute(
+            "SELECT * FROM hechos WHERE tema LIKE ? ORDER BY ultima_mencion DESC LIMIT ?",
+            (PREFIJO_PERSONA + "%", MAX_PERSONAS),
+        ).fetchall()
+        ids_persona = {f["id"] for f in personas}
+
+        total = con.execute(
+            "SELECT COUNT(*) c FROM hechos WHERE tema NOT LIKE ?",
+            (PREFIJO_PERSONA + "%",),
+        ).fetchone()["c"]
         if total <= limite:
             filas = con.execute(
-                "SELECT * FROM hechos ORDER BY fecha_alta DESC"
+                "SELECT * FROM hechos WHERE tema NOT LIKE ? ORDER BY fecha_alta DESC",
+                (PREFIJO_PERSONA + "%",),
             ).fetchall()
-            return [dict(f) for f in filas]
+            return [dict(f) for f in personas] + [dict(f) for f in filas]
 
         mitad = limite // 2
         recientes = con.execute(
-            "SELECT * FROM hechos ORDER BY fecha_alta DESC LIMIT ?", (mitad,)
+            "SELECT * FROM hechos WHERE tema NOT LIKE ? ORDER BY fecha_alta DESC LIMIT ?",
+            (PREFIJO_PERSONA + "%", mitad),
         ).fetchall()
-        vistos = {f["id"] for f in recientes}
+        vistos = {f["id"] for f in recientes} | ids_persona
         olvidados = con.execute(
-            "SELECT * FROM hechos ORDER BY ultima_mencion ASC LIMIT ?", (limite,)
+            "SELECT * FROM hechos WHERE tema NOT LIKE ? ORDER BY ultima_mencion ASC LIMIT ?",
+            (PREFIJO_PERSONA + "%", limite),
         ).fetchall()
 
-    salida = [dict(f) for f in recientes]
+    salida = [dict(f) for f in personas] + [dict(f) for f in recientes]
+    rotatorios = len(recientes)
     for f in olvidados:
-        if len(salida) >= limite:
+        if rotatorios >= limite:
             break
         if f["id"] not in vistos:
             salida.append(dict(f))
+            rotatorios += 1
     return salida
 
 

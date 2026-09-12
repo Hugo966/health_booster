@@ -76,7 +76,12 @@ HERRAMIENTAS_LECTURA = [
                        "conversaciones (lo que lee, viajes, gente, cómo se siente, metas). "
                        "NO la uses para números del dashboard: esos ya te llegan solos.",
         "params": {
-            "tema": {"type": "string", "description": "Etiqueta corta, p.ej. 'lectura'"},
+            "tema": {"type": "string", "description": "Etiqueta corta, p.ej. 'lectura'. "
+                                                      "Para una persona, un sitio o algo "
+                                                      "recurrente usa 'persona:<nombre en "
+                                                      "minúsculas>' (p.ej. 'persona:daniel'): "
+                                                      "esos los tendrás siempre delante en "
+                                                      "vez de ir rotando."},
             "texto": {"type": "string", "description": "El hecho, en una frase"},
         },
         "requeridos": ["tema", "texto"],
