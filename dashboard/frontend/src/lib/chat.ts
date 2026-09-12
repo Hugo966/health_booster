@@ -91,7 +91,7 @@ function cargar(): Mensaje[] {
 // llega por SSE: una regex de palabras sueltas se equivocaba feo (un "hoy me encuentro
 // jodido" acababa en 'consulta' por el "hoy" y le soltaba "voy a mirar tus datos").
 type Habla = {
-  muletilla: (texto: string) => void;
+  muletilla: (texto: string, escrita?: boolean) => void;
   empujar: (frase: string) => void;
   cerrar: () => void;
 };
@@ -328,8 +328,12 @@ export function useChat(
               pendiente += ev.texto;
               pintar(acumulado);
               vaciar(false);
-            } else if (ev.tipo === "muletilla") {
-              habla?.muletilla(String(ev.texto ?? ""));
+            } else if (ev.tipo === "muletilla" || ev.tipo === "muletilla_texto") {
+              // `muletilla_texto` = el backend la ha redactado a medida con el modelo
+              // rápido y hay que sintetizarla aquí. `muletilla` a secas es el nombre de un
+              // pool de frases ya grabadas, que es lo de siempre y lo que llega si no hay
+              // modelo rápido o si ha fallado.
+              habla?.muletilla(String(ev.texto ?? ""), ev.tipo === "muletilla_texto");
             } else {
               fin = {
                 texto: String(ev.texto ?? ""),

@@ -46,6 +46,27 @@ con tests y un móvil simulado): que dudando no le corte, que las respuestas cor
 lleguen, que la muletilla tarde, y sobre todo **cortarle por voz**, que sigue sin
 confirmarse — ver el final de §14, que dice qué número mirar en la traza.
 
+### Segunda vuelta, también del 2026-09-12 (§16)
+Hugo probó lo anterior desde el móvil y salieron tres fallos más, ya arreglados:
+- **El chat seguía sin poder abrirse.** El botón de ampliar un panel solo aparece con
+  `group-hover`, y **en táctil no hay hover**: invisible en TODOS los paneles. Van tres
+  fallos del mismo tipo (el gesto de `wheel`, este botón, y el hover en general). **Si
+  añades una interacción, pregúntate cómo se hace con un dedo.**
+- **Dudar seguía cortándole**: `DUDA` solo valía si la vacilación venía sola, y en Android
+  el final trae la frase entera. Ahora se mira también el final de lo acumulado.
+- **Cortarle le borraba la pregunta del hilo.** Le preguntó a qué valor le cambiaba la
+  energía, Hugo dijo "a 7" y contestó "7 qué, tío". No era el reconocedor, era la memoria:
+  al cancelar no se guardaba NADA. Ahora se guarda lo emitido, marcado.
+- Y **lee las notas de los formularios por su cuenta** para preguntar por lo que pone ahí.
+
+**Pieza nueva: `rapido.py`**, un modelo de Groq que escribe la muletilla a medida en vez
+de sacarla del bote de pregrabadas. **Ya está configurado y probado con la clave de Hugo**
+(`GROQ_MODELO=qwen/qwen3.8-27b`, ~280 ms). Falta lo único que no se puede medir: si a él
+le gusta más una coletilla a medida pero plana que una pregrabada con retintín pero
+genérica. Si no le convence **se apaga vaciando `GROQ_MODELO`**, sin tocar código.
+Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya**.
+El porqué de cada decisión, al final de §16.
+
 ### Lo que se cerró el 2026-09-11 (no rehacerlo)
 - **La VM ya es usable de verdad**: las claves de Anthropic y ElevenLabs están puestas,
   el chat responde con Sonnet y la voz sale por ElevenLabs. `/tts/salud` dice
@@ -283,6 +304,21 @@ el sobrante.
   ```
   Correcto cuando `/tts/salud` diga `"elevenlabs": true`. Sin ellas el chat no responde y
   la voz cae a la del navegador; el resto del dashboard funciona entero.
+- **`GROQ_API_KEY` y `GROQ_MODELO`** (las muletillas a medida, §16), por lo mismo: el
+  `.env` no viaja por git. Misma receta, cambiando el `grep`:
+  ```bash
+  # Desde el PORTÁTIL hay que lanzarlo con el bash de Git, no con el de system32 (WSL).
+  # Nombre de fichero RELATIVO, no /tmp: el /tmp de Git Bash no es el de Windows.
+  grep -E '^GROQ_' .env > claves_groq.env
+  gcloud compute scp claves_groq.env jarvis:claves_groq.env \
+    --zone=us-central1-a --project=health-boost-500507 --account=hugogalvezu96@gmail.com --quiet
+  gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
+    --account=hugogalvezu96@gmail.com --quiet \
+    --command="cat ~/claves_groq.env >> ~/health_booster/.env && rm ~/claves_groq.env && sudo systemctl restart jarvis"
+  rm claves_groq.env
+  ```
+  Sin ellas NO falla nada: `rapido.disponible()` da False y se usan las muletillas
+  pregrabadas de siempre. El síntoma sería "no noto ninguna diferencia".
 - **Alerta de presupuesto**: la capa gratuita pide tarjeta. Conviene una alerta a 1 €.
 - **Probar el chat por el tailnet**: va por SSE (`/chat/stream`). El código manda
   `X-Accel-Buffering: no`, pero quien tiene que no bufferizar ahora es `tailscale serve`.
@@ -398,6 +434,10 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `sheets.py` — cliente gspread cacheado (TTL 300s), SOLO lectura.
   TABS = `["derived_diario","entreno_sesion","rm1","peso","entreno_sets"]`.
   Lee `.env` de la raíz. Pestaña que falle → lista vacía (no rompe).
+- `rapido.py` — modelo rápido de **Groq** que escribe la muletilla a medida (§16). Habla
+  API de OpenAI (la que expone Groq), sin SDK, y **apagado mientras falte `GROQ_MODELO` o
+  `GROQ_API_KEY` en el `.env`**. Cualquier fallo devuelve `None` y se usan las
+  pregrabadas: nunca puede dejar a Jarvis callado ni retrasarle.
 
 ### Frontend `dashboard/frontend/src/`
 - `App.tsx` — raíz. Carga `/data`, construye las series por panel, RangeSelector global,
@@ -1169,9 +1209,10 @@ Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.*
 | Dónde | Constante | Hoy | Historia |
 |---|---|---|---|
 | `voz.ts` | `FIN_TURNO_MS` | 1500 | 1100 cortaba · 1800 se hacía incómodo · 1200 iba bien en el portátil pero le cortaba en el móvil · 1500 es el punto medio, **no subirlo sin que lo pida él** |
-| `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2800 | Frase acabada en "…y", "…o sea", o una duda suelta |
+| `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2800 | Frase acabada en "…y", una duda suelta, **o una duda al final de lo acumulado** (`DUDA_FINAL`, §16) |
 | `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras. **Con la excepción de `CORTA_VALIDA`** |
-| `voz.ts` | `ESPERA_MULETILLA_MS` | 4500 | Lo pidió él: el orbe en "pensando" 4-5 s. De rebote, si la respuesta real llega antes, la muletilla ya no se dice |
+| `voz.ts` | `ESPERA_MULETILLA_MS` | 4500 | Lo pidió él: el orbe en "pensando" 4-5 s. De rebote, si la respuesta real llega antes, la muletilla ya no se dice. **Y es lo que da tiempo al modelo rápido de §16** |
+| `.env` | `GROQ_TIMEOUT_MS` | 1200 | Plazo duro de la muletilla a medida. Pasado, se tira de las pregrabadas: una muletilla tarde es el silencio MÁS la muletilla |
 | `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
 | `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
 | `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA. En el MÓVIL puede sobrar: su voz medía 0,0365-0,0755, o sea que una de las dos medidas queda POR DEBAJO del umbral. Sin confirmar |
@@ -1477,3 +1518,154 @@ sRPE al pasar el pipeline.
 
 Para la próxima: o no meter datos de formulario en los guiones de prueba, o redirigir
 también `formularios`/`sheets`.
+
+---
+
+## 16. Segunda vuelta del móvil (2026-09-12) — y el modelo rápido de muletillas
+
+Hugo probó lo de la §14 desde el teléfono y volvió con cuatro cosas. Tres eran fallos
+nuevos; la interesante es que **dos de ellas son el mismo error de fondo que ya había
+salido dos veces: una interacción que solo existe con ratón.**
+
+### El chat seguía siendo inalcanzable, y no era el arreglo de la §14
+"No hay ni flecha ni nada." El gesto táctil de la §14 funcionaba — pero **no se llegaba a
+la pantalla donde vive**. El botón de ampliar un panel es `opacity-0` y solo aparece con
+`group-hover`, y **en táctil no hay hover**: era invisible en TODOS los paneles del móvil.
+Y como la otra forma de ampliar es tocar el fondo de la tarjeta, en el chat —donde casi
+todo lleva `data-no-expand`— no había ninguna.
+
+Arreglado con `[@media(hover:none)]:opacity-100`, que lo enciende solo donde no hay ratón:
+en el escritorio sigue apareciendo al pasar por encima, que es como a Hugo le gusta.
+**Estaba DUPLICADO**: `Panel.tsx` y `Readiness.tsx` llevan cada uno su copia del botón, y
+arreglar solo el primero dejaba Readiness fuera. Lo cazó el test, no la vista.
+
+> Van tres: el gesto de `wheel`, el botón de ampliar y (antes) el hover. **Si añades una
+> interacción, pregúntate cómo se hace con un dedo.**
+
+### La duda solo contaba si venía sola
+`DUDA` miraba si el final ERA una vacilación. Pero en Android cada final trae la frase
+entera, así que en cuanto Hugo había dicho algo antes, "pues no sé, eeee" llegaba como un
+único final y no casaba: seguía cortándole. Ahora hay `DUDA_FINAL`, que mira **el final de
+lo acumulado**, y `esperaDe` la consulta junto a `COLGADA`.
+
+Ojo al conjunto: **solo los sonidos** (`eeee`, `mmm`, `eh`, `o sea`, `a ver`) valen al
+final de una frase. Las palabras de verdad (`esto`, `bueno`, `pues`) solo cuentan si vienen
+solas — al final de una frase son normales ("¿qué es esto?", "está bueno") y meterlas ahí
+haría esperar de más constantemente.
+
+### Cortarle le borraba la pregunta del hilo (el peor de los tres)
+Le preguntó a qué valor le cambiaba la energía, Hugo contestó "a 7", y Jarvis respondió
+"7 qué, tío". **No era el reconocedor: era la memoria.**
+
+En la §13 se decidió que al cancelar no se guardara NADA, razonando que media respuesta es
+peor que ninguna porque el modelo la leería como dicha. **El razonamiento daba por hecho
+que si Hugo corta es porque la respuesta iba mal**, y el caso normal resultó ser el
+contrario: **le contesta a media frase**, que es justo lo que busca el modo conversación.
+Al borrar el turno, la pregunta de Jarvis desaparecía y el siguiente se quedaba sin pie.
+
+Ahora se guarda **lo que de verdad se emitió**, con la marca `[…Hugo te cortó aquí]`. Para
+eso `chat.responder` envuelve `al_texto` en `_emitir`, que va copiando los trozos: es el
+único sitio donde se sabe qué llegó a salir. Ni se pierde el contexto ni el modelo cree
+que lo dijo entero. Si no había emitido nada, no se guarda un mensaje vacío.
+
+### Que lea las notas por su cuenta
+Preguntaba por alguien solo si Hugo lo mencionaba hablando. Lo que quería es que **lea las
+notas de los formularios y pregunte por lo que pone ahí**, sin que él saque el tema. Es un
+cambio de prompt (las notas ya llegaban en el parte), con dos frenos: interesarse por lo
+que cuenta la nota y no solo por el nombre, y **una sola cosa por conversación** — las
+notas traen varios días y repasarlas en fila es un interrogatorio.
+
+Comprobado con el modelo real: con un "buenas" como único mensaje, sacó *"en tu nota de
+ayer decías que te lo pasaste muy bien con Berto… ¿quién es Berto?"*.
+
+---
+
+## El modelo rápido para las muletillas (`rapido.py`)
+
+Lo pidió Hugo. Contexto de por qué antes se dijo que no: las muletillas son audio
+**pregrabado** (latencia cero, generado una vez con el modelo caro, con retintín), y
+escribirlas a medida obliga a sintetizarlas en el momento, en modo rápido, donde salen
+planas. Eso sigue siendo verdad. **Lo que ha cambiado es que ahora hay tiempo**: la primera
+muletilla ya no se suelta al segundo, sino a los 4,5 s (§14), así que cabe generar texto y
+sintetizarlo antes de que haga falta.
+
+**Decisiones, y por qué:**
+- **Se usa Groq**, y las variables se llaman `GROQ_*` igual que las de Anthropic y Ollama.
+  La elección salió de MEDIR, no de leer (tabla abajo): aquí no importa que el modelo sea
+  listo —es una frase de diez palabras— sino que conteste rápido, y eso lo pone el
+  hardware de quien lo sirve.
+- **Habla API de OpenAI, que es la que expone Groq**, con `requests` y sin SDK. Efecto
+  lateral útil: cambiando `GROQ_URL` sirve cualquier otro proveedor compatible sin tocar
+  código. Un SDK más solo sería otra cosa que actualizar.
+- **NINGÚN nombre de modelo cableado.** `GROQ_MODELO` viene vacío a propósito: los
+  catálogos cambian (Groq retiró varios en agosto de 2026) y un identificador quemado se
+  pudre en silencio. Sin él, la función sencillamente no se activa.
+- **Falla hacia el lado bueno.** Sin clave, con error, con la URL mal o pasado
+  `GROQ_TIMEOUT_MS` (1200 ms por defecto), devuelve `None` y **se tiran las pregrabadas
+  de siempre**. Una muletilla que llega tarde es el silencio MÁS la muletilla: peor que no
+  tenerla. El plazo es duro y está probado que corta de verdad.
+- Recorta lo que devuelven los modelos pequeños cuando se emocionan (comillas, varias
+  líneas, párrafos). Se recorta en vez de descartarse: una frase de más no molesta y
+  quedarse sin muletilla sí deja el silencio que esto viene a tapar.
+
+**Por dónde va**: `main.eventos()` pregunta a `rapido.muletilla(mensaje)` cuando el
+enrutado ya ha decidido que toca coletilla. Si sale texto, el evento SSE lleva
+`escrita: true` y el navegador lo sintetiza con `rapido: true`; si no, viaja el nombre del
+pool y todo sigue como antes.
+
+**Qué falta por saber, y solo se sabe usándolo**: si una muletilla a medida y plana suena
+mejor o peor que una pregrabada con retintín pero genérica. **Es una cuestión de gusto de
+Hugo, no técnica.** Si no le convence, se apaga vaciando `GROQ_MODELO` en el `.env`, sin
+tocar código.
+
+### Qué modelo, y por qué NO se elige leyendo
+`scratchpad/elegir_modelo.py` pregunta al proveedor qué modelos deja usar esa clave y los
+cronometra con el caso real. Medido el 2026-09-12 en Groq, y **nada de esto sale en un
+benchmark**:
+
+| Modelo | Mediana | Qué pasa |
+|---|---|---|
+| `qwen/qwen3.8-27b` | **281 ms** | **El elegido.** Rápido y escribe en español |
+| `allam-2-7b` | 367 ms | Rápido pero escribe mal ("el largo dormimiento") |
+| `openai/gpt-oss-20b` / `120b` | 407 / 422 ms | **Devuelven texto VACÍO**: razonan, y con `max_tokens: 40` no queda nada para la respuesta |
+| `qwen/qwen3.6-27b` | 430 ms | Escupe su razonamiento (`<think>…`) dentro del contenido, en inglés |
+| `groq/compound-mini` | 1078 ms | Escribe bien pero va justo de plazo |
+
+De ahí salen **tres defensas en `rapido.py` que no son paranoia, son cosas que pasaron**:
+1. Se quita el bloque `<think>…</think>` antes de nada.
+2. **Las etiquetas de intención se filtran Y se normalizan.** Se inventó `[dar un respiro]`,
+   `[browsing]` y un `[miejamencioso]` que ni es una palabra; y devolvió `[ sighs ]` con
+   espacios dentro, que el motor de voz no reconoce. Una etiqueta desconocida **se lee en
+   alto**: la diferencia entre una coletilla y Jarvis diciendo "corchete browsing".
+3. Si tras filtrar no queda ni una palabra (devolvió solo `[sarcastic]`), se descarta.
+
+### El límite de Groq es de TOKENS, no de peticiones
+HTTP 429: `input tokens per minute (ITPM): Limit 7000` en el plan gratis. O sea que **lo
+que gasta cuota es el prompt de sistema**, que viaja entero en cada llamada: con ~500
+tokens por llamada, 14 seguidas agotan el minuto. Por eso `_SISTEMA` está escrito corto a
+propósito — si alguien lo alarga "para que quede mejor", reduce cuántas caben.
+
+En uso normal (una por turno de conversación) no se roza. Y cuando se roce, cae solo a las
+pregrabadas: comprobado que 8 de 14 llamadas en ráfaga devolvían `None` sin romper nada.
+
+### Se pide EN PARALELO, por la misma cola que el texto
+Importante y fácil de estropear: `rapido.muletilla` NO se llama antes de emitir. Se lanza
+en su propio hilo y su resultado entra por `cola`, como un evento más.
+
+Pedirla en línea retrasaba el primer trozo de respuesta **en pantalla** lo que tardara
+(~400 ms de mediana, picos medidos de 1,1 s), y encima por una frase que puede acabar sin
+usarse: si la respuesta real llega antes de los 4,5 s, el navegador la descarta. Y esperar
+dentro del generador tampoco vale — es secuencial, así que bloquearía el texto igual.
+
+Medido de extremo a extremo: muletilla a 1,06 s y primer texto a 16,4 s en una pregunta
+con herramientas. Ahí se ve para qué sirve.
+
+Probado en `scratchpad/test_rapido.py` (19 casos) contra un servidor que imita la API de
+OpenAI: el cableado, el recorte, y sobre todo los cuatro caminos de fallo.
+
+### AISLAR LA HOJA al probar con el modelo real
+Repetido aquí porque ya costó una fila falsa (§15): redirigir `memoria.DB` **no** aísla
+Google Sheets. En `scratchpad/test_notas.py` está la forma correcta — sustituir
+`formularios.guardar` por un espía y **comprobar al final que la lista de escrituras está
+vacía**. Sin eso, cualquier guion de prueba que roce un formulario escribe en los datos de
+salud de Hugo.

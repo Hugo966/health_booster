@@ -17,6 +17,7 @@ import formularios
 import huecos
 import memoria
 import proveedor
+import rapido
 import sheets
 from sheets import fetch_all
 
@@ -233,11 +234,29 @@ def chat_stream(m: Mensaje):
 
     threading.Thread(target=trabajo, daemon=True).start()
 
+    # La coletilla a medida va POR LA MISMA COLA que el texto, desde su propio hilo.
+    # Escribirla cuesta ~400 ms de mediana, con picos medidos de 1,1 s. Pedirla en línea
+    # antes de emitir retrasaba ese rato el primer evento del stream —o sea, el texto en
+    # pantalla— por una frase que encima puede acabar sin usarse: si la respuesta real
+    # llega antes de los 4,5 s, el navegador la descarta. Y esperar dentro del generador
+    # no arregla nada, porque es secuencial y bloquearía el texto igual.
+    # Por la cola sale en cuanto está, sin frenar a nadie, y si llega tarde el navegador
+    # ya no la dirá — que es exactamente lo que debe pasar.
+    if ruta["muletilla"]:
+        if rapido.disponible():
+            def coletilla():
+                # Si el modelo falla o no llega, sale el nombre del pool pregrabado: el
+                # comportamiento de siempre. Nunca se queda sin coletilla por esto.
+                texto = rapido.muletilla(m.mensaje)
+                cola.put(("muletilla_texto", texto) if texto
+                         else ("muletilla", ruta["muletilla"]))
+
+            threading.Thread(target=coletilla, daemon=True).start()
+        else:
+            cola.put(("muletilla", ruta["muletilla"]))
+
     def eventos():
         try:
-            # La coletilla ya la trae el enrutado: sale la primera, sin esperar a Sonnet.
-            if ruta["muletilla"]:
-                yield f"data: {json.dumps({'tipo': 'muletilla', 'texto': ruta['muletilla']}, ensure_ascii=False)}\n\n"
             while True:
                 item = cola.get()
                 if item is None:
