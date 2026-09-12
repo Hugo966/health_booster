@@ -12,6 +12,7 @@ import ChatPanel, { ChatExpanded } from "./components/ChatPanel";
 import NotasPanel, { NotasExpanded } from "./components/NotasPanel";
 import FormulariosPanel, { FormulariosExpanded } from "./components/FormulariosPanel";
 import Expanded from "./components/Expanded";
+import TrazaVoz from "./components/TrazaVoz";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
 import { useChat, type Chat } from "./lib/chat";
@@ -304,9 +305,12 @@ export default function App() {
           title={TITULOS[abierto]}
           onClose={cerrar}
           origin={origen}
-          // Formularios no dibuja una serie temporal: se rellena un día concreto, y ese
-          // se elige con su propio selector de fecha. El rango global aquí solo confunde.
-          actions={abierto === "formularios"
+          // Ni formularios ni chat dibujan una serie temporal, así que el rango global no
+          // les aplica: el formulario se rellena para un día concreto (tiene su propio
+          // selector de fecha) y el chat es una conversación. Además, en el móvil el
+          // selector no cabe junto al título y se salía 103 px por la derecha, dejando
+          // toda la vista con scroll lateral (medido a 360 px el 2026-09-12).
+          actions={abierto === "formularios" || abierto === "chat"
             ? undefined
             : <RangeSelector value={range} onChange={setRange} />}
           sinCaja={abierto === "chat"}
@@ -325,6 +329,10 @@ export default function App() {
           {abierto === "chat" && <ChatExpanded chat={chat} voz={voz} />}
         </Expanded>
       )}
+
+      {/* Solo se pinta con jarvis.voz.debug = "1". Va aquí, fuera de los paneles, para
+          que siga a la vista con el chat ampliado: es justo cuando se depura la escucha. */}
+      <TrazaVoz />
     </div>
   );
 }

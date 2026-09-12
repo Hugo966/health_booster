@@ -7,7 +7,16 @@
 #
 # El `dist/` va por scp y no por git (está en .gitignore) porque `npm run build` se
 # queda sin memoria en la e2-micro de 1 GB: se compila aquí y se sube ya hecho.
+#
+# Funciona en los DOS equipos. Desde el portátil hay que lanzarlo con el bash de Git
+# ("C:\Program Files\Git\bin\bash.exe"), no con el `bash.exe` de system32, que es el de
+# WSL: ahí dentro no está el gcloud autenticado.
 set -euo pipefail
+
+# NO tocar la conversión de rutas de MSYS (MSYS2_ARG_CONV_EXCL / MSYS_NO_PATHCONV) para
+# arreglar nada aquí: en Git Bash el propio `gcloud` es un script que se pasa a sí mismo la
+# ruta de gcloud.py, y desactivarla lo rompe con "can't open file C:\c\Users\...".
+# Probado el 2026-09-12.
 
 ZONA=us-central1-a
 PROYECTO=health-boost-500507
@@ -32,10 +41,14 @@ if grep -rqo "http://localhost:80" dashboard/frontend/dist/assets/*.js; then
 fi
 
 echo "▸ 3/4  Subiendo…"
-TAR=$(mktemp -u /tmp/dist-XXXX.tgz)
+# Ruta relativa y dentro del repo, no /tmp: el /tmp de Git Bash no es el de Windows, así
+# que una ruta absoluta POSIX es justo la que puede no sobrevivir al salto a gcloud.
+# Relativa no necesita traducirse y vale igual en los dos equipos. El `trap` la borra
+# aunque el scp falle a medias, para no dejarla asomando en `git status`.
+TAR=dist.tgz
+trap 'rm -f "$TAR"' EXIT
 tar -czf "$TAR" -C dashboard/frontend dist
-gc compute scp "$TAR" "$VM":~/dist.tgz >/dev/null
-rm -f "$TAR"
+gc compute scp "$TAR" "$VM":dist.tgz >/dev/null
 
 echo "▸ 4/4  Actualizando la VM…"
 gc compute ssh "$VM" --command="

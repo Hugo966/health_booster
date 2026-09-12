@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Panel from "./Panel";
 import { theme } from "../lib/theme";
 import { MODELOS } from "../lib/chat";
@@ -311,18 +311,47 @@ function FlechaEnviar() {
   );
 }
 
+// ¿Pantalla estrecha? (< 640 px, el `sm` de Tailwind). Hace falta en JS y no solo en CSS
+// porque el orbe es un <canvas> dimensionado en px desde una prop: una media query no
+// puede encogerlo.
+function usaPantallaEstrecha(): boolean {
+  const consulta = "(max-width: 639px)";
+  const [estrecha, setEstrecha] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(consulta).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(consulta);
+    const alCambiar = (e: MediaQueryListEvent) => setEstrecha(e.matches);
+    mq.addEventListener("change", alCambiar);
+    return () => mq.removeEventListener("change", alCambiar);
+  }, []);
+  return estrecha;
+}
+
 // --- las dos vistas ---------------------------------------------------------
 
 export default function ChatPanel({ chat, voz, onExpand }: { chat: Chat; voz?: Voz; onExpand: (origin?: DOMRect) => void }) {
+  const estrecha = usaPantallaEstrecha();
   return (
     <Panel title="Jarvis" onExpand={onExpand}>
-      {/* Altura fija en px, como el resto de paneles compactos (ver §8). Voz-first: el
-          orbe es el protagonista; la caja de texto queda de respaldo. El historial se
-          ve en la vista ampliada. */}
-      <div className="flex flex-col" style={{ height: 263 }}>
+      {/* Altura fija en px a partir de `sm`, como el resto de paneles compactos (§8), pero
+          solo MÍNIMA en estrecho. La regla de §8 ("nunca en %") existe por el bucle de
+          ResizeObserver del `ResponsiveContainer` de Recharts, y aquí no hay ningún
+          gráfico: es un canvas de tamaño fijo. Con los 263 px clavados, en un móvil de
+          360 px el selector de modelo y la leyenda envolvían a dos líneas, el canvas no
+          encogía y acababa TAPANDO la leyenda y el campo de escribir.
+          Voz-first: el orbe es el protagonista; la caja de texto queda de respaldo. El
+          historial se ve en la vista ampliada. */}
+      <div className="flex min-h-[263px] flex-col sm:h-[263px] sm:min-h-0">
         <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <Orbe voz={voz} enviando={chat.enviando} potencia={potenciaDe(chat.proveedor)} size={150} />
+          <Orbe
+            voz={voz}
+            enviando={chat.enviando}
+            potencia={potenciaDe(chat.proveedor)}
+            // El canvas lleva ancho y alto fijos en px, así que no se adapta solo.
+            size={estrecha ? 116 : 150}
+          />
         </div>
         {chat.error && <div className="mb-1 text-center text-[11px]" style={{ color: theme.alert }}>{chat.error}</div>}
         <Entrada enviando={chat.enviando} onEnviar={chat.enviar} voz={voz} />
@@ -359,23 +388,55 @@ export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
   // cuando ya está desplegada (p=1) el hilo scrollea por su cuenta. Al revés, si la
   // caja está arriba del todo, seguir subiendo devuelve el orbe a pantalla completa.
   // Hace falta listener manual con {passive:false} para poder frenar el scroll nativo.
+  // Mueve el reparto. Devuelve si ha consumido el gesto, para frenar el scroll nativo
+  // solo cuando de verdad lo estamos usando nosotros.
+  const mover = useCallback((dy: number) => {
+    const caja = cajaRef.current;
+    const arriba = !caja || caja.scrollTop <= 0;
+    const bajando = dy > 0;
+    if (!((bajando && pRef.current < 1) || (!bajando && pRef.current > 0 && arriba))) return false;
+    const nuevo = Math.min(1, Math.max(0, pRef.current + dy / RECORRIDO));
+    pRef.current = nuevo;
+    setP(nuevo);
+    return true;
+  }, []);
+
+  const fijarP = useCallback((n: number) => {
+    pRef.current = n;
+    setP(n);
+  }, []);
+
   useEffect(() => {
     const cont = contRef.current;
     if (!cont) return;
     const alRodar = (e: WheelEvent) => {
-      const caja = cajaRef.current;
-      const arriba = !caja || caja.scrollTop <= 0;
-      const bajando = e.deltaY > 0;
-      if ((bajando && pRef.current < 1) || (!bajando && pRef.current > 0 && arriba)) {
-        e.preventDefault();
-        const nuevo = Math.min(1, Math.max(0, pRef.current + e.deltaY / RECORRIDO));
-        pRef.current = nuevo;
-        setP(nuevo);
-      }
+      if (mover(e.deltaY)) e.preventDefault();
     };
+
+    // El dedo. Sin esto el chat era INALCANZABLE en el móvil (2026-09-12): `wheel` es de
+    // rueda de ratón y en táctil no se dispara nunca, así que `p` se quedaba en 0 para
+    // siempre y la caja del hilo medía 0 px con opacidad 0. No es que estuviera más abajo:
+    // es que no existía. Arrastrar hacia ARRIBA avanza, igual que bajar con la rueda.
+    let ultimoY = 0;
+    const alTocar = (e: TouchEvent) => {
+      ultimoY = e.touches[0]?.clientY ?? 0;
+    };
+    const alArrastrar = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? 0;
+      const dy = ultimoY - y;
+      ultimoY = y;
+      if (mover(dy)) e.preventDefault();
+    };
+
     cont.addEventListener("wheel", alRodar, { passive: false });
-    return () => cont.removeEventListener("wheel", alRodar);
-  }, []);
+    cont.addEventListener("touchstart", alTocar, { passive: true });
+    cont.addEventListener("touchmove", alArrastrar, { passive: false });
+    return () => {
+      cont.removeEventListener("wheel", alRodar);
+      cont.removeEventListener("touchstart", alTocar);
+      cont.removeEventListener("touchmove", alArrastrar);
+    };
+  }, [mover]);
 
   const tam = Math.round(ORBE_GRANDE + (ORBE_CHICO - ORBE_GRANDE) * p);
   const zona = ZONA_GRANDE + (ZONA_CHICA - ZONA_GRANDE) * p;
@@ -392,6 +453,19 @@ export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
           <SelectorModelo valor={chat.proveedor} onChange={chat.setProveedor} />
         </div>
       </div>
+      {/* Interruptor explícito del hilo. El gesto (rueda o dedo) sigue estando, pero era
+          INVISIBLE: no había nada en pantalla que dijera que el chat escrito existe, y en
+          el móvil encima el gesto ni funcionaba. Mismo criterio que el botón de "Cállate":
+          si el gesto falla, esto funciona siempre. */}
+      <button
+        type="button"
+        data-no-expand
+        onClick={() => fijarP(pRef.current > 0.5 ? 0 : 1)}
+        className="mx-auto mb-2 shrink-0 rounded-lg px-3 py-1 text-[11px]"
+        style={{ color: theme.muted }}
+      >
+        {p > 0.5 ? "▲  Ocultar conversación" : "▼  Ver conversación"}
+      </button>
       {/* La caja azul: solo el hilo escrito. Mide 0 al entrar, así el chat ni asoma. */}
       <div
         ref={cajaRef}
