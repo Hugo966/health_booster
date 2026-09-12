@@ -306,7 +306,11 @@ const PAUSA_MULETILLA_MS = 2500;
 // Tiene un segundo efecto que es el que de verdad quería: si la respuesta real llega
 // dentro de este rato, la muletilla YA NO SE DICE. O sea, menos frases de relleno sin
 // tener que quitarlas.
-const ESPERA_MULETILLA_MS = 4500;
+// Historia: 0 (atropellaba) -> 4500, que lo pidió él ("el orbe en pensando 4-5 s") ->
+// 2600, porque con 4,5 s se le hacía largo: "no puede ser que cuando acabo tarde 4 s en
+// contestar". 2600 sigue dando de sobra para que el modelo rápido escriba la coletilla
+// (~1,5 s) y para que una respuesta veloz llegue antes y se la ahorre.
+const ESPERA_MULETILLA_MS = 2600;
 
 export type Habla = {
   // Qué pool de muletillas toca ("consulta" / "neutra") lo decide el enrutado en el
@@ -319,9 +323,36 @@ export type Habla = {
   cerrar: () => void;
 };
 
+// ¿Está usando cascos? Cambia CÓMO SE REPARTE EL ÚNICO MICRO del móvil, que es el
+// problema de fondo de toda la voz en Android:
+//
+//   Altavoz: la voz de Jarvis vuelve al micro. Mientras habla, el micro lo tiene el
+//     detector (`vad.ts`), que solo mide energía. Se puede cortarle hablando, pero las
+//     palabras con las que le cortas NO se transcriben: para cuando el reconocedor coge el
+//     micro, ya las has dicho. De ahí "no pilla el principio cuando le interrumpo".
+//
+//   Cascos: su voz no llega al micro, así que no hace falta detector ni anti-eco. El
+//     reconocedor **escucha todo el rato, también mientras Jarvis habla**: no hay relevo,
+//     no se pierde ni una palabra, y que llegue transcripción mientras habla ES la señal
+//     de que le estás cortando.
+//
+// No se puede adivinar por software qué salida está usando, y Hugo dijo que depende del
+// día, así que lo dice él. Se recuerda entre sesiones.
+const KEY_CASCOS = "jarvis.voz.cascos";
+
+function cascosGuardado(): boolean {
+  try {
+    return localStorage.getItem(KEY_CASCOS) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export type Voz = {
   soportado: boolean;
   vozActiva: boolean;
+  cascos: boolean;
+  alternarCascos: () => void;
   estado: EstadoVoz;
   sonando: boolean;             // hay voz saliendo AHORA (no solo turno abierto)
   hayPendiente: boolean;        // hay algo dicho esperando a que se cierre el turno
@@ -338,6 +369,17 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
 
   const [vozActiva, setVozActiva] = useState(false);
   const [estado, setEstado] = useState<EstadoVoz>("off");
+  const [cascos, setCascos] = useState(cascosGuardado);
+  // Lo miran manejadores que viven fuera de React (el reconocedor se crea una sola vez).
+  const cascosRef = useRef(cascos);
+  useEffect(() => {
+    cascosRef.current = cascos;
+    try {
+      localStorage.setItem(KEY_CASCOS, cascos ? "1" : "0");
+    } catch {
+      /* modo privado: se pierde al recargar y no pasa nada */
+    }
+  }, [cascos]);
   // ¿Está SONANDO audio ahora mismo? Va aparte de `estado` a propósito: el estado pasa
   // a "hablando" en cuanto se abre el turno (así el micro queda mudo durante toda la
   // generación y no se oye a sí mismo), pero el orbe no debe ponerse a "hablando" hasta
@@ -355,7 +397,12 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // despacharse con cada `isFinal` de Chrome, que llegan a mitad de idea.
   const bufferRef = useRef("");
   const temporRef = useRef(0);       // reloj de silencio: vence -> se manda
+  const venceEnRef = useRef(0);      // cuándo vence, en absoluto (para poder aplazarlo)
   const limiteRef = useRef(0);       // techo duro por si el reloj nunca vence
+  // Cuándo dejó de capturar el micro el reconocedor. Mientras esté a 0, está oyendo.
+  const sordoDesdeRef = useRef(0);
+  // `aplazar` se define después; los manejadores del reconocedor se crean una sola vez.
+  const aplazarRef = useRef<(ms: number) => void>(() => {});
   // Último parcial recibido, si llegó DESPUÉS del último final. Vacío = Chrome no nos
   // debe nada. Sirve para dos cosas: saber que sigue hablando (no se puede despachar aún,
   // o se manda media frase) y mirar cómo termina la frase, porque Chrome corta los
@@ -466,6 +513,17 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     if (!t) return;
     traza("=> MANDADO a Jarvis", t);
     irA("activo");
+    // Con cascos la sesión de escucha NO se corta entre turnos, así que `ev.results` se
+    // va acumulando y el turno siguiente arrastraría lo ya mandado. Aquí es el punto
+    // seguro para vaciarla: Hugo acaba de terminar de hablar, no hay nada que perder.
+    // (Con altavoz ya se aborta en `empezarAHablar`, así que no hace falta.)
+    if (cascosRef.current) {
+      try {
+        recRef.current?.abort();
+      } catch {
+        /* ya estaba parado; `onend` lo relanza */
+      }
+    }
     comandoRef.current(t);
   }, [pararRelojes, irA]);
 
@@ -480,8 +538,25 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       forzada ??
       esperaDe(interinoRef.current || bufferRef.current) +
         (interinoRef.current ? ESPERA_FINAL_MS : 0);
+    venceEnRef.current = Date.now() + espera;
     traza(`espero ${espera}ms de silencio`, bufferRef.current);
     temporRef.current = window.setTimeout(despachar, espera);
+  }, [despachar]);
+
+  // Retrasa el reloj de silencio por un rato en el que NO SE PUDO OÍR.
+  //
+  // Android cierra la sesión de escucha él solo tras ~1 s de pausa y hay que reabrirla;
+  // entre medias el micro no está capturando. Ese hueco se contaba como silencio de Hugo,
+  // así que respirando un segundo se le despachaba la frase a medias — "a veces me corta
+  // porque paso 0,5 o 1 s callado" (2026-09-12). El tiempo sordo no es silencio suyo: es
+  // tiempo del que no sabemos nada, y no puede contar para dar su turno por terminado.
+  const aplazar = useCallback((ms: number) => {
+    if (!temporRef.current || !bufferRef.current || ms <= 0) return;
+    venceEnRef.current += ms;
+    window.clearTimeout(temporRef.current);
+    const queda = Math.max(0, venceEnRef.current - Date.now());
+    traza(`hueco sordo de ${ms}ms: no cuenta. Quedan ${queda}ms`);
+    temporRef.current = window.setTimeout(despachar, queda);
   }, [despachar]);
 
   // FIJA el turno entero, no añade. `onresult` reconstruye siempre la frase completa desde
@@ -522,8 +597,17 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     r.maxAlternatives = 1;
 
     r.onresult = (ev: any) => {
-      // Mientras habla (o justo después), se ignora TODO: así no se oye a sí mismo.
-      if (estadoRef.current === "hablando" || Date.now() < ignorarHastaRef.current) return;
+      if (estadoRef.current === "hablando") {
+        // Con ALTAVOZ se ignora todo mientras habla: sería su propio eco.
+        if (!cascosRef.current) return;
+        // Con CASCOS es al revés: su voz no llega al micro, así que si aquí llega algo
+        // solo puede ser Hugo hablándole encima. Eso ES la señal de corte — y como el
+        // reconocedor nunca soltó el micro, lo que ha dicho está entero. No se hace
+        // `return`: se sigue y se procesa.
+        traza("=> CORTADO por tu voz (cascos)");
+        pararRef.current();
+      }
+      if (Date.now() < ignorarHastaRef.current) return;
 
       const { finales, interino } = reconstruir(ev.results);
 
@@ -578,11 +662,20 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     // ha quedado otro (en Android el reconocedor lo sirve el sistema y lo quiere en
     // exclusiva, así que compite con el `getUserMedia` del VAD).
     r.onstart = () => traza("rec: arrancado");
-    r.onaudiostart = () => traza("rec: micro capturando");
+    r.onaudiostart = () => {
+      traza("rec: micro capturando");
+      // Vuelve a oír: el rato que ha estado sordo no cuenta como silencio de Hugo.
+      const desde = sordoDesdeRef.current;
+      sordoDesdeRef.current = 0;
+      if (desde) aplazarRef.current(Date.now() - desde);
+    };
     r.onsoundstart = () => traza("rec: se oye ALGO");
     r.onspeechstart = () => traza("rec: se oye VOZ");
     r.onspeechend = () => traza("rec: fin de voz");
-    r.onaudioend = () => traza("rec: micro suelto");
+    r.onaudioend = () => {
+      traza("rec: micro suelto");
+      sordoDesdeRef.current = Date.now();
+    };
 
     r.onend = () => {
       traza("rec: sesión cerrada");
@@ -594,8 +687,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       // reconstrucción empezaría de cero. Sin esto, una frase partida por el cierre
       // automático de Android perdería su primera mitad.
       arrastreRef.current = bufferRef.current;
-      // Reanuda la escucha continua salvo que estemos hablando o apagados.
-      if (activaRef.current && estadoRef.current !== "hablando") {
+      // Reanuda la escucha continua salvo que estemos hablando o apagados. **Con cascos se
+      // reanuda también mientras habla**: ahí el reconocedor es quien detecta que Hugo le
+      // está cortando, así que no puede quedarse parado.
+      if (activaRef.current && (cascosRef.current || estadoRef.current !== "hablando")) {
         setTimeout(relanzar, 250); // pequeño respiro: evita bucles de start/stop
       }
     };
@@ -698,6 +793,19 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // comerían justo la aclaración por la que le ha interrumpido.
   const finHabla = useCallback((conGracia = true) => {
     setSonando(false); // fin del turno: ahora sí deja de salir voz (ver `reproducir`)
+    if (cascosRef.current) {
+      // Con cascos no hay nada que hacer con el micro: el reconocedor no se ha parado y no
+      // ha podido oír a Jarvis, así que no hay eco que descartar. **Abortar aquí sería el
+      // error**: se llevaría por delante justo lo que Hugo está diciendo para cortarle.
+      ignorarHastaRef.current = 0;
+      if (activaRef.current) {
+        irA("activo");
+        relanzar(); // por si Android había cerrado la sesión por su cuenta
+      } else {
+        irA("off");
+      }
+      return;
+    }
     // Soltar el micro del detector ANTES de reabrir el reconocedor. En Android los dos se
     // excluyen, y a partir de aquí el que importa es el reconocedor: lo siguiente que pasa
     // es que habla Hugo. Ya no hay nada que cortar, así que el detector no hace falta.
@@ -766,14 +874,22 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
 
   const empezarAHablar = useCallback(() => {
     irA("hablando");
-    // Se ESPERA a que el reconocedor suelte el micro antes de abrir el detector. En
-    // Android son excluyentes: si se abre encima, el detector mide ceros y el corte por
-    // voz no funciona — sin dar ningún error. Es la misma trampa que en `finHabla`, en la
-    // otra dirección.
+    if (cascosRef.current) {
+      // Con cascos NO hay relevo: el reconocedor se queda escuchando mientras Jarvis
+      // habla. Es justo lo que evita perder el principio de la frase al cortarle, y se
+      // puede porque su voz no vuelve por el micro.
+      traza("cascos: el reconocedor sigue escuchando mientras habla");
+      relanzar();
+      return;
+    }
+    // Con altavoz sí hay relevo, y se ESPERA a que el reconocedor suelte el micro antes de
+    // abrir el detector. En Android son excluyentes: si se abre encima, el detector mide
+    // ceros y el corte por voz no funciona, sin dar ningún error. Misma trampa que en
+    // `finHabla`, en la otra dirección.
     void soltarReconocedor()
       .then(() => asegurarVad().arrancar())
       .then((ok) => traza(ok ? "VAD: micro abierto (barge-in)" : "VAD: NO se pudo abrir"));
-  }, [irA, asegurarVad, soltarReconocedor]);
+  }, [irA, asegurarVad, soltarReconocedor, relanzar]);
 
   // Turno de habla: cada `decir` incrementa este contador. La tubería de frases lleva
   // su propio número y se aborta en cuanto deja de ser el turno vigente (barge-in,
@@ -1095,16 +1211,18 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       /* nada que cancelar */
     }
     pararAudio();
-    // El reconocedor lleva todo el turno escuchando (`continuous`), así que tiene audio
-    // de la voz de Jarvis a medio digerir. `abort()` lo TIRA sin emitirlo; `stop()` lo
-    // finalizaría y nos llegaría transcrito lo que acababa de decir él. `onend` lo
-    // relanza solo.
-    try {
-      recRef.current?.abort();
-    } catch {
-      /* no estaba escuchando */
+    // Con ALTAVOZ el reconocedor tiene audio de la voz de Jarvis a medio digerir:
+    // `abort()` lo TIRA sin emitirlo (`stop()` lo finalizaría y nos llegaría transcrito lo
+    // que él acababa de decir). Con CASCOS no hay eco que tirar y abortar se llevaría por
+    // delante lo que Hugo está diciendo AHORA para cortarle, que es lo único que importa.
+    if (!cascosRef.current) {
+      try {
+        recRef.current?.abort();
+      } catch {
+        /* no estaba escuchando */
+      }
+      olvidar(); // lo que hubiera a medias es de antes de la interrupción
     }
-    olvidar();      // lo que hubiera a medias es de antes de la interrupción
     finHabla(false); // sin gracia: Hugo está hablando ahora mismo
   }, [finHabla, pararAudio, olvidar]);
 
@@ -1112,6 +1230,11 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   useEffect(() => {
     pararRef.current = parar;
   }, [parar]);
+
+  // Los manejadores del reconocedor se crean una sola vez y necesitan el `aplazar` vigente.
+  useEffect(() => {
+    aplazarRef.current = aplazar;
+  }, [aplazar]);
 
   // Al desmontar: soltar micro, síntesis y el audio clonado que estuviera sonando.
   useEffect(() => {
@@ -1132,8 +1255,15 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     };
   }, [pararAudio, pararRelojes]);
 
+  const alternarCascos = useCallback(() => {
+    setCascos((v) => {
+      traza(v ? "modo ALTAVOZ (detector de voz)" : "modo CASCOS (reconocedor siempre)");
+      return !v;
+    });
+  }, []);
+
   return {
-    soportado, vozActiva, estado, sonando, hayPendiente,
+    soportado, vozActiva, cascos, alternarCascos, estado, sonando, hayPendiente,
     alternar, parar, finTurno: despachar, decir, hablar,
   };
 }

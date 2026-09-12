@@ -257,6 +257,24 @@ function Orbe({ voz, enviando, potencia, size }: { voz?: Voz; enviando: boolean;
       <div className="text-[11px]" style={{ color: theme.muted }}>
         {voz?.soportado === false ? "Voz no disponible (usa Chrome)" : LEYENDA[est]}
       </div>
+      {/* Cascos o altavoz. No es una preferencia de sonido: decide CÓMO SE REPARTE el
+          único micro del móvil (ver `voz.ts`). Con cascos no se pierde el principio de la
+          frase al cortarle; con altavoz hay que cortar y esperar un poco. No se puede
+          detectar por software qué salida usa, así que lo dice él. */}
+      {voz?.soportado && voz.estado !== "off" && (
+        <button
+          type="button"
+          data-no-expand
+          onClick={voz.alternarCascos}
+          title={voz.cascos
+            ? "Con cascos: te oye mientras habla, no se pierde nada al cortarle"
+            : "Con altavoz: puedes cortarle hablando, pero espera medio segundo antes de seguir"}
+          className="mt-0.5 rounded px-1.5 py-0.5 text-[10px]"
+          style={{ color: voz.cascos ? theme.accent : theme.muted, opacity: 0.85 }}
+        >
+          {voz.cascos ? "🎧 cascos" : "🔊 altavoz"}
+        </button>
+      )}
     </div>
   );
 }

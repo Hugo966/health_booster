@@ -1212,7 +1212,7 @@ Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.*
 | `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2800 | Frase acabada en "…y", una duda suelta, **o una duda al final de lo acumulado** (`DUDA_FINAL`, §16) |
 | `voz.ts` | `MAX_SILENCIO_MUERTO_MS` | 15000 | Red por si el reconocedor se atasca. Cuenta desde LO ÚLTIMO OÍDO, no desde el principio del turno: contado mal cortaba las frases largas a los 12 s |
 | `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras. **Con la excepción de `CORTA_VALIDA`** |
-| `voz.ts` | `ESPERA_MULETILLA_MS` | 4500 | Lo pidió él: el orbe en "pensando" 4-5 s. De rebote, si la respuesta real llega antes, la muletilla ya no se dice. **Y es lo que da tiempo al modelo rápido de §16** |
+| `voz.ts` | `ESPERA_MULETILLA_MS` | 2600 | Lo pidió él a 4500 ("el orbe en pensando 4-5 s") y luego se le hizo largo ("tardas 4 s en contestar"). 2600 sigue dando de sobra al modelo rápido (~1,5 s) |
 | `.env` | `GROQ_TIMEOUT_MS` | 3000 | Plazo duro de la muletilla a medida. Pasado, se tira de las pregrabadas: una muletilla tarde es el silencio MÁS la muletilla |
 | `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
 | `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
@@ -1362,6 +1362,33 @@ el teléfono.
 
 Arreglo: **el VAD solo abre el micro mientras Jarvis habla**, que es lo único para lo que
 sirve (`alHablar` ya se desentendía salvo que estuviera sonando su voz).
+
+### El interruptor CASCOS / ALTAVOZ, y por qué existe
+Con un solo micro **no se puede tener todo**, y esto no se arregla programando mejor:
+
+- Mientras Jarvis habla, el micro lo tiene **el detector**, que solo mide energía y **no
+  transcribe**. Por eso se puede cortarle hablando… pero **las palabras con las que le
+  cortas se pierden**: para cuando el reconocedor coge el micro, ya las has dicho. Eso es
+  el "no pilla el principio cuando le interrumpo" — y NO lo arregla afinar el relevo, que
+  es lo que se intentó primero.
+- Si en vez de eso deja uno escuchando siempre al reconocedor, no se pierde nada… pero por
+  el altavoz se oiría a sí mismo.
+
+Como no hay forma de saber por software qué salida está usando y Hugo dijo que **depende
+del día**, lo dice él con un botón (`voz.cascos`, recordado en `localStorage`):
+
+| | Altavoz | Cascos |
+|---|---|---|
+| Quién tiene el micro mientras Jarvis habla | el VAD | **el reconocedor, siempre** |
+| Cortarle hablando | sí, por energía | sí, **por transcripción** (si llega texto, es Hugo) |
+| El principio de tu frase | **se pierde** | se conserva entero |
+| Anti-eco | hace falta (`abort()`) | no hace falta: su voz no llega al micro |
+
+Dos trampas del modo cascos, las dos ya resueltas y fáciles de reintroducir:
+- **`parar()` y `finHabla` NO deben abortar el reconocedor** ahí: se llevarían por delante
+  justo lo que Hugo está diciendo para cortarle. Es lo contrario que con altavoz.
+- **La sesión no se corta entre turnos, así que `ev.results` se acumula.** Se vacía en
+  `despachar` (ahí sí se aborta), que es el punto seguro: acaba de terminar de hablar.
 
 > **EL RELEVO DEL MICRO HAY QUE ESPERARLO, NO SOLO ORDENARLO.** Esto costó dos rondas más
 > (2026-09-12, tarde). No basta con "primero suelto uno y luego abro el otro": las dos
