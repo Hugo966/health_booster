@@ -27,5 +27,9 @@ logs/
 .claude/
 .DS_Store
 
-# Comando local para reanudar la sesión de Claude Code (específico de cada máquina)
+# Comando local para reanudar la sesión de Claude Code (específico de cada máquina).
+# Van los DOS nombres a propósito: cada equipo lo bautizó al revés que el otro, y el del
+# portátil (`claude_sesion.txt`) llevaba desde el 09/09 sin estar ignorado de verdad. No
+# llegó a subirse de milagro; un `git add -A` lo habría metido sin que saltara nada.
 sesion_claude.txt
+claude_sesion.txt

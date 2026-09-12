@@ -3,10 +3,48 @@
 > Resumen autocontenido para continuar el proyecto en una sesión nueva.
 > Usuario: Hugo (powerlifter). Idioma de trabajo: español. Código y comentarios en español.
 
-## 0. LO PRIMERO — pendientes del 2026-09-11 (leer antes de tocar nada)
+## 0. LO PRIMERO — pendientes del 2026-09-12 (leer antes de tocar nada)
 
 Escrito en el portátil al cerrar la sesión. Cada punto lleva el porqué, porque el orden
 importa y saltárselo tiene consecuencias.
+
+### URGENTE si nadie lo ha hecho ya: una fila falsa en `wellness_pm`
+Probando lo de la memoria de personas con el modelo real, Jarvis ejecutó `guardar_pm` de
+verdad y dejó **una fila inventada del `2026-09-12`** (energía 7, sensación 6, RPE 8,
+notas "Entrené con Cristina"). Se aisló la base de datos pero **no la hoja**.
+
+No pisó nada de Hugo —esa fecha no existía; su último PM real era el del 11/09— así que
+**borrar esa fila lo deja como estaba**. Importa porque el semáforo da el PM de hoy por
+hecho cuando no lo está, y `rpd_sesion` es la señal de "ese día entrenó": en cuanto pase
+el pipeline, contamina el sRPE. **El AM del 12/09 SÍ es suyo, ese no se toca.**
+Detalle y cómo no repetirlo, en §15.
+
+### Lo que se cerró el 2026-09-12 (no rehacerlo)
+- **La voz funciona desde el móvil.** Android no se comporta como el Chrome de
+  escritorio, y **ninguna de sus diferencias da error**: el micro es exclusivo (el VAD
+  dejaba sordo al reconocedor), repite la frase entera en cada resultado (tres "hola"
+  llegaban como veinticinco) y manda los números dictados como dígitos (un "cinco" se
+  perdía en el filtro de ruido). **Todo el detalle en §14 — leerlo antes de tocar
+  `voz.ts`.**
+- **Hay traza de voz en pantalla** (`TrazaVoz.tsx`), que se enciende con **`?vozdebug=1`
+  en la URL**. Se hizo porque en el móvil no hay consola, y cerró el diagnóstico en un
+  minuto. **Si algo de voz falla en el teléfono, eso es lo primero, no lo último.**
+- **El chat ya se alcanza en el móvil.** El gesto estaba atado a `wheel`, que en táctil no
+  existe; el hilo no estaba escondido, **medía 0 px**.
+- **Jarvis pregunta por la gente que no conoce** y distingue dos personas con el mismo
+  nombre (§15).
+- **`desplegar.sh` corre desde el portátil.** Hace falta el bash de Git
+  (`C:\Program Files\Git\bin\bash.exe`), **no** el `bash.exe` de `system32`, que es el de
+  WSL y no tiene dentro el gcloud autenticado. Y **no** tocar `MSYS_NO_PATHCONV` para
+  arreglar nada ahí: rompe el propio lanzador de gcloud.
+- **`claude_sesion.txt` no estaba ignorado**: el `.gitignore` lo tenía con las palabras al
+  revés (`sesion_claude.txt`). Ahora están los dos nombres, porque cada equipo lo bautizó
+  a su manera.
+
+**PENDIENTE de comprobar en el móvil** (nada de esto se ha probado con Hugo delante, solo
+con tests y un móvil simulado): que dudando no le corte, que las respuestas cortas
+lleguen, que la muletilla tarde, y sobre todo **cortarle por voz**, que sigue sin
+confirmarse — ver el final de §14, que dice qué número mirar en la traza.
 
 ### Lo que se cerró el 2026-09-11 (no rehacerlo)
 - **La VM ya es usable de verdad**: las claves de Anthropic y ElevenLabs están puestas,
@@ -411,8 +449,16 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
   coloreada por `bueno(r)` → verde (buena) / rojo (mala) / ámbar (ambigua, p.ej. reverse-causation).
   La IA de Fase 2 podrá sustituirla. Celda con `n<14` → "n insuf".
 - `components/Panel.tsx` — tarjeta compacta. **OJO: alturas de panel en px fijos** (ver §8).
+  Excepción razonada: el panel del chat es mínimo en estrecho, porque no lleva gráfico y
+  con 263 px clavados el orbe tapaba el campo de escribir en el móvil (§14).
 - `components/Expanded.tsx` — overlay ampliado + zoom FLIP (Web Animations API).
+- `components/TrazaVoz.tsx` — **el visor de la traza de voz**, en pantalla y por portal a
+  `document.body`. Se enciende con `?vozdebug=1` en la URL (o el `localStorage`
+  `jarvis.voz.debug`) y trae botón de copiar. Existe porque **en el móvil no hay consola**,
+  y es lo primero que hay que mirar si la escucha falla ahí (§14).
 - `components/RangeSelector.tsx` — 7D/14D/30D/90D; `inRange`, `rangeStart`, tipo `Range`.
+  No se le pasa a formularios ni al chat: ninguno de los dos es una serie temporal, y en
+  360 px se salía 103 px por la derecha.
 - `lib/api.ts` — `fetchData()`, `num()`, tipo `SheetData`.
 - `lib/exercises.ts` — clasificación: `COMPETICION=["Sentadilla LB","Banca comp","Sumo dl"]`,
   `categoria()` (basico/variante/accesorio), `patron()` (grupos musculares por regex EN ORDEN),
@@ -422,6 +468,23 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-09-12 (que la voz funcione desde el móvil, y que pregunte quién es Daniel)
+Primera sesión usando el dashboard **desde el teléfono** de verdad, y ahí se cayó todo lo
+que en el portátil iba bien: Jarvis hablaba pero no oía, el chat no se podía ni abrir, y
+las respuestas cortas se perdían. **Ninguno de esos fallos daba error**; es la moraleja de
+la sesión, y por eso lo primero que se construyó fue la traza en pantalla y no el arreglo.
+Tres diferencias de Android contra el Chrome de escritorio, todas silenciosas: micro
+exclusivo, la frase repetida entera en cada resultado, y los números dictados como
+dígitos. **Detalle en §14.**
+
+Aparte, Jarvis ya **pregunta por la gente que no conoce** y distingue dos personas con el
+mismo nombre; lo que no era obvio es que la mitad del trabajo estaba en la memoria, no en
+el prompt: rotando los hechos, acababa repreguntando quién es Daniel. **§15.**
+
+Tocado: `voz.ts` (mucho), `TrazaVoz.tsx` (nuevo), `ChatPanel.tsx`, `App.tsx`,
+`memoria.py`, `personalidad.py`, `chat.py`, `desplegar.sh`, `.gitignore`.
+Commits `5be4c79` y `83da6d3`.
 
 ### Sesión 2026-09-06 (interrumpir a Jarvis por voz, y que espere a que termines)
 Hugo pidió tres cosas de conversación: poder cortarle, que no conteste antes de que él
@@ -1058,6 +1121,11 @@ Nota para el que siga: `run.sh` lanza el backend con **sustitución de proceso**
 
 ## 13. La voz conversacional del 2026-09-06 (interrumpir, esperar, y cuatro sorpresas)
 
+> **Leer también la §14 antes de tocar `voz.ts` o `vad.ts`.** Todo lo de aquí se escribió
+> probando en el portátil, y en el móvil (Android) varias piezas se comportan distinto —
+> incluido el momento en que el VAD abre el micro, que aquí se describe como "toda la
+> sesión" y **ya no es así**. Las perillas de la tabla de abajo están actualizadas.
+
 Lo que pidió Hugo, literal: poder **cortarle** cuando Jarvis oye mal y arranca a hablar;
 que **no conteste antes de que él termine**, pero sin que se note lento; y que tocar el
 orbe mientras escucha signifique **"he terminado, contéstame"**, no "apágate".
@@ -1100,12 +1168,13 @@ Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.*
 
 | Dónde | Constante | Hoy | Historia |
 |---|---|---|---|
-| `voz.ts` | `FIN_TURNO_MS` | 1200 | 1100 cortaba · 1800 se hacía incómodo · 1200 ya con el filtro de ruido |
-| `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2000 | Si la frase acaba en "…y", "…o sea" |
-| `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras |
+| `voz.ts` | `FIN_TURNO_MS` | 1500 | 1100 cortaba · 1800 se hacía incómodo · 1200 iba bien en el portátil pero le cortaba en el móvil · 1500 es el punto medio, **no subirlo sin que lo pida él** |
+| `voz.ts` | `FIN_TURNO_COLGADO_MS` | 2800 | Frase acabada en "…y", "…o sea", o una duda suelta |
+| `voz.ts` | `MIN_CARACTERES` | 3 | Un golpe o una respiración generan un "final" de una o dos letras. **Con la excepción de `CORTA_VALIDA`** |
+| `voz.ts` | `ESPERA_MULETILLA_MS` | 4500 | Lo pidió él: el orbe en "pensando" 4-5 s. De rebote, si la respuesta real llega antes, la muletilla ya no se dice |
 | `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
 | `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
-| `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA |
+| `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA. En el MÓVIL puede sobrar: su voz medía 0,0365-0,0755, o sea que una de las dos medidas queda POR DEBAJO del umbral. Sin confirmar |
 
 Para afinar con números y no de oído: `localStorage.setItem("jarvis.voz.debug","1")` y
 recargar. Traza cada parcial, cada final, cuánto silencio espera, qué manda, y el nivel
@@ -1213,3 +1282,198 @@ el botón, que nunca falla.
   (`tailscale cert` / `tailscale serve`). `vite.config.ts` sirve en claro.
 - **"No he tomado cafeína" no se guarda como 0**: el modelo omite el campo en vez de
   mandar 0. No es el mismo fallo y no se tocó; sería una línea en `personalidad.py`.
+
+---
+
+## 14. La voz en el MÓVIL (2026-09-12) — por qué Android no es Chrome
+
+Contexto: desde que el dashboard vive en la VM, Hugo entra desde el teléfono
+(`poco-f6-pro`, Android + Chrome). La voz de SALIDA funcionaba; la de ENTRADA no. El orbe
+se quedaba escuchando eternamente y nunca pasaba a pensar.
+
+**La lección general, si hay que quedarse con una: el reconocedor de Android NO se
+comporta como el de escritorio, y las diferencias no dan error.** Fallan en silencio y
+parecen otra cosa.
+
+### Lo primero fue el instrumento, no la teoría
+Nada de esto se diagnostica de oído, y en el móvil **no hay consola donde mirar**. Antes
+de tocar la voz se añadió:
+- Los eventos de ciclo de vida del reconocedor a la traza (`onstart`, `onaudiostart`,
+  `onsoundstart`, `onspeechstart`, `onend`). La cadena sana es
+  `arrancado → capturando → ALGO → VOZ → final`, y **dónde se para dice qué pasa**.
+- **Todos** los errores, no solo el de permiso. Antes un `audio-capture` (micro ocupado)
+  era indistinguible de no oír nada: el error solo se tragaba.
+- `TrazaVoz.tsx`, un visor en pantalla con botón de copiar, porque el móvil no tiene
+  consola. Se enciende con **`?vozdebug=1` en la URL** (no solo con `localStorage`, que
+  ahí tampoco se puede escribir) y se pliega, porque tapaba el chat.
+
+La primera traza cerró el caso en un minuto: `arrancado → capturando → (nada) → cerrada`,
+en bucle cada 5 s, sin un solo error, **mientras el VAD medía la voz de Hugo
+perfectamente**. Micro abierto, reconocedor sordo.
+
+### Fallo 1 — en Android el micro es EXCLUSIVO
+El reconocimiento de voz de Android **lo sirve el sistema**, no el navegador, y quiere el
+micro para él solo. El detector de barge-in (`vad.ts`, de la §13) abría su propio
+`getUserMedia` en `encender()` y lo tenía ocupado **toda la sesión**, así que al
+reconocedor le llegaba silencio. En el portátil los dos conviven; por eso solo se veía en
+el teléfono.
+
+Arreglo: **el VAD solo abre el micro mientras Jarvis habla**, que es lo único para lo que
+sirve (`alHablar` ya se desentendía salvo que estuviera sonando su voz). El relevo va
+ordenado y explícito en los dos sentidos — `empezarAHablar` suelta el reconocedor y luego
+abre el VAD; `finHabla` cierra el VAD antes de reabrir el reconocedor. **Al revés, el
+sistema puede no haber liberado el micro y el detector se queda midiendo ceros, sin
+barge-in y sin ningún síntoma.**
+
+Detalle que parece un problema y no lo es: el VAD arranca de cero en cada turno con el
+suelo de ruido por defecto. No pasa nada porque `hablandoJarvis()` sigue siendo falso
+mientras se genera el TTS (segundos), y en ese hueco aprende la sala.
+
+### Fallo 2 — Android repite la frase ENTERA en cada resultado
+El estándar dice que cada hueco de `ev.results` es un segmento distinto. Eso hace el
+escritorio. **Android mete la frase entera desde el principio en cada resultado nuevo**:
+
+```
+final está
+final está escuchando
+final está escuchando varias
+final está escuchando varias veces lo que digo
+```
+
+Pegar el último trozo (lo de siempre) multiplicaba: tres "hola" le llegaron a Jarvis
+**como veinticinco**, y "qué tal estás tío" como "qué qué tal qué tal estás tío". Sumar la
+lista entera —el arreglo "obvio"— **falla igual**, y se probó y se descartó.
+
+Lo que vale es `reconstruir()` (exportada en `voz.ts`): mira si uno es **prefijo** del
+otro. Si lo es, es la misma frase más completa y sustituye; si no, es material nuevo y
+concatena. Correcto en los dos navegadores **sin preguntar cuál es** — nada de
+`if (esAndroid)`, que es una trampa para dentro de seis meses.
+
+Además, Android **cierra la sesión de escucha cada ~5 s**. Como al reabrir `ev.results`
+viene vacío, hace falta `arrastreRef`: lo dicho hasta ahí se guarda, o una frase larga
+partida por ese cierre pierde su primera mitad.
+
+### Fallo 3 — los números dictados llegan como DÍGITOS
+Jarvis le pide el RPE, Hugo dice "cinco", y **Android manda `"5"`**. Un carácter. El
+filtro de ruido (`MIN_CARACTERES = 3`, que existe para tirar los fragmentos de un golpe o
+una respiración) se lo comía en silencio. Lo mismo con "sí" y "no", que son justo las
+respuestas a lo que Jarvis pregunta rellenando un formulario. De ahí el síntoma que
+describió Hugo: *"no se activa el micro cuando el mensaje es corto"*.
+
+Excepción `CORTA_VALIDA`: dígitos (con decimal, por "81,8") y un puñado de palabras
+cortas de verdad. **El filtro tiene que seguir existiendo, pero no puede comerse un dato
+correcto.**
+
+### Fallo 4 — dudar en voz alta le hacía cortar
+Petición literal: *"si digo 'eeee…' como pensando, que no se ponga a pensar"*. Una duda
+suelta caía en el filtro de ruido, que hace `return` **sin rearmar el reloj de silencio**
+— o sea que justo cuando dudaba era cuando más le cortaba.
+
+Ahora hay `DUDA`: no entra en el mensaje (no vamos a mandarle "eh" a Jarvis) pero rearma
+con la espera larga. **Las vocales piden dos letras o una "h" detrás** (`ee`, `eh`, `mm`,
+`hmm`): una "a" o una "e" sueltas son casi siempre un golpe, y tomarlas por duda alargaría
+la espera con cada crujido. Lo destapó el test, no el oído.
+
+### Cómo se prueba esto sin un móvil delante
+- **`scratchpad/test_voz.cjs`** (62 casos): `reconstruir`, `clasificar` y `esperaDe`,
+  contra las funciones **reales** sacadas con esbuild. Incluye las secuencias literales de
+  la traza del móvil. Un calco pasa los tests y deja el fallo en producción, así que se
+  bundlea el fichero de verdad:
+  `esbuild src/lib/voz.ts --bundle --format=cjs --platform=node "--define:import.meta.env={}"`.
+  Sin ese `--define`, `import.meta.env` es `undefined` y el módulo revienta al importarse.
+- **`scratchpad/test_movil.cjs`**: un móvil simulado por **CDP** (no hay puppeteer en el
+  proyecto; son 80 líneas con el `WebSocket` nativo de Node). Emula métricas, táctil y
+  `Input.dispatchTouchEvent`, así que **el arrastre con el dedo se prueba de verdad**.
+- **`scratchpad/test_escritorio.cjs`**: la regresión del PC. Obligatorio: estos arreglos
+  tocan código que Hugo ya había dado por bueno en el portátil.
+
+### El chat era INALCANZABLE en el móvil (y no era culpa de la voz)
+`ChatExpanded` despliega el hilo con un progreso `p`, y ese progreso lo movía **un único
+listener de `wheel`** — rueda de ratón, que en táctil **no se dispara jamás**. Con `p` en
+0, la zona del orbe se queda el 100 % y la caja del hilo mide **0 px con opacidad 0**. No
+es que estuviera más abajo: no existía. Por eso arrastrar el dedo "no hacía nada".
+
+Ahora hay `touchstart`/`touchmove` **y** un botón visible ("▼ Ver conversación"), a
+propósito redundantes: el gesto era **indescubrible incluso con ratón**. Mismo criterio
+que el botón de "Cállate" de la §13 — si el gesto falla, el botón funciona siempre.
+
+Dos desbordes más en 360 px, del mismo síntoma: el panel compacto tenía `height: 263`
+fijo y el orbe `size={150}` cableado, así que el canvas **tapaba el campo de escribir**
+(ahora es mínimo hasta `sm`, y el orbe 116 en estrecho); y el selector de rango se salía
+103 px en el chat ampliado — un control que una conversación no usa, así que se le quita
+igual que ya se le quitaba a formularios.
+
+> **Sobre la §8 ("alturas de panel en px fijos, nunca en %")**: esa regla existe por el
+> bucle de ResizeObserver del `ResponsiveContainer` de Recharts. El panel del chat **no
+> lleva gráfico**, así que ahí no aplica. Está anotado en el propio código para que nadie
+> lo "arregle" de vuelta.
+
+### PENDIENTE: cortarle por voz desde el móvil
+**Sin confirmar.** En la traza, mientras Jarvis habla el VAD marca `0.0000` clavado — que
+es buena señal (su eco no se cuela, la cancelación del móvil funciona), pero **no
+demuestra que oiga a Hugo por encima**. Los únicos números de su voz que hay son 0,0365 y
+0,0755 contra un umbral de 0,038: **uno de los dos queda por debajo**. Puede que tenga que
+alzar la voz, o que no funcione.
+
+Si falla, la perilla es `MINIMO_HABLANDO` (`vad.ts`), y **con la traza se ajusta con
+números en vez de a ojo**: sale `VAD mientras habla: nivel X / umbral 0.0380`. El botón de
+"Cállate" no depende del micro y sigue funcionando siempre.
+
+---
+
+## 15. Que Jarvis pregunte por la gente que no conoce (2026-09-12)
+
+Lo pidió Hugo con un ejemplo y pidiendo que se generalizara: escribe en la nota del PM
+"ayer me lo pasé muy bien con Daniel" y Jarvis asiente como si supiera quién es. Que
+pregunte. Y que si aparece otro Daniel que no encaja, pregunte si es otro, **porque puede
+haber dos Danieles en su vida**.
+
+### Lo que ya estaba (no reconstruirlo)
+Las notas libres de los formularios **ya llegan al prompt** (`briefing.py`, "Notas
+recientes de Hugo", las 8 últimas), y `recordar(tema, texto)` ya escribe en la tabla
+`hechos`. Faltaba pedirle que preguntara — y, sobre todo, **que no preguntara dos veces**.
+
+### La parte que NO es prompt, y es la que importa
+`hechos_relevantes(limite=30)` rota en cuanto hay más de 30 hechos: mezcla los más
+recientes con los que llevan más sin mencionarse. Eso está muy bien para "está leyendo
+Shogun" y es **pésimo para "Daniel es su primo"**: el día que no le toque, Jarvis no sabe
+quién es Daniel y **vuelve a preguntarlo**. Que te interroguen cada semana por lo mismo
+es exactamente lo que haría que Hugo apagara esto.
+
+Convenio: la gente va con tema **`persona:<nombre en minúsculas>`**, y esos hechos
+**entran SIEMPRE y no cuentan contra `limite`** (tope propio `MAX_PERSONAS = 40`, por si
+algún día son muchas). Son pocos y valen mucho por carácter.
+
+### La regla, en `OPERACION` (no en `PERSONAJE`)
+La separación del 2026-09-11 se hizo para poder tocar el tono sin arriesgar el manejo de
+herramientas; esto es manejo de herramientas. Lo que dice, resumido:
+- Preguntar por quien no esté en lo que sabe de su vida. Una frase, con interés de amigo.
+- Vale también para lo que escribe en las **notas**, no solo para lo que dice hablando.
+- **Dos personas con el mismo nombre**: si no encaja con el que conoce, preguntar si es el
+  mismo y guardar el segundo **distinguido**, sin pisar al primero.
+- **Preguntar UNA vez.** Si no contesta, apuntar "lo mencionó el <fecha>, aún no sé quién
+  es" y dejarlo estar. Sin esto se convierte en un incordio.
+- No preguntar en medio de un formulario, ni cuando toque bajar el tono. Esa regla de
+  `PERSONAJE` manda siempre.
+
+### Comprobado con el modelo real (14 turnos), no solo con la regex
+Contra una base **temporal** — su `jarvis.db` son conversaciones privadas y no se ensucia
+con Danieles inventados. Lo que salió:
+- *"¿Ese Daniel es el del gimnasio o hay otro Daniel soriano que no me habías
+  presentado?"* → y luego guardó los dos por separado, sin pisar al del gimnasio.
+- Ignorándole la pregunta sobre alguien nuevo: apuntó *"Mencionada el 2026-09-12… Aún no
+  sé quién es"* y **no volvió a preguntar** en los turnos siguientes.
+- Con una lesión de por medio, ni mencionó al nombre nuevo.
+- 12 tests más (`scratchpad/test_memoria.py`) cubren la rotación, que es la parte que se
+  degrada en silencio.
+
+### AVISO para quien pruebe esto: la hoja NO está aislada
+Redirigir `memoria.DB` aísla la base de datos, **pero no la hoja de cálculo**. Si en la
+prueba Jarvis decide llamar a `guardar_pm`, **escribe en la hoja real de Hugo**. Pasó el
+2026-09-12: quedó una fila inventada del 2026-09-12 en `wellness_pm` (energía 7, sensación
+6, RPE 8, "Entrené con Cristina") que hubo que borrar a mano. No pisó nada suyo —esa fecha
+no existía— pero el semáforo daba el PM por hecho y `rpd_sesion` habría contaminado el
+sRPE al pasar el pipeline.
+
+Para la próxima: o no meter datos de formulario en los guiones de prueba, o redirigir
+también `formularios`/`sheets`.
