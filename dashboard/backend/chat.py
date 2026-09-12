@@ -511,15 +511,56 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
 
     acciones, texto = [], ""
     uso = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
+
+    # Copia de lo que de verdad ha SALIDO hacia Hugo, trozo a trozo. Si le corta, es lo
+    # único que se sabe con certeza que llegó a oír, y es lo que se guarda en la memoria
+    # (ver el final de la función).
+    emitido: list[str] = []
+    guardado_parcial = False
+
+    def _guardar_interrumpido():
+        """Guarda lo que Hugo alcanzó a oír antes de cortar.
+
+        Antes no se guardaba NADA, con el argumento de que media respuesta es peor que
+        ninguna porque el modelo la leería como dicha. Ese argumento da por hecho que si
+        Hugo corta es porque la respuesta iba mal, y el caso normal resultó ser el
+        contrario: **le contesta a media frase**, que es justo lo que busca el modo
+        conversación. Al borrarla, la pregunta de Jarvis desaparecía del hilo y el turno
+        siguiente se quedaba sin pie. Pasó el 2026-09-12: le preguntó a qué valor le
+        cambiaba la energía, Hugo dijo "a 7", y contestó "7 qué, tío".
+
+        Se guarda lo emitido CON la marca de que se cortó ahí. Es más cierto que las dos
+        alternativas: ni se pierde el contexto, ni el modelo cree que lo dijo entero.
+        """
+        nonlocal guardado_parcial
+        if guardado_parcial:
+            return
+        guardado_parcial = True
+        parcial = "".join(emitido).strip()
+        if parcial:
+            memoria.guardar_mensaje(sesion, "jarvis", f"{parcial} […Hugo te cortó aquí]")
+
+    def _emitir(trozo: str):
+        emitido.append(trozo)
+        if al_texto:
+            # La cancelación entra por aquí: `al_texto` lanza `Cancelado` desde dentro del
+            # stream. Es el único sitio donde se sabe qué se llegó a emitir, así que el
+            # guardado va aquí y no en el manejador de arriba.
+            try:
+                al_texto(trozo)
+            except Cancelado:
+                _guardar_interrumpido()
+                raise
+
     for _ in range(MAX_VUELTAS):
         # Ollama y el proveedor falso no tienen streaming: se emite su texto de una vez,
         # así el frontend funciona igual con cualquiera de los tres.
         if al_texto and hasattr(prov, "responder_stream"):
-            r = prov.responder_stream(sistema, mensajes, HERRAMIENTAS, al_texto)
+            r = prov.responder_stream(sistema, mensajes, HERRAMIENTAS, _emitir)
         else:
             r = prov.responder(sistema, mensajes, HERRAMIENTAS)
             if al_texto and r.texto:
-                al_texto(r.texto)
+                _emitir(r.texto)
         for k in uso:
             uso[k] += r.uso.get(k, 0)
         if r.texto:
@@ -556,6 +597,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
         # Última puerta antes de tocar nada de Hugo. Si ya le ha cortado, no hay a quién
         # contestar y aquí dentro hay escrituras en su hoja (`guardar_pm`…).
         if cancelado and cancelado():
+            _guardar_interrumpido()
             raise Cancelado()
 
         mensajes.append({"role": "assistant", "content": r.texto or ""})
@@ -576,10 +618,11 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
             vistas.add(clave)
             unicas.append(a)
 
-    # Si le cortó por el camino, no se guarda nada suyo. Guardar media respuesta sería
-    # peor que perderla: en el turno siguiente el modelo la leería como dicha, y Hugo le
-    # cortó precisamente porque iba mal.
+    # Si le cortó por el camino, se guarda LO QUE LLEGÓ A OÍR, marcado (ver
+    # `_guardar_interrumpido`). No guardar nada dejaba el hilo cojo justo cuando Hugo le
+    # responde a media frase, que es el uso normal del modo conversación.
     if cancelado and cancelado():
+        _guardar_interrumpido()
         raise Cancelado()
 
     if texto:

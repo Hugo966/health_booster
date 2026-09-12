@@ -99,7 +99,10 @@ export default function Readiness({ value, base7, fecha, onExpand }: Props) {
           onClick={() => abrir()}
           aria-label="Ampliar Readiness"
           title="Ampliar"
-          className="jarvis-expand absolute right-3 top-3 rounded-md p-1.5 opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          // Readiness no usa `Panel`, así que lleva su propia copia de este botón — y por
+          // tanto llevaba también su propia copia del fallo: sin `hover:none` es
+          // invisible en el móvil, porque en táctil no hay hover (ver Panel.tsx).
+          className="jarvis-expand absolute right-3 top-3 rounded-md p-1.5 opacity-0 transition group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"
         >
           <ExpandIcon />
         </button>

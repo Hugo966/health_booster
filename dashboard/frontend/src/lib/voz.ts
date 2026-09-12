@@ -94,11 +94,25 @@ const COLGADA =
 // respiración que el reconocedor ha intentado convertir en palabra, y tomarla por duda
 // alargaría la espera a `FIN_TURNO_COLGADO_MS` cada vez que cruje algo. Esas caen en el
 // filtro de ruido, que es su sitio.
-const DUDA =
-  /^(?:e{2,}h*|eh+|a{2,}h*|ah+|m{2,}|hm+|este|esto|pues|bueno|a\s*ver|aver|o\s*sea|osea)$/i;
+// Sonidos que NO son palabras: al final de una frase solo pueden ser vacilación.
+const SONIDO_DUDA = "e{2,}h*|eh+|a{2,}h*|ah+|m{2,}|hm+|o\\s*sea|osea|a\\s*ver";
+// Palabras que sí existen ("esto", "bueno") y solo cuentan como duda si vienen SOLAS. Al
+// final de una frase son normales —"¿qué es esto?", "está bueno"— y meterlas ahí haría
+// esperar de más en frases corrientes.
+const PALABRA_DUDA = "este+|esto|pues|bueno";
+
+// La duda SOLA: todo lo que ha llegado es una vacilación. Se admiten signos alrededor
+// porque el reconocedor a veces la puntúa ("¿eh?", "Mmm...").
+const DUDA = new RegExp(`^[¿¡\\s]*(?:${SONIDO_DUDA}|${PALABRA_DUDA})[?!.,…\\s]*$`, "i");
+// Y la duda al FINAL de lo que lleva dicho. Hace falta aparte porque en Android cada
+// resultado trae la frase ENTERA, así que en cuanto Hugo ha dicho algo antes el caso de
+// arriba deja de aplicar: "pues no sé, eeee" llega como un único final y `DUDA` no casa.
+// Pasó el 2026-09-12 — decía "eeeee" y Jarvis se ponía a contestar igual.
+const DUDA_FINAL = new RegExp(`(?:^|\\s)(?:${SONIDO_DUDA})[?!.,…\\s]*$`, "i");
 
 export function esperaDe(texto: string): number {
-  return COLGADA.test(texto.trim()) ? FIN_TURNO_COLGADO_MS : FIN_TURNO_MS;
+  const t = texto.trim();
+  return COLGADA.test(t) || DUDA_FINAL.test(t) ? FIN_TURNO_COLGADO_MS : FIN_TURNO_MS;
 }
 
 // Qué es lo que acaba de soltar el reconocedor:
@@ -286,7 +300,9 @@ export type Habla = {
   // Qué pool de muletillas toca ("consulta" / "neutra") lo decide el enrutado en el
   // backend y llega ~1 s después de abrir el turno, así que se arranca aquí, no al
   // abrir. Cadena vacía = ninguna (saludos, que ya vienen con respuesta propia).
-  muletilla: (tipo: string) => void;
+  // `escrita` = lo que llega NO es un pool sino una frase redactada a medida por el
+  // modelo rápido, y hay que sintetizarla aquí.
+  muletilla: (tipo: string, escrita?: boolean) => void;
   empujar: (frase: string) => void;
   cerrar: () => void;
 };
@@ -936,7 +952,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     };
 
     return {
-      muletilla(tipo: string) {
+      muletilla(tipo: string, escrita = false) {
         // Vacío (saludos, que ya llevan respuesta propia) o respuesta ya lista: callarse.
         if (!tipo || primeraLista || turnoRef.current !== turno) return;
         cadena = cadena.then(async () => {
@@ -946,10 +962,23 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
           // real ha llegado mientras tanto.
           await new Promise((r) => setTimeout(r, ESPERA_MULETILLA_MS));
           if (primeraLista || turnoRef.current !== turno) return;
-          // Pregrabadas y generadas con v3: suenan al instante Y con la ironía del
-          // personaje. Escribirlas a medida quedaba más pegado al contexto, pero había
-          // que sintetizarlas en Flash para llegar a tiempo y salían planas.
-          const b = await pedirMuletilla(tipo as TipoMuletilla);
+          // Dos caminos:
+          //  - `escrita`: el modelo rápido la ha redactado para lo que Hugo acaba de
+          //    decir. Se sintetiza AQUÍ, en modo rápido (`rapido: true`), porque el modo
+          //    bueno tiene un suelo de ~3,5 s y llegaría tarde a lo único que sirve.
+          //    Suena algo más plana, y ese es el precio de que mencione lo que él dijo.
+          //  - si no: las pregrabadas de siempre. Generadas una vez con el modelo caro,
+          //    con retintín y a latencia cero. Es también el respaldo si la de a medida
+          //    no se puede sintetizar, porque quedarse callado es justo lo que esto viene
+          //    a evitar.
+          let b: Blob | null = null;
+          if (escrita) {
+            b = await generar(tipo, turno, true).catch(() => null);
+            traza(b ? "muletilla a medida" : "muletilla a medida FALLÓ, tiro de las de bote", tipo);
+          }
+          if (!b && turnoRef.current === turno) {
+            b = await pedirMuletilla(escrita ? "neutra" : (tipo as TipoMuletilla));
+          }
           if (b && turnoRef.current === turno) await reproducir(b, turno);
           // Si al acabar aún no hay audio real, se encadena otra: el silencio es lo que
           // le hace creer a Hugo que ya ha terminado y ponerse a hablar encima. Pero va
