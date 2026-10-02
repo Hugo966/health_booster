@@ -40,7 +40,8 @@ gcloud compute instances create swing-screener \
 
 `us-central1` no es opcional: la capa gratuita solo existe en `us-west1`, `us-central1` y
 `us-east1`. Y **no quitarle la IP externa efímera**: sin ella la VM no llega a Sheets,
-Intervals ni Anthropic, y Cloud NAT sí se cobra.
+Intervals, Anthropic ni ElevenLabs. **Esa IP SE COBRA** (ver abajo), pero las alternativas
+salen peor.
 
 ## 2. Base del sistema
 

@@ -313,10 +313,14 @@ cada noche en silencio. Comprueba que el fichero está en el bucket y tiene meno
 ### Pendientes de la migración
 - ~~Borrar la VM `jarvis`~~ — **hecho el 2026-10-02**. Queda una sola instancia y un solo
   disco de 30 GB: exactamente el límite de la capa gratuita.
-- **Confirmar si la IPv4 externa se cobra.** Desde 2024 Google cobra todas, también las
-  efímeras de una VM encendida. Este handoff decía que es gratis mientras la instancia está
-  encendida y **puede estar desactualizado**. Mirar el informe de octubre buscando el SKU
-  "External IP Charge".
+- ~~Confirmar si la IPv4 externa se cobra~~ — **confirmado el 2026-10-02**, consultando el
+  catálogo de precios de Google (`cloudbilling.googleapis.com`, servicio `6F81-5844-456A`,
+  grupo `IpAddress`). **Sí se cobra**: el SKU *External IP Charge on a Standard VM* son
+  0,005 USD/hora en `us-central1`, unos **3,65 USD/mes por VM**. No es gratis por ser
+  efímera ni por tener la instancia encendida; lo que decía antes este handoff era falso, y
+  explica parte de los 4,35 € de septiembre (con dos VMs eran dos IPs). Alternativas, todas
+  peores: Cloud NAT cuesta MÁS (~0,044 USD/hora de gateway) y solo-IPv6 es gratis pero
+  Anthropic y ElevenLabs podrían no tener IPv6, dejando a Jarvis sin chat ni voz. Se asume.
 - **Darle a Jarvis la URL sin puerto** (idea de Hugo, aplazada). Hoy el 443 es del screener
   y Jarvis va en el 8443. Dos salidas: intercambiarlos (dos comandos, pero el marcador del
   screener pasa a llevar puerto) o un segundo nodo de Tailscale en la misma VM (bastante
