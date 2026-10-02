@@ -289,8 +289,30 @@ gcloud storage cp gs://jarvis-respaldos-health-boost/jarvis.db . \
   --project=health-boost-500507 --account=hugogalvezu96@gmail.com
 ```
 
+### Si hay que rehacer la VM
+**No hay snapshots, y es una decisión de Hugo**: 0,25 €/mes para siempre no compensa frente
+a montarla a mano las pocas veces que haga falta. Es viable porque **los datos no viven en
+la VM** — están en los dos buckets, en la hoja y en Drive, y todos sobreviven a borrarla.
+El manual, con los comandos que se ejecutaron de verdad en la migración, está en
+**`docs/reconstruir_vm.md`**.
+
+### El respaldo del screener
+`/opt/swing-screener/respaldar.sh` sube `state.sqlite`, `out/` y `.env` a
+`gs://swing-screener-respaldos` (cron 03:35, después de la tanda larga). Versionado con
+caducidad a 30 días, porque son 4,4 MB diarios y sin caducidad serían ~1,6 GB al año contra
+los 5 GB del tramo gratis.
+
+**La VM tiene scope `devstorage.read_only`** y el IAM no lo arregla: los scopes de la
+instancia mandan por encima, y cambiarlos obliga a parar la máquina. Por eso ambos
+respaldos usan la clave del service account vía `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE`.
+
+**Y el script verifica el resultado en vez de fiarse del código de salida**: con los scopes
+mal, `gcloud storage cp` imprimía el error y **salía con 0**. Un cron a secas habría fallado
+cada noche en silencio. Comprueba que el fichero está en el bucket y tiene menos de 2 horas.
+
 ### Pendientes de la migración
-- **Borrar la VM `jarvis`** (arriba). Es lo que deja la factura en cero.
+- ~~Borrar la VM `jarvis`~~ — **hecho el 2026-10-02**. Queda una sola instancia y un solo
+  disco de 30 GB: exactamente el límite de la capa gratuita.
 - **Confirmar si la IPv4 externa se cobra.** Desde 2024 Google cobra todas, también las
   efímeras de una VM encendida. Este handoff decía que es gratis mientras la instancia está
   encendida y **puede estar desactualizado**. Mirar el informe de octubre buscando el SKU
