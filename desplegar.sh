@@ -18,11 +18,18 @@ set -euo pipefail
 # ruta de gcloud.py, y desactivarla lo rompe con "can't open file C:\c\Users\...".
 # Probado el 2026-09-12.
 
+# Jarvis vive en la VM del screener desde el 2026-10-02: la capa gratuita de GCP da 720h
+# de e2-micro y 30 GB de disco EN TOTAL por cuenta de facturación, no por proyecto, así
+# que dos VMs agotaban las horas hacia el día 20 y a partir de ahí se cobraban las dos.
 ZONA=us-central1-a
-PROYECTO=health-boost-500507
-CUENTA=hugogalvezu96@gmail.com   # La personal, no la otra cuenta de gcloud de la máquina
-VM=jarvis
-URL=https://jarvis.tailc3e57b.ts.net
+PROYECTO=stock-screener-506508
+CUENTA=hugogalvezu96@gmail.com   # La personal, no la otra cuenta de gcloud configurada en la máquina
+VM=swing-screener
+RUTA=/opt/health_booster
+# Puerto 8443 y no 443: el 443 de esta máquina lo ocupa el panel de Streamlit del
+# screener. El frontend de Jarvis pide rutas absolutas (/data, /tts), así que colgarlo de
+# un subdirectorio lo rompería; cambiar de puerto lo deja en la raíz.
+URL=https://swing-screener.tailc3e57b.ts.net:8443
 
 gc() { gcloud "$@" --zone="$ZONA" --project="$PROYECTO" --account="$CUENTA" --quiet; }
 
@@ -53,7 +60,7 @@ gc compute scp "$TAR" "$VM":dist.tgz >/dev/null
 echo "▸ 4/4  Actualizando la VM…"
 gc compute ssh "$VM" --command="
   set -e
-  cd ~/health_booster
+  cd $RUTA
   git pull -q
   rm -rf dashboard/frontend/dist && tar -xzf ~/dist.tgz -C dashboard/frontend && rm ~/dist.tgz
   sudo systemctl restart jarvis jarvis-voz

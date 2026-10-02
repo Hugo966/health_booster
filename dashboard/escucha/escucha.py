@@ -16,8 +16,13 @@ Reaprovecha lo ya montado: NO habla con ElevenLabs ni con el modelo por su cuent
 llama a `/chat/stream` (8099) y a `/voz` (8123). Así el personaje, la memoria, las
 muletillas y el enrutado son exactamente los mismos que por pantalla.
 
-OJO — no lo uses a la vez que el orbe del navegador escuchando: los dos oirían el mismo
-comando y lo mandarían dos veces. Con esto en marcha, deja el orbe en reposo.
+Esto NO se arranca solo: no está en `run.sh` ni es un servicio. Es un programa aparte que
+solo corre si se lanza a mano con el comando de abajo. En el uso normal —tocar el orbe o
+decir "Jarvis" en el navegador— este fichero no interviene para nada.
+
+OJO si algún día se lanza: habría DOS micrófonos escuchando a la vez, el del navegador y
+este, y los dos mandarían el mismo comando al backend por separado. Con esto en marcha,
+dejar el orbe en reposo.
 
 Arrancar (solo portátil):
     E:/jarvis_tts/venv/Scripts/python.exe escucha.py

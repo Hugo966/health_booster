@@ -216,135 +216,90 @@ consumir (API de formularios, semáforo, herramientas de voz) está terminado y 
 
 ---
 
-## 0-bis. LA VM DE GCP (montada el 2026-09-09)
+## 0-bis. LA VM (migrada el 2026-10-02 — leer antes de desplegar)
 
-El dashboard **ya no depende de que el portátil esté encendido**. Corre en una e2-micro de
-la capa gratuita de GCP y se entra por Tailscale, también desde el móvil.
+Jarvis ya **no** tiene VM propia. Vive en la del otro proyecto de Hugo, la del screener.
 
-**Dirección:** `https://jarvis.tailc3e57b.ts.net` — solo dentro del tailnet, no expuesta a
-internet. El móvil de Hugo (`poco-f6-pro`) ya está en el tailnet: basta abrir la app.
+**Dirección: `https://swing-screener.tailc3e57b.ts.net:8443`** — solo dentro del tailnet.
+
+**Por qué se movió.** Había dos e2-micro y eso cuesta dinero: la capa gratuita de GCP da
+**720 h de e2-micro y 30 GB de disco EN TOTAL por cuenta de facturación, no por proyecto**.
+Con dos VMs las horas se agotaban hacia el día 20 y a partir de ahí se cobraban las dos
+(4,35 € en septiembre).
 
 | Dato | Valor |
 |---|---|
-| Proyecto | `health-boost-500507` (el mismo del service account) |
-| Instancia | `jarvis`, e2-micro, `us-central1-a`, 30 GB pd-standard |
-| Cuenta | `hugogalvezu96@gmail.com`, config de gcloud `jarvis-personal` |
-| Código | `~/health_booster`, clonado con una **deploy key de solo lectura** |
+| Proyecto | `stock-screener-506508` (¡no `health-boost-500507`!) |
+| Instancia | `swing-screener`, e2-micro, `us-central1-a` |
+| Ruta | `/opt/health_booster` (antes `~/health_booster`) |
+| Usuario | `hugo` (antes `hugogalvezu96_gmail_com`) |
+| Python | 3.12 (antes 3.11) |
+| Desplegar | `./desplegar.sh`, ya apunta ahí |
 
-**Cómo está montado, y por qué así:**
-- **Un solo proceso sirve API y frontend.** `main.py` monta el `dist/` con `StaticFiles` al
-  final del fichero (las rutas de la API se registran antes y ganan). Así todo va por
-  `:8099` y en el MISMO origen: sin CORS, sin contenido mixto, y `tailscale serve` solo
-  tiene que exponer un puerto. En desarrollo no existe `dist/` y no se monta nada, así que
-  Vite sigue igual.
-- **El frontend se compila FUERA y se sube.** `npm run build` se queda sin memoria en 1 GB.
-  Se manda el `dist/` en un tar por `gcloud compute scp` (está en `.gitignore`).
-- **2 GB de swap.** Con 969 MB de RAM, `pip install pandas` reventaba. En marcha se usan
-  ~530 MB con los dos servicios.
-- **El servicio de voz corre AQUÍ, no en el portátil.** Lo que ataba `servidor_voz.py` a la
-  3060 era el respaldo XTTS, que se carga perezosamente; **ElevenLabs es una API en la nube
-  y no necesita GPU**. Por eso la voz buena funciona en el móvil sin encender el portátil.
-  Aquí XTTS nunca se cargará: si ElevenLabs falla, `voz.ts` cae a la voz del navegador.
-  El aviso del handoff de que "el audio fundiría" el giga de egress gratis no se sostiene:
-  MP3 a 128 kbps son ~16 KB/s, o sea ~145 MB/mes a 30 respuestas diarias, un 15%.
-- **`tailscale serve` enruta por rutas**: `/` → `:8099` y `/tts` → `:8123`. El frontend se
-  compila con `VITE_API_BASE=` y `VITE_TTS_URL=/tts`, ambos relativos al mismo origen.
-- **Los dos servicios escuchan solo en `127.0.0.1`.** Lo único que los expone es el tailnet.
-- `systemd`: `jarvis` (backend, cwd en `dashboard/backend` porque los imports son planos) y
-  `jarvis-voz`. Ambos con `Restart=always`.
-- **Cron a las 00:00 y cada hora de 6:00 a 23:00** (`0 0,6-23 * * *`, zona
-  `Europe/Madrid`), log en `~/pipeline.log`. De 1:00 a 5:00 no se pasa: no hay
-  formularios ni entrenos nuevos a esas horas y cada pase quemaría los 5 min completos de
-  reintentos contra Intervals esperando un HRV que aún no existe. Coste medido por pase: ~2 llamadas a Intervals, 26
-  lecturas de pestañas del plan en Drive y 12 de la hoja; la cuota de Sheets son 300
-  peticiones **por minuto** y sin tope diario, así que sobra de largo.
-- **Despliegue: `./desplegar.sh`.** Compila, sube el `dist`, hace `git pull` en la VM,
-  reinicia y comprueba las cuatro rutas. Existe porque el 2026-09-09 se desplegó dos veces
-  un bundle compilado a mano sin las variables de Vite: quedó con `http://localhost:8099`
-  dentro y desde el móvil **la página cargaba pero todo fallaba con "Failed to fetch"**
-  (localhost es el móvil). Ahora la configuración vive en
-  `dashboard/frontend/.env.production`, que Vite lee sola en `npm run build`, y el script
-  **aborta antes de subir** si detecta un localhost en el bundle.
+**El puerto 8443 no es capricho:** el 443 de esa máquina lo ocupa el panel de Streamlit del
+screener desde agosto. El frontend de Jarvis pide rutas absolutas (`/data`, `/tts`), así
+que colgarlo de un subdirectorio lo rompería; cambiar de puerto lo deja en la raíz.
 
-**El keep vive ahora en Drive.** Documento de Google llamado **Entreno**
-(`KEEP_DOC_ID=1IuHf7hcu00huaFd-SQQDAE1faQaEjBR7h4UQUPZzx0M`), compartido con el service
-account y exportado como `text/plain` por `entreno_pipeline.leer_keep()`. Resuelve dos
-cosas de golpe: la VM no tiene fichero local, y las dos máquinas de Hugo dejan de
-desincronizarse. Si no hay `KEEP_DOC_ID`, se sigue leyendo `KEEP_TXT` del disco.
+**El crontab es COMPARTIDO** entre los dos proyectos, con dos `CRON_TZ`: el screener va en
+UTC (sus tandas están atadas a cierres de mercado) y Jarvis en hora de Madrid. No reordenar
+líneas: `CRON_TZ` aplica a las que vienen DESPUÉS.
 
-**Google Docs "corrige" al escribir y eso rompía el parser en silencio**: convierte el
-guion de separar series en raya (`–`) y la comilla de los tempos (`2"`) en tipográfica,
-y añade un BOM. `normalizar_texto()` lo deshace **al leer**, no en el parser, para que el
-keep local siga comportándose igual. Es la trampa más probable si algún día el keep de
-Drive deja de parsear.
+**La tanda `us+emerging` del screener se movió** de `15 21 * * 1-5` UTC a
+`30 0 * * 2-6` (Madrid) porque Hugo habla con Jarvis antes de medianoche y es la única
+tanda que consume RAM de verdad (puede durar 2h24 según el comentario de su crontab). El
+**`2-6` es obligatorio**: al cruzar medianoche el cierre del VIERNES cae en SÁBADO, y con
+`1-5` se perdería sin que nadie se entere. Ahora cae en 00:30-03:00, la única ventana en
+la que Jarvis no tiene ningún cron.
 
-### Pendientes que salieron del despliegue (2026-09-10)
+**RAM**: 511 MB de 955 con las dos cargas conviviendo, más 2 GB de swap. Durante la tanda
+larga pagina ~100 MB, de madrugada y sin nadie hablando con Jarvis.
 
-**1. El readiness del día llega tarde, y el cron solo lo tapa.**
-El readiness sale de `derived_diario`, que solo regenera el pipeline. Hugo rellena el
-formulario AM cuando se levanta, a hora variable, así que hasta el siguiente pase de cron
-sigue viendo el de AYER. Pasó el 2026-09-10: a las 7:37 el dashboard decía 62 (el del 09)
-cuando con su formulario de esa mañana salía 73,3.
-
-Parcheado subiendo el cron a **cada hora** (00:00 y 6:00-23:00), pero eso es tapar el síntoma:
-sigue habiendo hasta una hora de desfase.
-
-El arreglo de verdad es **calcular el readiness en vivo desde `wellness_am`/`wellness_pm`**,
-el mismo patrón que ya usa `huecos.py` (leer las pestañas ORIGEN, no la tabla derivada).
-Con eso sería correcto al instante y sin depender de ningún cron.
-**El peligro es duplicar la fórmula**, y este proyecto ya se quemó con eso: el panel de
-Carga calculaba el sRPE en TypeScript mientras la hoja guardaba otra fórmula con el mismo
-nombre, y Jarvis contradecía a la pantalla. Así que **no reescribirla**: hay que extraer
-`readiness()` de dentro de `consolidate()` (`status_pipeline.py`) a una función que usen
-los dos, y que siga habiendo una sola definición.
-
-**2. `write_tab` vacía la pestaña antes de escribirla.**
-Hace `ws.clear()` y luego `update()`, con ~1 s de pestaña vacía entre medias. Si el hilo
-`_mantener_datos_calientes` del backend refresca justo en esa ventana, **cachea el vacío y
-el dashboard sale en blanco hasta 4 minutos**. Con dos pases al día era despreciable; con
-18 son 90 ventanas diarias. Se arregla escribiendo desde A1 sin `clear()` y limpiando solo
-el sobrante.
-
-### Lo que falta en la VM
-- **`ANTHROPIC_API_KEY` y `ELEVENLABS_API_KEY`.** Solo existen en el `.env` del portátil
-  (los proveedores no las vuelven a mostrar), así que hay que llevarlas desde allí:
-  ```bash
-  grep -E '^(ANTHROPIC_API_KEY|ELEVENLABS_API_KEY|ELEVENLABS_VOICE_ID|ELEVENLABS_MODELO)=' .env > /tmp/claves.env
-  gcloud compute scp /tmp/claves.env jarvis:~/ --zone=us-central1-a --project=health-boost-500507
-  gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
-    --command="cat ~/claves.env >> ~/health_booster/.env && rm ~/claves.env && sudo systemctl restart jarvis jarvis-voz"
-  rm /tmp/claves.env
-  ```
-  Correcto cuando `/tts/salud` diga `"elevenlabs": true`. Sin ellas el chat no responde y
-  la voz cae a la del navegador; el resto del dashboard funciona entero.
-- **`GROQ_API_KEY` y `GROQ_MODELO`** (las muletillas a medida, §16), por lo mismo: el
-  `.env` no viaja por git. Misma receta, cambiando el `grep`:
-  ```bash
-  # Desde el PORTÁTIL hay que lanzarlo con el bash de Git, no con el de system32 (WSL).
-  # Nombre de fichero RELATIVO, no /tmp: el /tmp de Git Bash no es el de Windows.
-  grep -E '^GROQ_' .env > claves_groq.env
-  gcloud compute scp claves_groq.env jarvis:claves_groq.env \
-    --zone=us-central1-a --project=health-boost-500507 --account=hugogalvezu96@gmail.com --quiet
-  gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
-    --account=hugogalvezu96@gmail.com --quiet \
-    --command="cat ~/claves_groq.env >> ~/health_booster/.env && rm ~/claves_groq.env && sudo systemctl restart jarvis"
-  rm claves_groq.env
-  ```
-  Sin ellas NO falla nada: `rapido.disponible()` da False y se usan las muletillas
-  pregrabadas de siempre. El síntoma sería "no noto ninguna diferencia".
-- **Alerta de presupuesto**: la capa gratuita pide tarjeta. Conviene una alerta a 1 €.
-- **Probar el chat por el tailnet**: va por SSE (`/chat/stream`). El código manda
-  `X-Accel-Buffering: no`, pero quien tiene que no bufferizar ahora es `tailscale serve`.
-  Si el texto llega de golpe en vez de fluido, es eso.
-- **No quitarle la IP externa efímera**: sin ella la VM no llega a Sheets ni a Intervals, y
-  Cloud NAT sí se cobra. Es gratis mientras la instancia está encendida.
-
-### Actualizar la VM
+**La VM `jarvis` quedó PARADA, no borrada**, para tener vuelta atrás
+(`gcloud compute instances start jarvis --zone=us-central1-a --project=health-boost-500507`).
+**Hay que borrarla**: parada ya no consume horas de CPU, pero **su disco de 30 GB sigue
+facturando** y es justo lo que saca a Hugo de la capa gratuita.
 ```bash
-gcloud compute ssh jarvis --zone=us-central1-a --project=health-boost-500507 \
-  --command="cd ~/health_booster && git pull && sudo systemctl restart jarvis jarvis-voz"
+gcloud compute instances delete jarvis --zone=us-central1-a \
+  --project=health-boost-500507 --account=hugogalvezu96@gmail.com
 ```
-Si cambió el frontend, además hay que compilar fuera y subir el `dist/`.
+
+### El respaldo de la memoria
+`respaldar_memoria.py` sube `jarvis.db` a `gs://jarvis-respaldos-health-boost` (cron diario
+a las 3:30). Era **lo único del proyecto sin copia**: los datos de salud viven en la hoja,
+el keep en Drive, el código en git y las claves están en las dos máquinas de Hugo; esto son
+sus conversaciones y los hechos que Jarvis ha aprendido.
+
+Empuja la VM y no tiran las máquinas de Hugo **a propósito**: la VM está siempre encendida,
+así que no depende de que él encienda un equipo ni de montar un programador distinto en
+Linux y en Windows (su portátil es Windows: systemd no existe allí).
+
+**No va a Drive aunque el keep sí viva en Drive**: un service account no puede ser
+propietario de ficheros en Drive ni con una carpeta compartida —no tiene cuota de
+almacenamiento— y la salida que propone Google son las unidades compartidas, que piden
+Workspace. El bucket es gratis (capa siempre libre: 5 GB-mes; esto son 23 MB al año) y
+**sobrevive a la VM**: borrarla no lo toca.
+
+Escribe **siempre el mismo objeto**; el bucket tiene versionado, así que el histórico y la
+rotación salen gratis. Y **verifica la base antes de subirla**: subir un fichero corrupto
+encima del bueno sería peor que no tener respaldo, porque parecería que sí lo hay.
+
+Restaurar:
+```bash
+gcloud storage cp gs://jarvis-respaldos-health-boost/jarvis.db . \
+  --project=health-boost-500507 --account=hugogalvezu96@gmail.com
+```
+
+### Pendientes de la migración
+- **Borrar la VM `jarvis`** (arriba). Es lo que deja la factura en cero.
+- **Confirmar si la IPv4 externa se cobra.** Desde 2024 Google cobra todas, también las
+  efímeras de una VM encendida. Este handoff decía que es gratis mientras la instancia está
+  encendida y **puede estar desactualizado**. Mirar el informe de octubre buscando el SKU
+  "External IP Charge".
+- **Darle a Jarvis la URL sin puerto** (idea de Hugo, aplazada). Hoy el 443 es del screener
+  y Jarvis va en el 8443. Dos salidas: intercambiarlos (dos comandos, pero el marcador del
+  screener pasa a llevar puerto) o un segundo nodo de Tailscale en la misma VM (bastante
+  más lío). **Ojo: en Tailscale una máquina tiene UN solo nombre**, así que no se puede
+  darle un alias `jarvis` a `swing-screener` sin ese segundo nodo.
 
 ---
 
