@@ -310,6 +310,52 @@ respaldos usan la clave del service account vía `CLOUDSDK_AUTH_CREDENTIAL_FILE_
 mal, `gcloud storage cp` imprimía el error y **salía con 0**. Un cron a secas habría fallado
 cada noche en silencio. Comprueba que el fichero está en el bucket y tiene menos de 2 horas.
 
+### Quitarse los 3,65 USD/mes de la IPv4 (investigado el 2026-10-02, SIN hacer)
+
+Es el único gasto que queda. **Google no cobra IPv6**, así que una VM solo-IPv6 costaría
+cero. El problema es qué alcanza desde ahí. Comprobado con `dig` contra 8.8.8.8 y 1.1.1.1:
+
+| Lo que la VM necesita | IPv6 |
+|---|---|
+| Sheets, Drive, Storage | **Sí** (y además llegan por Private Google Access, gratis) |
+| Anthropic — el chat | **Sí** |
+| Intervals — HRV, sueño, pasos | **Sí** |
+| Groq — muletillas | **Sí** |
+| **ElevenLabs — la voz** | **NO** (`api.elevenlabs.io`, ni el dominio raíz) |
+| GitHub | NO, pero se salva: que `desplegar.sh` empuje por `scp` en vez de que la VM haga `git pull` |
+
+**Solo falla la voz.** Descartadas: Cloud NAT cuesta ~32 USD/mes (diez veces la IP) y los
+NAT64 públicos son servicios comunitarios sin garantías.
+
+**Así que la vía es cambiar de proveedor de voz**, y hay varios con IPv6. Lo que ElevenLabs
+tiene de propio no es hacer tonos —eso es común— sino hacerlos con **etiquetas dentro del
+texto** (`[sarcastic]`), que encaja con esta arquitectura porque Jarvis las escribe él solo
+mientras genera la respuesta. Con los demás habría que pasar la intención **aparte** del
+texto: `personalidad.py` ya le hace marcarla, así que sería extraerla en vez de reenviarla.
+Cambio de diseño pequeño, no solo de URL.
+
+| Proveedor | IPv6 | Control de tono |
+|---|---|---|
+| **OpenAI** `gpt-4o-mini-tts` | Sí | Campo `instructions` en **texto libre** ("habla con sarcasmo seco"). Más flexible que una etiqueta fija — el candidato fuerte |
+| **Hume** (Octave) | Sí | Construido alrededor de la expresión emocional, con indicaciones de actuación |
+| **Azure Speech** | Sí | SSML `mstts:express-as`, estilos con nombre (cheerful, sad, whispering…) |
+| **Cartesia** | Sí | Voz conversacional de baja latencia con controles de emoción |
+| Resemble | Sí | Expresividad; menos conocido |
+| Neuphonic | Sí | Expresividad; menos conocido |
+| Google Cloud TTS | Sí | Solo SSML: pausas y énfasis, **no** intención. Pero es la única que además sería gratis por Private Google Access |
+| Deepgram, PlayHT, LMNT, Inworld | **No** | Descartados por IPv6 |
+
+**Cómo decidirlo**: no leyendo, sino como se eligió el proveedor del chat — un arnés tipo
+`comparar.py` que sintetice LAS MISMAS frases de Hugo con cada uno y las ponga una detrás
+de otra. El requisito es que la ironía se oiga; el precio es secundario, porque el sarcasmo
+era el requisito del personaje y no un adorno (ver su reacción al estrenar v3 en §
+"CAPA DE VOZ"). **Si ningún sustituto convence, quedarse con ElevenLabs y pagar.**
+
+**Revisar de vez en cuando si ElevenLabs añade IPv6**: Anthropic, Groq, Intervals y casi
+todos sus competidores ya lo tienen, así que van a contracorriente. El día que lo hagan,
+migrar a solo-IPv6 es medio día y el gasto baja a cero sin tocar la voz. Comprobarlo es un
+`dig AAAA api.elevenlabs.io`, no otra investigación.
+
 ### Pendientes de la migración
 - ~~Borrar la VM `jarvis`~~ — **hecho el 2026-10-02**. Queda una sola instancia y un solo
   disco de 30 GB: exactamente el límite de la capa gratuita.
