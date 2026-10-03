@@ -8,16 +8,16 @@
 Escrito en el portátil al cerrar la sesión. Cada punto lleva el porqué, porque el orden
 importa y saltárselo tiene consecuencias.
 
-### URGENTE si nadie lo ha hecho ya: una fila falsa en `wellness_pm`
-Probando lo de la memoria de personas con el modelo real, Jarvis ejecutó `guardar_pm` de
-verdad y dejó **una fila inventada del `2026-09-12`** (energía 7, sensación 6, RPE 8,
-notas "Entrené con Cristina"). Se aisló la base de datos pero **no la hoja**.
+> **Antes de desplegar nada, lee §0-bis: Jarvis cambió de máquina el 2026-10-02.** Otra
+> VM, otro proyecto de GCP, otra URL y otro puerto. Esta sección §0 es anterior a esa
+> mudanza.
 
-No pisó nada de Hugo —esa fecha no existía; su último PM real era el del 11/09— así que
-**borrar esa fila lo deja como estaba**. Importa porque el semáforo da el PM de hoy por
-hecho cuando no lo está, y `rpd_sesion` es la señal de "ese día entrenó": en cuanto pase
-el pipeline, contamina el sRPE. **El AM del 12/09 SÍ es suyo, ese no se toca.**
-Detalle y cómo no repetirlo, en §15.
+### Resuelto: la fila falsa de `wellness_pm` — la borró Hugo el 2026-09-12
+Queda aquí solo como aviso, porque la causa sigue viva: **redirigir `memoria.DB` aísla la
+base de datos pero NO la hoja**. Probando con el modelo real, Jarvis llamó a `guardar_pm`
+de verdad y escribió una fila inventada en los datos de salud de Hugo. La forma correcta
+de probar algo que roce un formulario está en §15: sustituir `formularios.guardar` por un
+espía y comprobar al final que no se escribió nada.
 
 ### Lo que se cerró el 2026-09-12 (no rehacerlo)
 - **La voz funciona desde el móvil.** Android no se comporta como el Chrome de
@@ -236,6 +236,24 @@ Con dos VMs las horas se agotaban hacia el día 20 y a partir de ahí se cobraba
 | Python | 3.12 (antes 3.11) |
 | Desplegar | `./desplegar.sh`, ya apunta ahí |
 
+**Los ficheros son de `hugo`, pero tú entras como otro.** `gcloud compute ssh` inicia
+sesión con el usuario derivado de la cuenta de Google (`hugogalvezu96_gmail_com`), no con
+`hugo`, así que **todo lo de `/opt/health_booster` necesita `sudo`** — incluso LEER el
+`.env`, que es `600 hugo:hugo`.
+
+> Esto hizo perder una hora el 2026-10-03 y merece la pena entender por qué: un
+> `grep '^GROQ_' .env || echo "no hay nada"` **no distingue "no hay coincidencias" de "no
+> puedo leer el fichero"**. El `||` se tragó un `Permission denied` y dio por desaparecidas
+> unas variables que estaban perfectamente, con lo que se "arregló" un problema inexistente.
+> Es el mismo fallo que este handoff lleva documentando en el código (un `except` ancho
+> que convierte un error en salida vacía), cometido en una herramienta de diagnóstico.
+> Si consultas el `.env` de la VM: con `sudo`, y mirando el código de salida —`grep` sale
+> con 1 si no encuentra nada y con 2 si no pudo leer—, nunca tapándolo con un `||`.
+>
+> Y al tocarlo, **conservar dueño y permisos**: reescribir el mismo inodo (`cat tmp > .env`)
+> y no `mv tmp .env`, que lo dejaría de root y el servicio se quedaría sin poder leer sus
+> claves — sin chat y sin voz, no solo sin muletillas.
+
 **El puerto 8443 no es capricho:** el 443 de esa máquina lo ocupa el panel de Streamlit del
 screener desde agosto. El frontend de Jarvis pide rutas absolutas (`/data`, `/tts`), así
 que colgarlo de un subdirectorio lo rompería; cambiar de puerto lo deja en la raíz.
@@ -254,14 +272,15 @@ la que Jarvis no tiene ningún cron.
 **RAM**: 511 MB de 955 con las dos cargas conviviendo, más 2 GB de swap. Durante la tanda
 larga pagina ~100 MB, de madrugada y sin nadie hablando con Jarvis.
 
-**La VM `jarvis` quedó PARADA, no borrada**, para tener vuelta atrás
-(`gcloud compute instances start jarvis --zone=us-central1-a --project=health-boost-500507`).
-**Hay que borrarla**: parada ya no consume horas de CPU, pero **su disco de 30 GB sigue
-facturando** y es justo lo que saca a Hugo de la capa gratuita.
-```bash
-gcloud compute instances delete jarvis --zone=us-central1-a \
-  --project=health-boost-500507 --account=hugogalvezu96@gmail.com
-```
+**La VM `jarvis` YA NO EXISTE.** Se paró primero para tener vuelta atrás y se borró el
+mismo 2026-10-02, porque parada seguía facturando su disco de 30 GB, que es justo lo que
+sacaba a Hugo de la capa gratuita. Comprobado el 2026-10-03 desde el portátil:
+`gcloud compute instances list` y `disks list` en `health-boost-500507` devuelven cero.
+
+> **No hay vuelta atrás a la máquina vieja**, así que no la busques. Si hay que rehacer
+> algo, el camino es `docs/reconstruir_vm.md`. Esta misma sección decía hasta el
+> 2026-10-03 que la VM "quedó parada" y que había que borrarla, cuando ya estaba borrada:
+> prometía un rollback inexistente.
 
 ### El respaldo de la memoria
 `respaldar_memoria.py` sube `jarvis.db` a `gs://jarvis-respaldos-health-boost` (cron diario
