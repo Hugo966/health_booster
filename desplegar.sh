@@ -58,14 +58,34 @@ tar -czf "$TAR" -C dashboard/frontend dist
 gc compute scp "$TAR" "$VM":dist.tgz >/dev/null
 
 echo "▸ 4/4  Actualizando la VM…"
+# TODO lo que toca $RUTA va como `hugo`. `gcloud compute ssh` entra con el usuario
+# derivado de la cuenta de Google (hugogalvezu96_gmail_com), y desde la migración el
+# repo y los ficheros son de `hugo`. Sin esto:
+#   - `git pull` muere con "detected dubious ownership" (git se niega a operar sobre un
+#     repo de otro usuario), y como hay `set -e` se lleva por delante el resto del
+#     bloque: ni se extrae el dist ni se reinicia el servicio. Pasó el 2026-10-03 y el
+#     despliegue parecía haber ido bien salvo por una línea de error.
+#   - y el `rm -rf dist` tampoco podría: /opt/health_booster no es suyo.
+# El .tgz pasa por /tmp porque el home del usuario con el que entras no tiene por qué
+# ser legible para `hugo`.
 gc compute ssh "$VM" --command="
   set -e
-  cd $RUTA
-  git pull -q
-  rm -rf dashboard/frontend/dist && tar -xzf ~/dist.tgz -C dashboard/frontend && rm ~/dist.tgz
+  sudo mv ~/dist.tgz /tmp/dist.tgz
+  sudo chmod 644 /tmp/dist.tgz
+  # -H pone HOME=/home/hugo. Sin eso sudo conserva el HOME de quien llama y git buscaría
+  # ~/.ssh/config —donde vive el alias 'github-hb' con el que se clonó— en el home
+  # equivocado, fallando con 'Permission denied (publickey)'.
+  sudo -u hugo -H bash -c '
+    set -e
+    cd $RUTA
+    git pull -q
+    rm -rf dashboard/frontend/dist
+    tar -xzf /tmp/dist.tgz -C dashboard/frontend
+  '
+  sudo rm -f /tmp/dist.tgz
   sudo systemctl restart jarvis jarvis-voz
   timeout 90 bash -c 'until curl -sf -o /dev/null http://127.0.0.1:8099/; do sleep 3; done'
-  echo \"  commit desplegado: \$(git log --oneline -1)\"
+  echo \"  commit desplegado: \$(sudo -u hugo -H git -C $RUTA log --oneline -1)\"
 "
 
 echo "▸ Comprobando desde fuera…"

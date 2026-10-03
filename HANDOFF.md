@@ -254,6 +254,22 @@ sesión con el usuario derivado de la cuenta de Google (`hugogalvezu96_gmail_com
 > y no `mv tmp .env`, que lo dejaría de root y el servicio se quedaría sin poder leer sus
 > claves — sin chat y sin voz, no solo sin muletillas.
 
+**`desplegar.sh` estaba ROTO desde la mudanza** y se arregló el 2026-10-03. Por lo mismo:
+hacía `git pull` y `rm -rf dist` como el usuario de la cuenta de Google, sobre un repo de
+`hugo`. Git contesta `fatal: detected dubious ownership` y, con `set -e`, eso se lleva por
+delante el resto del bloque — **no se extraía el dist ni se reiniciaba el servicio**.
+
+Lo peor es el síntoma: imprime "4/4 Actualizando la VM…", suelta UNA línea de error y
+termina. Parece que ha ido. **Si alguien creyó haber desplegado entre el 02/10 y el
+03/10, no llegó nada.** La comprobación honesta es la línea `commit desplegado: <sha>`
+que ahora imprime al final; si no sale, no se ha desplegado.
+
+Ahora todo lo que toca `$RUTA` va con `sudo -u hugo -H`. **El `-H` no es adorno**: sin él
+sudo conserva el HOME de quien llama y git busca el `~/.ssh/config` con el alias
+`github-hb` en el home equivocado, fallando con `Permission denied (publickey)`. Y el
+`.tgz` pasa por `/tmp` porque el home del usuario con el que entras no tiene por qué ser
+legible para `hugo`.
+
 **El puerto 8443 no es capricho:** el 443 de esa máquina lo ocupa el panel de Streamlit del
 screener desde agosto. El frontend de Jarvis pide rutas absolutas (`/data`, `/tts`), así
 que colgarlo de un subdirectorio lo rompería; cambiar de puerto lo deja en la raíz.
