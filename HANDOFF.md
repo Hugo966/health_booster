@@ -61,7 +61,7 @@ Hugo probó lo anterior desde el móvil y salieron tres fallos más, ya arreglad
 
 **Pieza nueva: `rapido.py`**, un modelo de Groq que escribe la muletilla a medida en vez
 de sacarla del bote de pregrabadas. **Ya está configurado y probado con la clave de Hugo**
-(`GROQ_MODELO=groq/compound-mini`, ~1,5 s). Falta lo único que no se puede medir: si a él
+(`GROQ_MODELO=openai/gpt-oss-120b`, ~720 ms). Falta lo único que no se puede medir: si a él
 le gusta más una coletilla a medida pero plana que una pregrabada con retintín pero
 genérica. Si no le convence **se apaga vaciando `GROQ_MODELO`**, sin tocar código.
 Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya**.
@@ -1728,9 +1728,34 @@ benchmark**:
 |---|---|---|
 | `qwen/qwen3.8-27b` | 281 ms | El más rápido, y **descartado por Hugo**: "lamentable, nada que ver con el tono". Soltaba "no se te escapa el pinto" y, a un "estoy hecho polvo", "pareces un desastre" |
 | `allam-2-7b` | 367 ms | Rápido pero escribe mal ("el largo dormimiento") |
-| `openai/gpt-oss-20b` / `120b` | 407 / 422 ms | **Devuelven texto VACÍO**: razonan, y con `max_tokens: 40` no queda nada para la respuesta |
+| `openai/gpt-oss-120b` | **~720 ms** | **EL ELEGIDO desde el 2026-10-03.** Razona: necesita `GROQ_ESFUERZO=low` y sitio de tokens. Se descartó por error el 12/09 (ver abajo) |
+| `openai/gpt-oss-20b` | ~7,2 s | Escribe bien con `effort=low`, pero es diez veces más lento que su hermano mayor. Inservible |
 | `qwen/qwen3.6-27b` | 430 ms | Escupe su razonamiento (`<think>…`) dentro del contenido, en inglés |
-| `groq/compound-mini` | ~1,5 s | **El elegido.** Es el que escribe como Jarvis. Lento solo en apariencia: hay 4,5 s de margen |
+| `groq/compound-mini` | ~1,5 s | Fue el elegido del 12/09 al 03/10. **Groq lo RETIRÓ**: ver abajo |
+
+### 2026-10-03: el modelo caducó, y los gpt-oss estaban mal descartados
+**Groq retiró `groq/compound-mini`.** Las muletillas a medida llevaban semanas apagadas y
+**no se notó**, porque degradar a las pregrabadas no rompe nada y esas suenan bien. Se
+descubrió por casualidad, comprobando otra cosa. Dos consecuencias en el código:
+- El **404 ahora es `log.error`** con el nombre del modelo y qué hacer, no un warning
+  perdido. Es *el* fallo de esta pieza y tiene que gritar.
+- El catálogo pasó de 7 modelos a 4 en tres semanas. **`elegir_modelo.py` no es una
+  herramienta de una vez**: es lo que hay que correr cada vez que esto deje de sonar.
+
+**Y una corrección a lo de abajo: los `gpt-oss` no "devolvían vacío" por malos, los
+ahogaba yo.** Son modelos de RAZONAMIENTO: con `max_tokens: 40` se lo gastaban pensando y
+no les quedaba nada para contestar. Con `GROQ_ESFUERZO=low` (que se manda como
+`reasoning_effort`) y `MAX_TOKENS = 300`, `openai/gpt-oss-120b` contesta en ~720 ms y
+escribe mejor que ninguno de los otros. Si un modelo devuelve cadena vacía, **sospecha del
+presupuesto de tokens antes que del modelo**.
+
+**Tercera cosa, de la misma tanda: si copia un ejemplo del prompt, se descarta.** Se midió
+que 3 de cada 8 respuestas eran copias literales de las muletillas pregrabadas que se le
+dan como ejemplo de tono. Eso es un cambio **a peor**: esa frase exacta ya existe grabada
+con el modelo de voz caro y con retintín, mientras que la copia se sintetiza en modo
+rápido y sale plana. `_es_copia_de_ejemplo` lo detecta y devuelve `None`, con lo que suena
+la buena. Mira la inclusión en los dos sentidos, no la igualdad: lo típico no es clavarlo,
+es soltar el ejemplo entero con cuatro palabras pegadas.
 
 **La velocidad NO es el criterio.** El primer elegido fue el más rápido y Hugo lo tiró a
 la basura al oírlo. Lo que hace que suene a Jarvis no es el modelo: son los **ejemplos**

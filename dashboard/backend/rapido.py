@@ -55,6 +55,17 @@ MODELO = os.environ.get("GROQ_MODELO", "").strip()
 # y sí bloqueaba—; con ese plazo se descartaba 2 de cada 5 respuestas de un modelo que
 # escribe mejor. Ahora va en su propio hilo y no le quita tiempo a nadie.
 TIMEOUT_S = float(os.environ.get("GROQ_TIMEOUT_MS", "3000")) / 1000
+# `reasoning_effort` para los modelos que RAZONAN (los gpt-oss). Vacío = no se manda, que
+# es lo que necesitan los que no razonan: mandárselo da error.
+#
+# Sin esto, un modelo de razonamiento se gasta todo el presupuesto pensando y devuelve
+# contenido VACÍO. El 2026-09-12 se descartaron los gpt-oss por eso, dando por hecho que
+# no servían; era culpa de pedirles 40 tokens. Con `low` y sitio suficiente,
+# `openai/gpt-oss-120b` contesta en ~720 ms y escribe bastante mejor que las alternativas.
+ESFUERZO = os.environ.get("GROQ_ESFUERZO", "").strip()
+# Holgado a propósito. No encarece ni ralentiza —el modelo para cuando termina— y es lo que
+# deja sitio al razonamiento de los gpt-oss. La respuesta se recorta luego de todas formas.
+MAX_TOKENS = 300
 
 # Corto a propósito. El límite de Groq es de TOKENS DE ENTRADA por minuto (7000 en el plan
 # gratis), no de peticiones: cada palabra de aquí se paga en cada llamada y recorta cuántas
@@ -69,7 +80,9 @@ Eres Jarvis, el asistente de Hugo: su colega, con confianza y sarcasmo. Aquí so
 UNA cosa: soltar la frase que se dice mientras se piensa la respuesta de verdad. Ganas
 tiempo, no contestas.
 
-Así habla Jarvis cuando gana tiempo (imita ESTE tono, no lo copies literal):
+Así habla Jarvis cuando gana tiempo. **Son ejemplos del TONO, no un menú**: no repitas
+ninguno tal cual, porque esas frases exactas ya existen grabadas con mejor voz y copiarlas
+no aporta nada. Tu única razón de ser es mencionar lo que él acaba de decir.
   "Déjame que mire eso un segundo, que tus datos y yo tenemos una relación complicada."
   "A ver qué tenemos por aquí… dame un momento, que estoy rebuscando entre tus números."
   "Espera, que lo estoy mirando. No te muevas, que esto tarda menos de lo que parece."
@@ -96,6 +109,33 @@ def disponible() -> bool:
     return bool(API_KEY and MODELO)
 
 
+def _normalizar(s: str) -> str:
+    """Para comparar frases: sin etiquetas, sin puntuación, sin mayúsculas."""
+    s = _ETIQUETA.sub("", s).lower()
+    return re.sub(r"[^\wáéíóúüñ ]+", "", s, flags=re.UNICODE).strip()
+
+
+# Los ejemplos del prompt, ya normalizados, para detectar copias literales.
+_EJEMPLOS = [
+    _normalizar(l.strip().strip('"'))
+    for l in _SISTEMA.splitlines()
+    if l.startswith('  "')
+]
+
+
+def _es_copia_de_ejemplo(texto: str) -> bool:
+    """¿Es esto uno de los ejemplos, tal cual o casi?
+
+    Se mira la inclusión en los dos sentidos, no la igualdad: lo típico no es clavarlo,
+    es soltar el ejemplo entero y añadirle cuatro palabras. Eso sigue siendo la frase
+    pregrabada con una coletilla, y la pregrabada suena mejor.
+    """
+    t = _normalizar(texto)
+    if len(t) < 15:
+        return False
+    return any(t in ej or ej in t for ej in _EJEMPLOS if ej)
+
+
 def muletilla(mensaje: str) -> str | None:
     """Escribe la coletilla para lo que Hugo acaba de decir. `None` si no se puede.
 
@@ -108,26 +148,41 @@ def muletilla(mensaje: str) -> str | None:
     if not mensaje:
         return None
 
+    cuerpo = {
+        "model": MODELO,
+        "max_tokens": MAX_TOKENS,
+        # Alta a propósito: si suena siempre igual, no mejora en nada al bote de
+        # frases pregrabadas, que encima tiene mejor voz.
+        "temperature": 1.0,
+        "messages": [
+            {"role": "system", "content": _SISTEMA},
+            {"role": "user", "content": mensaje},
+        ],
+    }
+    # Solo si está configurado: a un modelo que no razona, mandárselo le da error.
+    if ESFUERZO:
+        cuerpo["reasoning_effort"] = ESFUERZO
+
     t0 = time.monotonic()
     try:
         r = requests.post(
             f"{BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {API_KEY}",
                      "Content-Type": "application/json"},
-            json={
-                "model": MODELO,
-                # Corto de verdad: es una frase. Además acota el gasto y el tiempo.
-                "max_tokens": 40,
-                # Alta a propósito: si suena siempre igual, no mejora en nada al bote de
-                # frases pregrabadas, que encima tiene mejor voz.
-                "temperature": 1.0,
-                "messages": [
-                    {"role": "system", "content": _SISTEMA},
-                    {"role": "user", "content": mensaje},
-                ],
-            },
+            json=cuerpo,
             timeout=TIMEOUT_S,
         )
+        if r.status_code == 404:
+            # EL fallo de esta pieza, y pasó: Groq retiró `groq/compound-mini` y durante
+            # semanas las muletillas a medida estuvieron apagadas sin que se notara, porque
+            # degradar a las pregrabadas no rompe nada. Por eso este caso es ERROR y no
+            # warning, y dice qué hacer: no es un problema de red, es que hay que elegir
+            # otro modelo (`scratchpad/elegir_modelo.py` los mide con la clave de Hugo).
+            log.error(
+                "GROQ_MODELO=%r ya no existe en el proveedor. Las muletillas a medida "
+                "están APAGADAS (se usan las pregrabadas). Elige otro modelo en el .env. "
+                "Respuesta: %s", MODELO, r.text[:200])
+            return None
         if r.status_code != 200:
             log.warning("muletilla rápida: HTTP %s — %s", r.status_code, r.text[:200])
             return None
@@ -176,6 +231,14 @@ def muletilla(mensaje: str) -> str | None:
         punto = max(corte.rfind("."), corte.rfind("!"), corte.rfind("?"))
         texto = corte[: punto + 1] if punto > 30 else corte.rsplit(" ", 1)[0] + "…"
     if not texto:
+        return None
+
+    # Si ha copiado un ejemplo tal cual, mejor NO usarla: esa frase exacta existe
+    # pregrabada con el modelo de voz caro, con retintín, y sonaría mejor. Devolver None
+    # hace justo eso — que suene la pregrabada. Medido el 2026-10-03: 3 de cada 8 salían
+    # copiadas literalmente, y cada una era un cambio a peor.
+    if _es_copia_de_ejemplo(texto):
+        log.info("muletilla rápida: ha copiado un ejemplo, dejo que suene la pregrabada")
         return None
 
     log.info("muletilla rápida en %.0f ms: %r", (time.monotonic() - t0) * 1000, texto)
