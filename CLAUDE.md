@@ -47,16 +47,38 @@ canal de sincronización, así que:
 - **La carga se mide con sRPE** (RPE de sesión × nº de series, suma de 7 días), no con
   ACWR ni con tonelaje. El ACWR se pegaba a su techo de 4.0 por falta de datos de duración.
 - **Las variantes de ejercicio son ejercicios distintos.** Banca competición, banca 3 ct
-  y banca mid grip no se fusionan nunca.
+  y banca mid grip no se fusionan nunca. Pero **el entrenador escribe el MISMO ejercicio
+  de varias formas** y eso sí hay que fusionarlo: en octubre de 2026 había 111 nombres
+  para 100 ejercicios, y la sentadilla principal de Hugo empezaba de cero al entrar en
+  Build II (`tacón 2 cm` → `tacón 2cm`). Van en `ALIAS`, cuya clave pasa por `_key`
+  (ignora tildes, mayúsculas y espacios de más). **Al dar de alta una etapa nueva, pasar
+  un barrido de parecidos por los nombres del plan** y preguntarle a Hugo los dudosos:
+  adivinar es caro en las dos direcciones.
 - **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
   **(plani, bloque)**, y el número capturado es la semana. Al empezar una etapa nueva hay
   que añadir ahí su patrón, o sus sesiones entran sin nombre de ejercicio. Hugo
   **reinicia la numeración de bloques con cada plan**, así que el número debe cuadrar con
   el que él escribe en el keep, no ser correlativo. Hoy: `Semana N`→(1,3) y
-  `Peaking SN`→(1,4); `Offseason SN`→(2,1) y `Build SN`→(2,2). También se enruta ya el
-  formato **`PxBySz`** que Hugo quiere usar cuando migre el plan a una hoja propia,
-  aunque todavía no exista ninguna pestaña así.
+  `Peaking SN`→(1,4); `Offseason SN`→(2,1), `Build SN`→(2,2) y `Build II SN`→(2,3).
+  También se enruta ya el formato **`PxBySz`** que Hugo quiere usar cuando migre el plan
+  a una hoja propia, aunque todavía no exista ninguna pestaña así.
+- **El calentamiento del plan NO va al keep, así que no puede ocupar un slot.** Desde
+  Build II cada día del Excel empieza con una cabecera `Warm up`, y Hugo no apunta esos
+  ejercicios. Si se quedaran en la lista, los nombres se correrían un puesto y la
+  sentadilla se llamaría "Tibial raises". `_sin_calentamiento` los quita, y no basta con
+  saltarse la sección: el MISMO ejercicio se repite suelto al final de Accesorios (Build
+  II S2, sesiones 1 y 3), así que se recoge su nombre bajo la cabecera y se borra donde
+  reaparezca en esa sesión. **No se filtra por el prefijo "Warm up"**: hoy lo llevan,
+  pero Hugo no garantiza que siga.
+- **La notación de tiempo del keep.** `1"` es un segundo y `1'` un minuto. `3x30"` son 3
+  series de 30 s. `2x30"-30"@7` es una serie COMPUESTA: el número de delante son las
+  **series** (2) y los tramos separados por guion son el trabajo dentro de cada una
+  (30 s + descanso + 30 s), no series sueltas; pueden ser más de dos
+  (`2x30"-30"-30"-20"`). Los separa del caso normal que **entre series hay espacio y
+  aquí no** (`2x7x10RIR0 - 6x10RIR0` son dos series; `2x7-8x10RIR0` es una). Las
+  duraciones van a la columna `nota` (`30"+30" = 60s`), no a una columna propia: se
+  quieren para leerlas, no para graficarlas. Antes se perdían enteras.
 - **La clave del lookup lleva el PLAN, no solo el bloque, y no es opcional.** Indexando
   solo por bloque, PLANI 1 bloque 1 cogía los nombres de las pestañas Offseason (que son
   de PLANI 2): 313 series mal etiquetadas y **21 de 67 ejercicios con una "mejor marca"
@@ -82,9 +104,13 @@ canal de sincronización, así que:
   repes son reales (suman volumen y fatiga), pero el esfuerzo no se conoce, así que la
   serie **no genera e1RM** y por tanto no puede optar a un PR. Llevan flag propio
   `sin_intensidad`, distinto de `int_no_parseable` (esa sí es basura: `RIRmario`, un `RIR`
-  sin número). `0x0` es una serie fallada o no hecha -> flag `fallo`. Los tres son la
-  única señal automática de que una sesión se torció, y se agregan por sesión en
-  `n_fallos_total` / `n_sin_intensidad_total`.
+  sin número). Lo que separa un fallo de un ejercicio que no hizo es EL PESO: `200x0@10`
+  es un intento fallado (esfuerzo máximo, flag `fallo`, pesa 10 × FACTOR_FALLO en el
+  sRPE), y `0x0` a secas es **que no hizo el ejercicio** (flag `no_hecho`, cero series y
+  cero carga). Hasta el 2026-10-13 los dos entraban como `fallo` y un ejercicio que se
+  saltó le metía 30 puntos de carga. Son la única señal automática de que una sesión se
+  torció, y se agregan por sesión en `n_fallos_total` / `n_sin_intensidad_total` /
+  `no_hechos` (esta última con los NOMBRES, que es lo que Jarvis necesita decir).
 - **Intervals llega con retraso, a veces de días, y NO es un fallo.** Si la API devuelve
   filas con los campos a `None`, es que el reloj aún no ha subido; el campo `updated` dice
   cuándo llegó de verdad. Reejecutar el pipeline más tarde lo alinea. No diagnostiques
@@ -94,7 +120,17 @@ canal de sincronización, así que:
   (estrés, molestias) **0-9** con 0=nada; alcohol 0-27; `rpd_sesion` 0-10. `readiness`
   divide entre 9, así que un 10 colado en una bipolar da readiness > 100 sin avisar. La
   fuente única es `dashboard/backend/formularios.ESQUEMA`: la UI y las herramientas de
-  Jarvis sacan de ahí sus rangos, no los declaran por su cuenta.
+  Jarvis sacan de ahí sus rangos —y desde el 2026-10-13 también el `paso` de la rueda—,
+  no los declaran por su cuenta.
+- **El alcohol y la cafeína del AM son del día ANTERIOR**, no del día de la fila: el
+  formulario se rellena al levantarse. Jarvis llegó a dar por hecho que `alcohol_ayer`
+  era lo de hoy. Lo dicen ya la etiqueta del campo, el prompt y la descripción de la
+  herramienta `guardar_am`.
+- **Los campos con `paso` se pintan como RUEDA** (peso 0,1 kg, cafeína 50 mg), y las
+  horas usan `<input type="time">`, que en el móvil abre el reloj nativo. La rueda
+  ARRANCA en el último valor registrado (`formularios.sugerencias`), pero esa sugerencia
+  **no se guarda si no la toca**: si se mandara sola, abrir el formulario y darle a
+  Guardar apuntaría el peso de la semana pasada como la pesada de hoy.
 - **El backend YA escribe en `wellness_am` / `wellness_pm` / `peso`** (`formularios.py`),
   aunque el docstring de `status_pipeline.py` diga "NUNCA toca": eso sigue siendo cierto
   *para el pipeline*. La escritura es un **upsert por fecha** —Hugo corrige lo que ya

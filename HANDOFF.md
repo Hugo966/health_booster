@@ -584,6 +584,20 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 
 ## 6. Cambios de esta sesión
 
+### Sesión 2026-10-13 (que lo que Hugo escribe signifique lo que significa)
+Seis peticiones suyas de una tacada, todas de lo mismo: el programa entero tiene que ser
+la base de conocimiento de Jarvis. El `0x0` dejó de contar como serie fallada —era un
+ejercicio que no hizo, y le metía 30 puntos de carga—, entró `Build II` con su
+calentamiento (que NO va al keep y por tanto no puede ocupar un slot, o los nombres se
+corren un puesto), el parser entiende los minutos y las series compuestas por tiempo, y
+los formularios de la app dejaron el texto libre por el reloj nativo y una rueda tipo
+Zepp. **Detalle en §19.**
+
+Tocado: `entreno_pipeline.py`, `status_pipeline.py`, `briefing.py`, `chat.py`,
+`personalidad.py`, `formularios.py`, `main.py`, `FormulariosPanel.tsx`,
+`lib/formularios.ts`, `test_entreno.py` (nuevo), `CLAUDE.md`.
+Pipeline pasado: el histórico ya está recalculado.
+
 ### Sesión 2026-09-12 (que la voz funcione desde el móvil, y que pregunte quién es Daniel)
 Primera sesión usando el dashboard **desde el teléfono** de verdad, y ahí se cayó todo lo
 que en el portátil iba bien: Jarvis hablaba pero no oía, el chat no se podía ni abrir, y
@@ -1940,3 +1954,128 @@ espera 600 ms. La causa de raíz sigue siendo **§17**, con su orden de medir pr
 - Que Hugo rellene un formulario entero hablando. Es el único criterio que importa.
 - **A veces confirma dos veces seguidas** al guardar (bucle de herramientas). Feo, no
   rompe nada, sin mirar.
+
+## 19. Que entienda lo que escribe (2026-10-13)
+
+Seis cosas que Hugo pidió juntas y van de lo mismo: **que lo que él apunta signifique lo
+que significa**, dentro del programa y dentro de la cabeza de Jarvis. Cinco son del
+parser y del prompt; la sexta es de los formularios de la app.
+
+### 19.1 `0x0` no era un fallo, era un ejercicio que no hizo
+Lo que separa los dos casos es **el peso**:
+- `200x0@10` → lo intentó y no sacó la repe. Esfuerzo máximo: flag `fallo`, y en el sRPE
+  pesa como una serie a RPE 10 × `FACTOR_FALLO` (3).
+- `0x0` a secas → **no hizo el ejercicio**. Flag `no_hecho`, `n_series` a nulo, cero
+  volumen y **cero carga**.
+
+Hasta ahora los dos entraban como `fallo`, así que **saltarse un ejercicio le sumaba 30
+puntos de sRPE**, los mismos que un intento a tope. Afecta a cinco días del histórico
+(17/08, 03/09, 04/09, 09/09, 15/09) y a su carga de esas semanas, ya recalculada.
+
+Los nombres de lo que no hizo salen por `entreno_sesion.no_hechos` y llegan al parte de
+estado. **El número solo no servía**: "te faltó un ejercicio" no es nada, "no hiciste la
+plancha" es una conversación. En el mismo saco entran los que se dejó sin apuntar al
+final de la sesión, que ya se marcaban `no_hecho` desde antes.
+
+### 19.2 El plan empieza a traer calentamiento, y el calentamiento no va al keep
+`Build II SN` → (plan 2, bloque 3, "Build II"), que es el `BLOQUE 3` que Hugo ya escribe.
+
+Desde `Build II S2` cada día del Excel abre con una cabecera `Warm up`. Hugo **no apunta
+el calentamiento**, así que si esos ejercicios se quedan en la lista los nombres se
+corren un puesto y la sentadilla pasa a llamarse "Tibial raises" — el fallo clásico de
+este pipeline, y silencioso. `_sin_calentamiento` los quita.
+
+No basta con saltarse la sección de la cabecera: **el mismo ejercicio se repite suelto al
+final de Accesorios** (sesiones 1 y 3). Y tampoco vale filtrar por el prefijo "Warm up",
+porque Hugo dice que no garantiza escribirlo siempre. Así que se recoge el nombre de lo
+que cuelga de la cabecera y se borra donde reaparezca **en esa misma sesión**. El punto
+ciego que queda: un ejercicio de calentamiento que NO salga nunca bajo su cabecera.
+
+### 19.3 La notación de tiempo
+`1"` es un segundo y `1'` **un minuto** (esto último no se entendía: el `2x1'@8` del
+05/10 se leía como "1 serie de 2 repeticiones").
+
+`2x30"-30"@7` es una serie **compuesta**: 2 series, y dentro de cada una 30 s + descanso
++ 30 s. Los tramos **no son series sueltas** —decisión de Hugo, y es la que manda en el
+sRPE—, y pueden ser más de dos: `2x30"-30"-30"-20"`. Lo que lo distingue de dos series
+distintas es que **entre series hay espacio y aquí no**: `2x7x10RIR0 - 6x10RIR0` son dos,
+`2x30"-30"@7` es una. Ese criterio lo puso Hugo y ya estaba implementado para los rangos
+de repes (`6x10-8RIR3`, unilateral: 10 de un lado y 8 del otro).
+
+Las duraciones **se perdían enteras** (un `3x30"` guardaba "3 series" y nada más). Ahora
+van a `nota`: `30"+30" = 60s`, `30"`, `tempo 2"`. A la nota y no a una columna propia
+porque se quieren para leerlas, no para graficar la plancha.
+
+### 19.4 Todo el programa es su base de conocimiento
+Dos cambios para que Jarvis no pregunte lo que ya tiene delante:
+- Las series que le llegan por la herramienta `dia` traen **`marca` y `nota`**. Sin eso,
+  un día en el que se dejó medio entreno le llegaba idéntico a uno completo, solo que con
+  menos filas.
+- El prompt gana dos bloques: qué significa cada marca del keep, y la regla de cruzar
+  antes de preguntar — **si no hizo un ejercicio y la nota del PM ya dice por qué, se
+  comenta, no se pregunta**. Preguntarle lo que acaba de escribir es exactamente lo que
+  hace insoportable hablar con él.
+
+También se le dice, en el prompt y en la herramienta, que **el alcohol y la cafeína del
+AM son de AYER**: el formulario se rellena al levantarse y él ya había pillado a Jarvis
+tratándolo como lo de hoy.
+
+### 19.5 Los formularios de la app, sin texto libre
+Las horas usan `<input type="time">` (en el móvil, el reloj nativo; y no hay forma de
+escribir algo que no sea HH:MM, que es lo que el backend exige). El peso y la cafeína se
+meten con una **rueda** tipo Zepp: el peso de 0,1 en 0,1 y la cafeína de 50 en 50.
+
+La rueda **se despliega al pulsar** y se cierra al elegir; abierta siempre ocupaba cinco
+filas por campo y el formulario se convertía en una tira. Cerrada enseña el valor (o la
+última vez que lo registró). Se puede **girar o pinchar la opción**: con el ratón acertar
+girando es un incordio y el valor que quieres suele estar a la vista. Al abrirse hace
+`scrollIntoView({block:'nearest'})`, porque si el campo cae al final del formulario —que
+tiene su propio scroll— la rueda se abriría medio tapada.
+
+El salto lo define `formularios.ESQUEMA` con el campo `paso`, por lo mismo que los
+rangos: si lo declara el frontend, acaban divergiendo.
+
+La rueda **arranca en el último valor registrado** (`formularios.sugerencias`), que para
+el peso es casi siempre el valor correcto ±0,2 kg. Esa sugerencia **viaja aparte de los
+valores y no se guarda si él no toca la rueda**: si se mandara sola, abrir el formulario
+y darle a Guardar apuntaría el peso de la semana pasada como la pesada de hoy. Solo se
+pinta ventana (±50 pasos alrededor del punto de partida): el peso va de 30 a 300 kg, que
+a 0,1 son 2701 opciones, y eso en el móvil no se scrollea.
+
+### 19.6 El entrenador escribe el mismo ejercicio de varias formas
+Al revisar el plan con Build II dentro salieron **111 nombres para 100 ejercicios**. No es
+cosmético: dos nombres son dos históricos, así que la sentadilla principal de Hugo
+**empezaba de cero al entrar en Build II** (`tacón 2 cm` → `tacón 2cm`) y su banca de
+competición estaba partida en dos DENTRO DE LA MISMA SEMANA (`Banca competición` en la
+sesión 2, `Comp bp` en la 4).
+
+Cuatro eran puro formato y se arreglaron solas (mayúsculas, un espacio doble, `2 cm` vs
+`2cm`): `_key` ya ignora tildes, mayúsculas y espacios de más, así que basta con que
+ambas caigan en el mismo `ALIAS`. Y `canon_exercise` colapsa los espacios internos, que
+es de donde salía `Hip thrust  en máquina`.
+
+Las otras once las confirmó Hugo una a una, porque **la regla de que las variantes no se
+fusionan hace que adivinar sea caro**: fusionó `Sumo dl`/`Peso muerto sumo`,
+`Ext cuádriceps`/`Extensión cuádriceps`, los tres tríceps con barra en polea, los dos
+jalones al pecho estrecho/cerrado, `Sq high bar`/`Sentadilla high bar`,
+`Bp mid grip`/`Banca mid grip`, `Peck deck inverso`/`Reverse peck deck`, los dos curl
+bayesian, las dos elevaciones laterales en polea, los tres cruces de poleas, los dos
+jalones unilaterales, los dos curl martillo, y las coletillas del entrenador
+(`... o la otra`, `... VÍDEO`).
+
+Y dijo que NO son el mismo: `Hip thrust unilateral` (mancuerna) vs `en máquina`, y
+`Banca larssen mid grip` vs `Banca mid grip`. Lo que queda por encima del 0,5 de
+parecido son variantes de verdad (step down lateral, búlgara en multipower, las plancha
+laterales, peck deck normal vs inverso, curl araña vs predicador).
+
+**Al dar de alta una etapa nueva, mirar esto**: el barrido es un rato de script y el
+daño es silencioso. Un `itertools.combinations` con Jaccard de palabras sobre
+`extract_exercises` saca los candidatos en un minuto.
+
+### 19.7 Pendiente de esto
+- **Probar la rueda en el móvil con el dedo.** En el ordenador va con la rueda del ratón
+  (y pinchando), que es lo único que se puede probar aquí; el gesto táctil con
+  `scroll-snap` no se simula ni se puede pinchar la pestaña "Peso" desde el navegador
+  headless.
+- `test_entreno.py` (nuevo, en la raíz): `./venv/bin/python test_entreno.py`. Cubre el
+  enrutado de Build II, el calentamiento, `0x0` vs `200x0`, las compuestas y los rangos.
