@@ -191,6 +191,17 @@ def chat_stream(m: Mensaje):
     # vez que Sonnet se pisaban y tardaba 2,9 s. Además así un "hola" ni llega a Sonnet.
     ruta = chat_mod.enrutar(m.mensaje)
 
+    # El atajo de `enrutar` solo vale para ABRIR conversación. Haiku recibe el mensaje
+    # suelto, sin una línea del hilo, así que en mitad de una charla contesta con mucho
+    # aplomo cosas que no tienen que ver — o directamente falsas: el 2026-10-05, rellenando
+    # formularios, soltó "no tengo memoria de mensajes anteriores" (mentira: el hilo estaba
+    # ahí) y "no necesitas repetir como un loro". Era la mayor parte de lo que hacía
+    # insufrible hablar con él.
+    # Con la conversación caliente se tira el atajo y se va por Sonnet, que sí ve el hilo.
+    # La muletilla se queda: esa no depende del contexto y tapa el silencio igual.
+    if ruta["respuesta"] and memoria.conversacion_caliente(m.sesion):
+        ruta = {"respuesta": "", "muletilla": ruta["muletilla"] or "neutra"}
+
     if ruta["respuesta"]:
         corto = chat_mod.responder_rapido(m.sesion, m.mensaje, ruta["respuesta"])
 

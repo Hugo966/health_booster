@@ -30,6 +30,8 @@ const PROVEEDOR_ENV = import.meta.env.VITE_JARVIS_PROVEEDOR as string | undefine
 
 const KEY_SESION = "jarvis.chat.sesion";
 const KEY_HIST = "jarvis.chat.historial";
+// A qué sesión (o sea, a qué día) pertenece lo guardado en KEY_HIST.
+const KEY_HIST_SESION = "jarvis.chat.historial.sesion";
 const KEY_PROV = "jarvis.chat.proveedor";
 
 function proveedorInicial(): string {
@@ -55,19 +57,39 @@ const MAX_HIST = 100;
 // backend (jarvis.db) y Hugo quiere una sola charla: lo que dice por micro al escuchador
 // local (dashboard/escucha) y lo que escribe aquí tienen que ser la misma. Con un id
 // aleatorio por navegador se partía en dos y Jarvis no recordaba lo hablado en voz.
-const SESION_FIJA = "hugo";
+// UNA SESIÓN POR DÍA (`hugo-2026-10-05`). Lo pidió Hugo así: que el historial se limpie
+// cada día, pero que el día entero quede junto.
+//   - La charla de hoy es una sola, aunque recargue o cierre el móvil.
+//   - Mañana empieza en blanco, sin arrastrar lo de ayer a cada petición.
+//   - En `jarvis.db` NO se borra nada: las sesiones viejas siguen ahí, solo dejan de
+//     cargarse. El respaldo diario al bucket se las lleva igual.
+// De paso acota el hilo, que es lo que permite subir la ventana del backend a 60 mensajes
+// sin que crezca sin freno.
+const SESION_BASE = "hugo";
+
+function hoyISO(): string {
+  // Local, no UTC: a las 23:30 en Madrid `toISOString()` ya diría mañana y le cortaría la
+  // conversación a media frase.
+  const d = new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function idSesion(): string {
   try {
     // Se respeta una sesión ya guardada solo si alguien la puso a mano (pruebas).
-    return localStorage.getItem(KEY_SESION) || SESION_FIJA;
+    return localStorage.getItem(KEY_SESION) || `${SESION_BASE}-${hoyISO()}`;
   } catch {
-    return SESION_FIJA;
+    return `${SESION_BASE}-${hoyISO()}`;
   }
 }
 
 function cargar(): Mensaje[] {
   try {
+    // El historial pintado se guarda con la sesión a la que pertenece. Si es de otro día,
+    // se descarta: si no, verías las burbujas de ayer sobre un hilo que el backend ya da
+    // por vacío, y Jarvis parecería haberse olvidado de lo que tienes delante.
+    if (localStorage.getItem(KEY_HIST_SESION) !== idSesion()) return [];
     const raw = localStorage.getItem(KEY_HIST);
     if (!raw) return [];
     const arr = JSON.parse(raw);
@@ -180,6 +202,8 @@ export function useChat(
   useEffect(() => {
     try {
       localStorage.setItem(KEY_HIST, JSON.stringify(mensajes.slice(-MAX_HIST)));
+      // Se sella con la sesión del día: `cargar()` descarta lo que sea de otro.
+      localStorage.setItem(KEY_HIST_SESION, sesion.current);
     } catch {
       /* modo privado: se pierde el historial local, no pasa nada */
     }

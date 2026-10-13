@@ -241,8 +241,6 @@ function extraer(texto: string, despierto: boolean): { comando: string | null; d
 // "está escuchando varias veces lo que digo" le llegó a Jarvis ocho veces encadenada, y
 // tres "hola" como veinticinco.
 export function reconstruir(resultados: any): { finales: string; interino: string } {
-  const prefijo = (largo: string, corto: string) =>
-    largo.toLowerCase().startsWith(corto.toLowerCase());
   let finales = "";
   let interino = "";
   for (let i = 0; i < (resultados?.length ?? 0); i++) {
@@ -251,13 +249,48 @@ export function reconstruir(resultados: any): { finales: string; interino: strin
     if (!t) continue;
     if (!tramo.isFinal) {
       interino = t;
-    } else if (!finales || prefijo(t, finales)) {
-      finales = t;                 // reemisión más completa de lo mismo
-    } else if (!prefijo(finales, t)) {
-      finales = `${finales} ${t}`; // segmento realmente nuevo
-    }                              // si `t` es más corto y ya está dentro, se ignora
+    } else if (!finales) {
+      finales = t;
+    } else if (_mismaFrase(finales, t)) {
+      // Es la misma frase otra vez: se queda la ÚLTIMA, que es lo que el reconocedor cree
+      // ahora. No "la más larga": una corrección suele ser más corta ("ánimo de un siete"
+      // -> "ánimo de un ocho") y quedarse con la larga guardaría el número viejo en un
+      // formulario de salud.
+      finales = t;
+    } else {
+      finales = `${finales} ${t}`; // material realmente nuevo
+    }
   }
   return { finales, interino };
+}
+
+/** ¿Son dos versiones de la MISMA frase, o dos frases distintas?
+ *
+ *  Antes esto era un `startsWith` y se quedaba corto. Android no solo ALARGA la frase en
+ *  cada reemisión: también **corrige el final**. El 2026-10-05, dictando un formulario,
+ *  pasó de "…al levantarme 7 estrés" a "…al levantarme 7 es 3 3": ninguna es prefijo de
+ *  la otra, así que se tomaban por frases distintas y se CONCATENABAN. Y como corregía en
+ *  cada vuelta, el resultado fue la misma frase repetida nueve veces seguidas.
+ *
+ *  Se mide cuánto prefijo comparten: si es la mayor parte de la más corta, es la misma
+ *  frase revisada. Lo que cambia siempre es el final —lo último que oyó—, nunca el
+ *  principio, y eso es justo lo que esto aprovecha.
+ */
+function _mismaFrase(a: string, b: string): boolean {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  const tope = Math.min(x.length, y.length);
+  let comun = 0;
+  while (comun < tope && x[comun] === y[comun]) comun++;
+  // El 60 % cubre los dos comportamientos con una sola regla: crecer ("está" -> "está
+  // escuchando", 100 % común) y corregir el final ("…7 estrés" -> "…7 es 3 3", ~90 %).
+  //
+  // Se probó a exigir además un mínimo absoluto de caracteres comunes, para que dos
+  // frases cortas parecidas no se fusionaran. **Era peor**: rompía justo el crecimiento
+  // corto, que es el caso más frecuente. Y en Android no hay tal cosa como "dos frases
+  // cortas seguidas": cada resultado nuevo reempieza desde el principio, así que si
+  // comparten el arranque es que son la misma.
+  return comun >= tope * 0.6;
 }
 
 function vozEspanola(): SpeechSynthesisVoice | null {
@@ -401,6 +434,8 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const limiteRef = useRef(0);       // techo duro por si el reloj nunca vence
   // Cuándo dejó de capturar el micro el reconocedor. Mientras esté a 0, está oyendo.
   const sordoDesdeRef = useRef(0);
+  // Cuándo arrancó la sesión actual: si se cierra enseguida, hay que frenar el relanzado.
+  const abiertoDesdeRef = useRef(0);
   // `aplazar` se define después; los manejadores del reconocedor se crean una sola vez.
   const aplazarRef = useRef<(ms: number) => void>(() => {});
   // Último parcial recibido, si llegó DESPUÉS del último final. Vacío = Chrome no nos
@@ -482,6 +517,46 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     estadoRef.current = e;
     setEstado(e);
   }, []);
+
+  // --- que no se apague la pantalla mientras habla --------------------------------
+  // Hablando no se toca el móvil, así que a los ~30 s Android lo apaga y la conversación
+  // se corta a media frase. El Wake Lock se pide al encender la voz y se suelta al
+  // apagarla, nunca "siempre": dejarlo puesto con el dashboard abierto le fundiría la
+  // batería.
+  const cerrojoRef = useRef<any>(null);
+
+  const pedirCerrojo = useCallback(async () => {
+    try {
+      if (!("wakeLock" in navigator) || cerrojoRef.current) return;
+      cerrojoRef.current = await (navigator as any).wakeLock.request("screen");
+      cerrojoRef.current.addEventListener?.("release", () => {
+        cerrojoRef.current = null;
+      });
+      traza("pantalla: no se apagará");
+    } catch (e) {
+      // Sin permiso, sin soporte o pestaña en segundo plano. Se sigue como siempre.
+      traza("pantalla: no he podido retenerla", String(e));
+    }
+  }, []);
+
+  const soltarCerrojo = useCallback(() => {
+    try {
+      cerrojoRef.current?.release();
+    } catch {
+      /* ya se había soltado */
+    }
+    cerrojoRef.current = null;
+  }, []);
+
+  // El navegador lo SUELTA solo al minimizar o cambiar de pestaña, y no lo devuelve al
+  // volver. Sin esto, la primera vez que mira otra cosa deja de funcionar para siempre.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === "visible" && activaRef.current) void pedirCerrojo();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => document.removeEventListener("visibilitychange", alVolver);
+  }, [pedirCerrojo]);
 
   // --- buffer del turno de Hugo ---------------------------------------------------
   const pararRelojes = useCallback(() => {
@@ -661,7 +736,10 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     // Si se queda en "capturando" sin oír nunca nada, el micro está dando silencio: se lo
     // ha quedado otro (en Android el reconocedor lo sirve el sistema y lo quiere en
     // exclusiva, así que compite con el `getUserMedia` del VAD).
-    r.onstart = () => traza("rec: arrancado");
+    r.onstart = () => {
+      abiertoDesdeRef.current = Date.now();
+      traza("rec: arrancado");
+    };
     r.onaudiostart = () => {
       traza("rec: micro capturando");
       // Vuelve a oír: el rato que ha estado sordo no cuenta como silencio de Hugo.
@@ -691,7 +769,18 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       // reanuda también mientras habla**: ahí el reconocedor es quien detecta que Hugo le
       // está cortando, así que no puede quedarse parado.
       if (activaRef.current && (cascosRef.current || estadoRef.current !== "hablando")) {
-        setTimeout(relanzar, 250); // pequeño respiro: evita bucles de start/stop
+        // Reabrir CUANTO ANTES. Android cierra su reconocedor cada pocos segundos por su
+        // cuenta (§17), y en cada hueco no se oye nada: ahí es donde se pierde la primera
+        // palabra cuando Hugo empieza a hablar con el orbe ya escuchando. Los 250 ms que
+        // había aquí eran nuestros, no suyos, y se sumaban al hueco en cada ciclo.
+        //
+        // El respiro sigue existiendo pero solo como FRENO: si la sesión se cierra otra
+        // vez enseguida sin haber oído nada, es que algo va mal (micro ocupado, permiso) y
+        // reabrir en bucle solo quemaría batería. Ahí sí se espera.
+        const vivio = Date.now() - abiertoDesdeRef.current;
+        const espera = vivio < 400 ? 600 : 0;
+        if (espera) traza(`rec: cerró en ${vivio}ms, freno ${espera}ms antes de reabrir`);
+        setTimeout(relanzar, espera);
       }
     };
 
@@ -715,6 +804,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     if (!soportado) return;
     activaRef.current = true;
     setVozActiva(true);
+    void pedirCerrojo(); // aquí, que es un gesto del usuario: el navegador lo exige
     asegurarRec();
     // El micro del detector NO se abre aquí. Se abría, y en Android dejaba sordo al
     // reconocedor durante toda la sesión (ver `asegurarVad`). Ahora se abre solo cuando
@@ -749,6 +839,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const apagar = useCallback(() => {
     activaRef.current = false;
     setVozActiva(false);
+    soltarCerrojo(); // la pantalla vuelve a apagarse sola: con la voz off no hay excusa
     try {
       window.speechSynthesis.cancel();
     } catch {

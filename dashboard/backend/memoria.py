@@ -77,7 +77,37 @@ def guardar_mensaje(sesion: str, rol: str, texto: str):
         )
 
 
-def hilo_reciente(sesion: str, n: int = 20) -> list[dict]:
+def conversacion_caliente(sesion: str, minutos: int = 10) -> bool:
+    """¿Se está hablando AHORA, o esto es un mensaje de arranque?
+
+    Lo usa `main` para decidir si el atajo del enrutado puede contestar por su cuenta.
+    Ese atajo manda a Haiku el mensaje SUELTO, sin nada del hilo, así que a mitad de una
+    conversación suelta disparates con aplomo: ante "cómo vas guardando lo del mensaje
+    anterior" contestó "no tengo memoria de mensajes anteriores" (falso), y ante "le pongo
+    un uno" soltó "no necesitas repetir como un loro". Sirve para abrir conversación, que
+    es para lo que se hizo; para continuarla, no.
+    """
+    with _conn() as con:
+        fila = con.execute(
+            "SELECT ts FROM conversaciones WHERE sesion = ? ORDER BY id DESC LIMIT 1",
+            (sesion,),
+        ).fetchone()
+    if not fila:
+        return False
+    try:
+        ultimo = datetime.fromisoformat(fila["ts"])
+    except (ValueError, TypeError):
+        # Un `ts` ilegible no debe decidir nada: se trata como conversación fría, que es
+        # el comportamiento de siempre.
+        return False
+    return (datetime.now() - ultimo).total_seconds() < minutos * 60
+
+
+# Rellenar un formulario hablando son ~6 idas y venidas, y Hugo encadena varios días
+# seguidos. Con 20 se le caían del contexto los datos del principio y volvía a preguntar
+# lo mismo ("le cuesta guardar las cosas", 2026-10-05). Con una sesión por día (ver
+# `idSesion` en chat.ts) el hilo está acotado, así que 60 no crece sin freno.
+def hilo_reciente(sesion: str, n: int = 60) -> list[dict]:
     """Últimos n mensajes de la sesión, en orden cronológico."""
     with _conn() as con:
         filas = con.execute(
