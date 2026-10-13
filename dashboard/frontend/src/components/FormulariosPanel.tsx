@@ -238,7 +238,6 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
   const caja = useRef<HTMLDivElement>(null);
   const globo = useRef<HTMLDivElement>(null);
   const tocada = useRef(false);
-  const reposo = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     // Al abrirla, colocarse en el valor de partida. El scroll programado NO cuenta como
@@ -260,13 +259,7 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
     const i = Math.round(caja.current.scrollTop / ALTO);
     const v = opciones[Math.min(opciones.length - 1, Math.max(0, i))];
     if (v !== undefined) elegir(v);
-    // Deslizar ya es elegir: en cuanto la rueda se para, se recoge. Si se quedara
-    // abierta, el desplegable tapa el botón de Guardar y hay que cerrarlo a mano.
-    window.clearTimeout(reposo.current);
-    reposo.current = window.setTimeout(() => setAbierta(false), 500);
   };
-
-  useEffect(() => () => window.clearTimeout(reposo.current), []);
 
   const marcar = () => { tocada.current = true; };
   const relleno = ((VISIBLES - 1) / 2) * ALTO;
@@ -287,7 +280,12 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
       {abierta && (
         // Encima de lo que haya debajo, no empujándolo: si el formulario se recolocara al
         // abrirla, el campo saltaría bajo el dedo justo antes de girarlo.
-        <div ref={globo} className="absolute left-0 z-20 mt-1 overflow-hidden rounded"
+        // `preventDefault` porque el campo entero va dentro de un <label>: al tocar una
+        // opción, el label reenvía el clic a su control —el botón de la rueda—, que lo
+        // vuelve a abrir. Se cerraba y se abría en el mismo toque, y parecía que el
+        // toque no hacía nada.
+        <div ref={globo} onClick={(e) => e.preventDefault()}
+             className="absolute left-0 z-20 mt-1 overflow-hidden rounded"
              style={{ top: "100%", height: VISIBLES * ALTO, width: 120,
                       background: "#0b1a24",
                       border: `1px solid ${theme.accent}`,
@@ -309,7 +307,8 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
               return (
                 // Pinchable además de deslizable: con el ratón, acertar girando es un
                 // incordio, y el valor que quieres suele estar a la vista.
-                <div key={o} role="button" onClick={() => { marcar(); elegir(o); setAbierta(false); }}
+                <div key={o} role="button"
+                     onClick={() => { marcar(); elegir(o); setAbierta(false); }}
                      className="flex cursor-pointer items-center justify-center text-[13px]"
                      style={{ height: ALTO, scrollSnapAlign: "center",
                               color: activo ? theme.accent : theme.text,
