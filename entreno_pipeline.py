@@ -35,6 +35,10 @@ PLAN_TAB_RULES = [
     (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 1, "Offseason"),
     # Build (S1-S5): segunda etapa de PLANI 2, la que viene después del Offseason.
     (re.compile(r'^\s*build\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 2, "Build"),
+    # Build II (desde 2026-10): tercera etapa de PLANI 2, y el BLOQUE 3 que Hugo ya
+    # escribe en su keep. No choca con la regla de arriba: ahí, tras "build" solo puede
+    # venir la "s" de la semana, y aquí viene la "II".
+    (re.compile(r'^\s*build\s*(?:ii|2)\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 3, "Build II"),
     # Formato "P2B2S3": el que Hugo quiere usar cuando migre el plan del entrenador a
     # una hoja suya. Aún no existe ninguna pestaña así; se enruta ya para que ese día
     # no haya que tocar nada, y porque lleva el plan y el bloque dentro del nombre.
@@ -175,9 +179,28 @@ def _key(name):
 ALIAS = {
     'comp bp':                             'Banca comp',
     'sq low bar':                          'Sentadilla LB',
-    'dl sumo':                             'Sumo dl',
+    # Los dos nombres del sumo van al que usa el plan HOY; si se quedara 'Sumo dl', el
+    # mismo básico tendría dos históricos (Peaking/Volumen por un lado, Build II por otro).
+    'dl sumo':                             'Peso muerto sumo',
+    'sumo dl':                             'Peso muerto sumo',
     'ext triceps katana':                  'Extensión tríceps katana',
     'ext triceps barra polea':             'Extensión tríceps en polea con barra',
+    'extension de triceps barra polea':    'Extensión tríceps en polea con barra',
+    'extension triceps barra':             'Extensión tríceps en polea con barra',
+    'banca competicion':                   'Banca comp',
+    'ext cuadriceps':                      'Extensión cuádriceps',
+    'jalon al pecho agarre cerrado':       'Jalón al pecho agarre estrecho',
+    'seal row multigrip o la otra':        'Seal row multigrip',
+    'pajaros w en banco video':            'Pájaros W en banco',
+    'sq high bar':                         'Sentadilla high bar',
+    'bp mid grip':                         'Banca mid grip',
+    'peck deck inverso':                   'Reverse peck deck',
+    'curl bayesian en polea baja':         'Curl bayesian en polea',
+    'elevaciones laterales en polea baja': 'Elevaciones laterales en polea',
+    'cruce de poleas en banco':            'Cruce de poleas en banco sentado',
+    'cruce de poleas (media) en banco':    'Cruce de poleas en banco sentado',
+    'jalon unilateral':                    'Jalón unilateral en polea',
+    'curl martillo alterno':               'Curl martillo mancuerna',
     'elevaciones lat en polea':            'Elevaciones laterales en polea',
     'press militar en maquina':            'Press militar máquina',
     'hip thrust unilateral con mancuerna': 'Hip thrust unilateral',
@@ -185,6 +208,16 @@ ALIAS = {
     'plancha+abduccion lateral de cadera': 'Plancha+abd lateral',
     'pull over unilateral polea alta':     'Pull over unilateral',
     'leg extension 2ct arriba':            'Leg extension 2ct',
+    # Mismo ejercicio, dos formas de escribirlo en la hoja (encontradas el 2026-10-13 al
+    # entrar Build II). Sin unificarlas, el histórico se parte en dos justo al cambiar de
+    # etapa: la sentadilla principal de Hugo pasaba a ser "otro ejercicio" en Build II.
+    # `_key` ya ignora mayúsculas, tildes y espacios de más, así que aquí solo hace falta
+    # lo que cambia de verdad (un espacio dentro de "2 cm", una palabra de menos).
+    'sentadilla low bar tacon 2 cm':       'Sentadilla low bar tacón 2cm',
+    'plancha copenhague':                  'Plancha copenhague',
+    'hip thrust maquina':                  'Hip thrust en máquina',
+    'hip thrust en maquina':               'Hip thrust en máquina',
+    'remo maquina':                        'Remo en máquina',
 }
 
 def canon_exercise(name):
@@ -192,6 +225,9 @@ def canon_exercise(name):
     if not name: return name
     t = _SCHEME_RE.sub('', name.strip())
     t = _TRAIL_RPE_RE.sub('', t).strip()
+    # Espacios de más colapsados: "Hip thrust  en máquina" venía con dos en la hoja, y un
+    # espacio invisible convierte un ejercicio en dos en el panel de Fuerza.
+    t = re.sub(r'\s+', ' ', t)
     return ALIAS.get(_key(t), t)
 
 SKIP={'básicos','basicos','accesorios','nombre','protocolo','comentario','observaciones','kg','repes','rir/rpe'}
@@ -267,6 +303,24 @@ def leer_keep(sa_json=None, doc_id=None, ruta=None):
     return normalizar_texto(open(ruta, encoding="utf-8").read())
 
 
+def _sin_calentamiento(ejs):
+    """Quita el calentamiento de la lista de una sesión y renumera los slots.
+
+    Hugo NO apunta el calentamiento en el keep, así que si se queda aquí los nombres se
+    corren un puesto y la sentadilla acaba llamándose "Tibial raises".
+
+    No basta con saltarse la sección que cuelga de la cabecera `Warm up`: el MISMO
+    ejercicio se repite suelto al final de Accesorios (Build II S2, sesiones 1 y 3). Y
+    tampoco vale filtrar por el prefijo "Warm up" del nombre, que hoy está pero Hugo no
+    garantiza que siga. Así que se recoge el nombre de lo que cuelga de la cabecera y se
+    quita donde vuelva a salir EN ESA MISMA SESIÓN.
+    """
+    nombres = {_key(e['name']) for e in ejs if e['warm']}
+    limpios = [e for e in ejs if not e['warm'] and _key(e['name']) not in nombres]
+    return [dict(order=i, name=e['name'], block=e['block'], bw=e['bw'])
+            for i, e in enumerate(limpios, 1)]
+
+
 def extract_exercises(source, verbose=False):
     """Lee el plan y devuelve {(plani, bloque): {(semana, dia): [ejercicios]}}.
 
@@ -291,15 +345,20 @@ def extract_exercises(source, verbose=False):
             ms=SES_RE.match(t)
             if ms: dia=ms.group(1); order=0; block=None; continue
             if low in ('básicos','basicos'): block='básico'; continue
+            if low in ('warm up','warm-up','warmup','calentamiento'): block='warm'; continue
             if low=='accesorios': block='accesorio'; continue
             if low in SKIP or RPE_ROW_RE.match(low) or t in ('#N/A','-'): continue
             if t=='#REF!':
-                if dia: order+=1; lk.setdefault((wk,dia),[]).append(dict(order=order,name='(cambiado/#REF)',block=block,bw=False))
+                if dia: order+=1; lk.setdefault((wk,dia),[]).append(dict(order=order,name='(cambiado/#REF)',block=block,bw=False,warm=block=='warm'))
                 continue
             if dia==0: continue
             order+=1
             lk.setdefault((wk,dia),[]).append(dict(order=order,name=canon_exercise(t),block=block,
-                                                   bw=any(k in low for k in BW)))
+                                                   bw=any(k in low for k in BW),warm=block=='warm'))
+        # Al cerrar la pestaña, fuera el calentamiento de cada sesión suya.
+        for clave, ejs in lk.items():
+            if clave[0] == wk:
+                lk[clave] = _sin_calentamiento(ejs)
     if verbose:
         src = source.split('/')[-1] if isinstance(source,str) else 'drive'
         print(f"  [Plan {src}] pestaña -> (plani, bloque, semana): {mapping}")
@@ -345,6 +404,12 @@ def parse_segment(seg):
     s=re.sub(r'@\s*\?+',' ',s)
     s=re.sub(r'@[\d.]+(?:-[\d.]+)?',' ',s)
     s=re.sub(r'RIR\s*\d+(?:-\d+)?\+?',' ',s,flags=re.I)
+    # Tramos de tiempo con UNA sola comilla al final: el plan del entrenador escribe la
+    # compuesta así (`2x30-30" 20" rest`), y de ahí se le puede pegar al keep. Se le pone
+    # su unidad a cada tramo ANTES del promedio de rangos de aquí abajo; si no, "30-30"
+    # se promedia a 30 y la serie compuesta se queda en un tramo solo.
+    s=re.sub(r'(\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)+)\s*(["\'])',
+             lambda m: (m.group(2)+'-').join(m.group(1).split('-')) + m.group(2), s)
     # rango de REPES (unilateral: 8 en un lado, 10 en el otro -> "8-10" -> media 9).
     # A esta altura los rangos de @ y RIR ya se han quitado, así que un guion pegado
     # entre dígitos solo puede ser un rango de repes.
@@ -371,9 +436,15 @@ def parse_segment(seg):
     metros=re.search(r'(\d+)\s*m\b',s)
     if metros: note.append(f"{metros.group(1)}m")
     s=re.sub(r'\d+\s*m\b',' ',s)
-    # segundos (isométrico / tempo)
-    had_secs=bool(re.search(r'\d+\s*"',s))
-    s=re.sub(r'\d+\s*"',' SECS ',s)
+    # 1' es un minuto y 1" un segundo. Se pasa todo a segundos aquí, para que de aquí
+    # abajo haya una sola unidad.
+    s=re.sub(r"(\d+(?:\.\d+)?)\s*'", lambda m: f'{float(m.group(1))*60:g}"', s)
+    # Duraciones del segmento, en orden. MÁS DE UNA = serie compuesta: plancha 30" +
+    # descanso + otros 30". Los tramos no son series sueltas —las series son el número
+    # que va delante de la x—, así que se quedan en la nota y no tocan la carga.
+    tiempos=[float(x) for x in re.findall(r'(\d+(?:\.\d+)?)\s*"',s)]
+    had_secs=bool(tiempos)
+    s=re.sub(r'\d+(?:\.\d+)?\s*"',' SECS ',s)
     # separar núcleo numérico de palabras-nota (conservando espacios)
     s=re.sub(r'[xX]',' ',s)
     nums=[]; words=[]
@@ -383,12 +454,24 @@ def parse_segment(seg):
             try: nums.append(float(tok))
             except: pass
         elif re.fullmatch(r'\?+', tok): pass   # marcador de `RIR?`, ya está en el flag
+        elif re.fullmatch(r'-+', tok): pass    # guion que separaba los tramos de una compuesta
         else: words.append(tok)
     if words: note.append(' '.join(words))
+    # Los segundos se perdían enteros: un 3x30" guardaba "3 series" y nada más, así que
+    # ni Hugo ni Jarvis podían saber si la plancha fue de 30" o de un minuto. Van a la
+    # nota —no a una columna— porque de momento se quieren para leerlos, no para graficar.
+    if tiempos:
+        otros=len([n for n in nums if isinstance(n,float)])
+        if len(tiempos)>1:
+            note.append('+'.join(f'{t:g}"' for t in tiempos) + f' = {sum(tiempos):g}s')
+        elif otros>=2:
+            note.append(f'tempo {tiempos[0]:g}"')   # 3x8x2" -> 2" por repe, no isométrico
+        else:
+            note.append(f'{tiempos[0]:g}"')
     return dict(raw=raw, nums=nums, rpe=corr if corr is not None else rpe, rir=rir,
                 bad_int=bad_int, sin_int=sin_int, banda=banda, carga=carga,
                 metros=(int(metros.group(1)) if metros else None),
-                had_secs=had_secs, note=' | '.join(n for n in note if n))
+                had_secs=had_secs, tiempos=tiempos, note=' | '.join(n for n in note if n))
 
 # Un segmento con un solo número son repes por convención ("1x12"). Pero cuando Hugo
 # apunta el peso y se deja las repes ("77.5x6@7.5 - 77.5@8"), ese número es un KG, y
@@ -536,11 +619,18 @@ def parse_keep(text, lookups):
             if p['sin_int']: flag=(flag+' sin_intensidad').strip()
             if p['bad_int']: flag=(flag+' int_no_parseable').strip()
             if not has_excel: flag=(flag+' sin_excel').strip()
-            # Intento a 0 reps: marca de fallo (el frontend lo pinta distinto y no es récord).
-            # Un fallo es esfuerzo máximo por definición, así que se fija RPE 10: así destaca
-            # en el detalle de fatiga aunque no se anotara el @. El peso extra que un fallo
-            # mete en la carga (sRPE) lo aplica el frontend con su propio factor.
-            if reps == 0:
+            # Dos cosas MUY distintas se escriben con un 0 en las repes, y las separa el peso:
+            #   `0x0` (sin peso) -> NO hizo el ejercicio. No es esfuerzo, es ausencia: ni
+            #     series, ni volumen, ni carga. Contarlo como fallo le metía 30 puntos de
+            #     sRPE (una serie a RPE 10 por el factor 3) a un ejercicio que no tocó.
+            #   `200x0@10` (con peso) -> lo intentó y no sacó la repe. Eso SÍ es un fallo:
+            #     esfuerzo máximo por definición, de ahí el RPE 10 aunque no lo anotara.
+            # Sin repetición completada no hay e1RM en ninguno de los dos casos, así que
+            # tampoco pueden salir en un récord.
+            if reps == 0 and not kg:
+                flag=(flag+' no_hecho').strip()
+                ns,kg,reps,rpe,rir=None,None,None,None,None
+            elif reps == 0:
                 flag=(flag+' fallo').strip(); rpe,rir=10.0,None
             # Serie `@?`/`RIR?`: el peso y las repes son reales, así que suman volumen y
             # fatiga, pero el e1RM NO lo es —depende del esfuerzo, y justo eso es lo que

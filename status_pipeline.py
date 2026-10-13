@@ -267,6 +267,13 @@ def build_entreno():
         # torció; sin agregarlas aquí, el flag no sale nunca de `entreno_sets`.
         nsinint = g.loc[g["flag"].astype(str).str.contains("sin_intensidad", na=False),
                         "n_series"].sum(min_count=1)
+        # Qué ejercicios NO hizo, por su nombre. Vienen de dos sitios y significan lo
+        # mismo: un `0x0` escrito a mano y los que se dejó sin apuntar al final de la
+        # sesión. El número solo no sirve de nada —Jarvis necesita decir "no hiciste
+        # plancha", no "te faltó un ejercicio"—, y es la señal de que la sesión se torció.
+        nh = g.loc[g["flag"].astype(str).str.contains("no_hecho", na=False), "ejercicio"]
+        no_hechos = ", ".join(dict.fromkeys(
+            x for x in nh.astype(str) if x and x.lower() not in ("none", "nan")))
         dolor = ""
         if "dolor_sesion" in g:
             vals = g["dolor_sesion"].dropna().astype(str)
@@ -283,6 +290,7 @@ def build_entreno():
             n_series_total=g["n_series"].sum(min_count=1),
             n_fallos_total=nfallos,
             n_sin_intensidad_total=nsinint,
+            no_hechos=no_hechos,
             mejor_e1rm=g["e1rm"].max(),
             vol_basicos=vb, vol_accesorios=va,
             dolor_sesion_keep=dolor,
