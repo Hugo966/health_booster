@@ -238,6 +238,7 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
   const caja = useRef<HTMLDivElement>(null);
   const globo = useRef<HTMLDivElement>(null);
   const tocada = useRef(false);
+  const reposo = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     // Al abrirla, colocarse en el valor de partida. El scroll programado NO cuenta como
@@ -259,7 +260,13 @@ function Rueda({ campo, valor, sugerencia, onChange }: {
     const i = Math.round(caja.current.scrollTop / ALTO);
     const v = opciones[Math.min(opciones.length - 1, Math.max(0, i))];
     if (v !== undefined) elegir(v);
+    // Deslizar ya es elegir: en cuanto la rueda se para, se recoge. Si se quedara
+    // abierta, el desplegable tapa el botón de Guardar y hay que cerrarlo a mano.
+    window.clearTimeout(reposo.current);
+    reposo.current = window.setTimeout(() => setAbierta(false), 500);
   };
+
+  useEffect(() => () => window.clearTimeout(reposo.current), []);
 
   const marcar = () => { tocada.current = true; };
   const relleno = ((VISIBLES - 1) / 2) * ALTO;
@@ -365,6 +372,10 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
 }) {
   const [valores, setValores] = useState<Valores>({});
   const [sugerencias, setSugerencias] = useState<Valores>({});
+  // Qué ha tocado ÉL en esta visita. Lo precargado no se reenvía: el editor abre con lo
+  // que ya hay guardado, así que mandarlo todo convertía un "Guardar" sin tocar nada en
+  // una pesada de hoy que nadie se hizo.
+  const tocados = useRef<Set<string>>(new Set());
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -373,6 +384,7 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
   useEffect(() => {
     let vivo = true;
     setCargando(true); setError(null); setOk(false);
+    tocados.current = new Set();
     // Precargar lo que ya hay es lo que permite CORREGIR y no solo añadir.
     fetchValores(tipo, fecha)
       .then((r) => { if (vivo) { setValores(r.valores); setSugerencias(r.sugerencias); } })
@@ -383,17 +395,21 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
 
   const cambiar = (n: string, v: string) => {
     setValores((p) => ({ ...p, [n]: v }));
+    tocados.current.add(n);
     setOk(false);
   };
 
   const enviar = async () => {
     setGuardando(true); setError(null);
     try {
-      // Solo lo que tiene valor: un campo vacío significa "no lo toques", no "bórralo".
+      // Solo lo que ha tocado y tiene valor: un campo vacío significa "no lo toques",
+      // no "bórralo", y uno sin tocar ya está como estaba.
       const utiles = Object.fromEntries(
-        Object.entries(valores).filter(([k, v]) => k !== "fecha" && String(v).trim() !== ""),
+        Object.entries(valores).filter(([k, v]) =>
+          k !== "fecha" && tocados.current.has(k) && String(v).trim() !== ""),
       );
       const res = await guardar(tipo, fecha, utiles);
+      tocados.current = new Set();
       setValores(res.valores ?? {});
       setOk(true);
       onGuardado();
