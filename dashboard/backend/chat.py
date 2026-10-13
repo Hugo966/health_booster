@@ -119,7 +119,10 @@ HERRAMIENTAS_ESCRITURA = [
             "molestias_zona": {"type": "string", "description": ZONAS_DESC},
             "cafeina_ayer_mg": {"type": "integer", "description": "mg de cafeína de AYER"},
             "cafeina_ayer_hora": {"type": "string", "description": "HH:MM de la última cafeína de ayer"},
-            "alcohol_ayer": {"type": "integer", "description": "0-27, su escala personal"},
+            "alcohol_ayer": {"type": "integer", "description": "Lo que bebió AYER, no hoy "
+                                                               "(el AM pregunta por el día "
+                                                               "anterior). 0-27, su escala "
+                                                               "personal"},
             "notas_am": {"type": "string", "description": "Texto libre, con SUS palabras, no las tuyas"},
         },
         "requeridos": [],
@@ -228,9 +231,16 @@ def _tool_dia(fecha: str) -> dict:
     # luego copia al formulario. Dárselos los dos le haría leer el mismo dolor como dos
     # episodios distintos.
     resumen["formularios"] = {"am": bool(am), "pm": bool(pm)}
+    # `flag` y `nota` van dentro a propósito: son lo que distingue una serie normal de
+    # un ejercicio que no hizo (`no_hecho`), una repe fallada (`fallo`) o un esfuerzo que
+    # no pudo valorar (`sin_intensidad`), y lo único que dice que la plancha fue de 30"+30".
+    # Sin esto, un día en el que se dejó medio entreno le llegaba a Jarvis idéntico a uno
+    # entero, solo que con menos filas.
     sets = [
         {"ejercicio": s.get("ejercicio"), "kg": s.get("kg"), "reps": s.get("reps"),
-         "n_series": s.get("n_series"), "rpe": s.get("rpe")}
+         "n_series": s.get("n_series"), "rpe": s.get("rpe"),
+         **({"nota": s["nota"]} if str(s.get("nota", "")).strip() else {}),
+         **({"marca": s["flag"]} if str(s.get("flag", "")).strip() else {})}
         for s in data.get("entreno_sets", [])
         if str(s.get("fecha")) == fecha and s.get("ejercicio")
     ]

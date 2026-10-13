@@ -340,8 +340,9 @@ def generar() -> str:
         # Cómo FUE la sesión, no solo cuándo. Los agregados (volumen, series) bajan cuando
         # algo se tuerce, pero no dicen por qué, así que Jarvis daba por normal una sesión
         # en la que Hugo falló series o no pudo ni valorar el esfuerzo. Estas dos marcas
-        # vienen del keep: `0x0` -> fallo, `@?`/`RIR?` -> no pudo valorar (dolor, lesión,
-        # prisa). Son lo único que distingue una sesión mala de una sesión corta.
+        # vienen del keep: `peso x0` -> falló la repe, `0x0` o ejercicio sin apuntar ->
+        # no lo hizo, `@?`/`RIR?` -> no pudo valorar (dolor, lesión, prisa). Son lo único
+        # que distingue una sesión mala de una sesión corta.
         marcas = []
         nf, nsi = _num(u.get("n_fallos_total")), _num(u.get("n_sin_intensidad_total"))
         if nf:
@@ -350,6 +351,11 @@ def generar() -> str:
             marcas.append(f"{nsi:g} series sin poder valorar el esfuerzo (@?)")
         if marcas:
             linea += " — " + ", ".join(marcas)
+        # Los ejercicios que no hizo, por su nombre. Si el motivo no está ya en las notas
+        # de ese día (las tienes más abajo), ESO es lo que hay que preguntarle.
+        nohech = str(u.get("no_hechos", "") or "").strip()
+        if nohech:
+            linea += f"\n- Ejercicios que NO hizo ese día: {nohech}"
         partes.append(linea)
 
     # Notas de los formularios AM/PM: texto libre de Hugo (cómo se sintió, lesiones,
