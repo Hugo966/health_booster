@@ -1885,3 +1885,58 @@ Lo que habría que resolver, y hay que decirlo antes de vendérselo:
   y no era eso. Está en `fa1c699` y se queda porque es correcto, pero no resuelve esto.
 - **Dar por hecho que el reconocedor puede quedarse escuchando.** No puede. Es lo que se
   supuso al hacer el modo cascos y es falso.
+
+## 18. Rellenar formularios hablando (2026-10-12, `df9c102`)
+
+Hugo intentó rellenar cuatro AM atrasados desde el móvil: *"no tiene memoria, me corta, no
+se entera ni del clima, le cuesta guardar las cosas, es desesperante"*. **No era un fallo,
+eran cinco**, y dos explican casi todo. Está desplegado y pendiente de que él lo pruebe
+con un formulario de verdad.
+
+### 18.1 El enrutado contestaba SIN VER EL HILO (la gorda)
+`enrutar()` manda a Haiku **el mensaje suelto**, sin una línea de conversación. Si Haiku
+decide que es charla corta devuelve `RESPUESTA:` y el turno se cierra ahí: **Sonnet no se
+entera**. Resultado literal, en mitad de un formulario:
+- *"no tengo memoria de mensajes anteriores. Empieza de cero conmigo"* — **mentira**, el
+  hilo estaba ahí; el enrutado se inventó una limitación que no existe.
+- *"no necesitas repetir como un loro"* — ante "le pongo un uno".
+
+**El atajo solo vale para ABRIR conversación.** `main.py` descarta `ruta["respuesta"]` si
+`memoria.conversacion_caliente(sesion)` (último mensaje hace < 10 min) y se va por el
+camino largo; la muletilla sí se mantiene. Un "hola" en frío sigue saliendo en 0,7 s, que
+es para lo que se hizo el atajo. **Cualquier atajo nuevo que responda sin el hilo tiene
+que pasar por la misma puerta.**
+
+### 18.2 La duplicación del dictado eran REVISIONES, no repeticiones
+`reconstruir()` ya sabía que Android reemite la frase entera y comparaba **prefijos**. Pero
+Android también **corrige la cola**: `…al levantarme 7 estrés` pasó a `…al levantarme 7 es
+3 3`. Ninguno es prefijo del otro → caía en "segmento nuevo" y **concatenaba**, una vez por
+corrección. Así una frase llegó a Jarvis nueve veces.
+
+Ahora mide **cuánto prefijo común comparten** (≈60 % del más corto → misma frase). Y se
+queda con **la última, no con la más larga**: una corrección suele acortar ("ánimo de un
+siete" → "ánimo de un ocho") y quedarse con la larga guardaría el número viejo en un
+formulario de salud. Los casos reales de la transcripción están en `test_voz.cjs`.
+
+### 18.3 Tres menores
+- **Ventana del hilo: 20 → 60 mensajes.** Un AM son ~6 idas y venidas; cuatro días
+  seguidos se comían la ventana entera.
+- **Una sesión por día**: `hugo-YYYY-MM-DD` (`chat.ts`), con fecha **local**, no
+  `toISOString()` (a las 23:30 en Madrid ya diría mañana). El historial se limpia solo al
+  cambiar el día y el día queda entero — lo que pidió. En `jarvis.db` **no se borra nada**.
+  El historial pintado lleva sello de sesión (`jarvis.chat.historial.sesion`) o vería
+  burbujas de ayer sobre un hilo que el backend da por vacío.
+- **Wake lock de pantalla** mientras la voz está encendida, **re-pedido en
+  `visibilitychange`**: el navegador la suelta al cambiar de pestaña y no vuelve sola. Si
+  no está soportada no pasa nada, es opcional por diseño.
+
+### 18.4 "No escucha lo primero que digo": mitigado, NO arreglado
+Se quitaron los 250 ms fijos antes de relanzar el reconocedor (se sumaban al hueco propio
+de Android en cada ciclo, y el hueco es donde muere la primera palabra). El retardo
+sobrevive **solo como freno**: si la sesión muere en menos de 400 ms desde que abrió, se
+espera 600 ms. La causa de raíz sigue siendo **§17**, con su orden de medir primero.
+
+### 18.5 Pendiente de esto
+- Que Hugo rellene un formulario entero hablando. Es el único criterio que importa.
+- **A veces confirma dos veces seguidas** al guardar (bucle de herramientas). Feo, no
+  rompe nada, sin mirar.

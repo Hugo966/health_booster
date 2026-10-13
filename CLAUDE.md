@@ -130,6 +130,20 @@ canal de sincronización, así que:
   desde julio diciendo "entra en offseason" y Jarvis lo afirmaba en septiembre estando en
   Build. La etapa la resuelve `entreno_pipeline.nombre_etapa(plani, bloque)` desde la 4ª
   columna de `PLAN_TAB_RULES`, y llega por el parte de estado.
+- **El atajo del enrutado solo vale para ABRIR conversación.** `enrutar()` manda a Haiku el
+  mensaje **suelto**, sin hilo; si devuelve `RESPUESTA:`, el turno se cierra y Sonnet no
+  llega a verlo. A mitad de un formulario eso produjo "no tengo memoria de mensajes
+  anteriores" (falso: el hilo estaba ahí). `main.py` descarta esa respuesta si
+  `memoria.conversacion_caliente(sesion)`. Cualquier camino rápido nuevo que responda sin
+  ver el hilo tiene que pasar por la misma puerta. Detalle en HANDOFF §18.
+- **En el móvil, el reconocedor no solo repite la frase: la CORRIGE.** `…7 estrés` → `…7 es
+  3 3`. Por eso `reconstruir()` compara prefijo **parcial** (≈60 %) y se queda con **la
+  última versión, no con la más larga**: una corrección suele acortar ("un siete" → "un
+  ocho") y la larga guardaría el número viejo en un formulario de salud.
+- **La sesión del chat lleva la fecha** (`hugo-YYYY-MM-DD`), en hora **local**: el historial
+  se limpia al cambiar de día y el día queda entero. En `jarvis.db` no se borra nada. El
+  historial pintado lleva sello de sesión, o aparecen burbujas de ayer sobre un hilo que el
+  backend da por vacío.
 - **Al tocar `personalidad.py` hay que reiniciar el backend** (`systemctl restart jarvis`
   en la VM): el prompt se lee al importar, no en cada mensaje.
 - **Alturas de panel en px fijos, nunca en %.** `ResponsiveContainer height="100%"` dentro
