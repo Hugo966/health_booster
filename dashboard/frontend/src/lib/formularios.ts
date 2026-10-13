@@ -15,6 +15,9 @@ export type Campo = {
   minimo: number | null;
   maximo: number | null;
   ayuda: string;
+  // Si viene, el campo se pinta como RUEDA con este salto (0,1 kg el peso; 50 mg la
+  // cafeína). Lo decide el backend, igual que los rangos.
+  paso: number | null;
 };
 
 export type Esquema = {
@@ -54,10 +57,17 @@ export async function fetchEstado(dias = 14): Promise<EstadoFormularios> {
   return r.json();
 }
 
-export async function fetchValores(tipo: TipoFormulario, fecha: string): Promise<Valores> {
+/** Lo guardado de ese día + dónde arranca la rueda (el último peso, la última cafeína).
+ *  Las sugerencias van APARTE de los valores a propósito: no están guardadas y no se
+ *  mandan si Hugo no toca la rueda, o darle a Guardar sin pesarse apuntaría el peso de
+ *  la semana pasada como el de hoy. */
+export async function fetchValores(
+  tipo: TipoFormulario, fecha: string,
+): Promise<{ valores: Valores; sugerencias: Valores }> {
   const r = await fetch(`${API_BASE}/formulario/${tipo}?fecha=${fecha}`);
   if (!r.ok) throw new Error("no pude leer ese día");
-  return (await r.json()).valores ?? {};
+  const c = await r.json();
+  return { valores: c.valores ?? {}, sugerencias: c.sugerencias ?? {} };
 }
 
 /** Guarda o corrige. Solo se mandan los campos con valor: lo demás no se toca. */

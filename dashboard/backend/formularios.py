@@ -59,6 +59,11 @@ class Campo:
     minimo: float | None = None
     maximo: float | None = None
     ayuda: str = ""
+    # Salto de la rueda (el selector tipo Zepp). Si está puesto, la UI pinta una rueda
+    # en vez de una caja de texto: no se puede escribir un valor fuera de formato y se
+    # mete de un gesto. Va aquí y no en el frontend por lo mismo que los rangos: la
+    # escala la define el backend, o acaban divergiendo.
+    paso: float | None = None
 
 
 @dataclass
@@ -89,15 +94,15 @@ ESQUEMA: dict[str, Formulario] = {
         Campo("estres", "Estrés", **_UNI),
         Campo("molestias_nivel", "Nivel de molestias", **_UNI),
         Campo("molestias_zona", "Zonas con molestias", "zonas"),
-        Campo("cafeina_ayer_mg", "Cafeína de AYER (mg)", "entero", 0, 2000),
+        Campo("cafeina_ayer_mg", "Cafeína de AYER (mg)", "entero", 0, 2000, paso=50),
         Campo("cafeina_ayer_hora", "Hora de la última cafeína de ayer", "hora", ayuda="HH:MM"),
-        Campo("alcohol_ayer", "Alcohol de ayer", "entero", 0, 27, "0 a 27 · 0 = nada"),
+        Campo("alcohol_ayer", "Alcohol de AYER", "entero", 0, 27, "0 a 27 · 0 = nada · lo de ayer, no lo de hoy"),
         Campo("notas_am", "Notas de la mañana", "texto"),
     ]),
     "pm": Formulario("pm", "wellness_pm", "Formulario PM", [
         Campo("energia", "Energía del día", **_BIP),
         Campo("sensacion_global", "Sensación global del día", **_BIP),
-        Campo("cafeina_hoy_mg", "Cafeína de HOY (mg)", "entero", 0, 2000),
+        Campo("cafeina_hoy_mg", "Cafeína de HOY (mg)", "entero", 0, 2000, paso=50),
         Campo("cafeina_hoy_hora", "Hora de la última cafeína de hoy", "hora", ayuda="HH:MM"),
         # Sin esto no hay carga: sRPE_series no se calcula y la sesión entera se cae fuera.
         Campo("rpd_sesion", "RPE de la sesión", "decimal", 0, 10, "0 a 10 · esfuerzo del entreno"),
@@ -106,7 +111,7 @@ ESQUEMA: dict[str, Formulario] = {
         Campo("notas_pm", "Notas de la tarde", "texto"),
     ]),
     "peso": Formulario("peso", "peso", "Peso", [
-        Campo("peso_kg", "Peso (kg)", "decimal", 30, 300, "en ayunas"),
+        Campo("peso_kg", "Peso (kg)", "decimal", 30, 300, "en ayunas", paso=0.1),
     ]),
 }
 
@@ -249,6 +254,31 @@ def leer(tipo: str, fecha: str) -> dict:
         if str(f.get("fecha", ""))[:10] == fecha:
             encontrada = f
     return {k: v for k, v in encontrada.items() if str(v).strip() != ""}
+
+
+def sugerencias(tipo: str, fecha: str) -> dict:
+    """El último valor conocido de cada campo numérico ANTES de esa fecha.
+
+    Es donde arranca la rueda: Hugo pesa 79,8 y a la semana siguiente 79,9, así que
+    empezar en su último peso le ahorra casi todo el giro.
+
+    NO es un valor guardado ni se guarda solo: la UI lo usa como punto de partida y solo
+    lo manda si él toca la rueda. Si se enviara sin tocarla, darle a Guardar sin pesarse
+    apuntaría el peso de la semana pasada como el de hoy.
+    """
+    if tipo not in ESQUEMA:
+        return {}
+    numericos = [c.nombre for c in ESQUEMA[tipo].campos
+                 if c.tipo in ("entero", "decimal", "hora")]
+    filas = sheets.fetch_all().get(ESQUEMA[tipo].pestana, [])
+    previas = sorted((f for f in filas if str(f.get("fecha", ""))[:10] < fecha),
+                     key=lambda f: str(f.get("fecha", ""))[:10])
+    ultimos: dict = {}
+    for f in previas:                     # en orden: la fila más reciente es la que manda
+        for n in numericos:
+            if str(f.get(n, "")).strip() != "":
+                ultimos[n] = f[n]
+    return ultimos
 
 
 def guardar(tipo: str, fecha: str, valores: dict) -> dict:

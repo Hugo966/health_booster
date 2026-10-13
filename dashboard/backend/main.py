@@ -88,7 +88,11 @@ def formularios_estado(dias: int = 14):
 def formulario_leer(tipo: str, fecha: str):
     if tipo not in formularios.ESQUEMA:
         raise HTTPException(404, f"No existe el formulario '{tipo}'.")
-    return {"tipo": tipo, "fecha": fecha, "valores": formularios.leer(tipo, fecha)}
+    # `sugerencias` NO son valores guardados: es dónde arranca la rueda (el último peso,
+    # la última cafeína). Van aparte justo para que la UI no pueda confundirlas con un
+    # valor puesto y mandarlas sin que Hugo las toque.
+    return {"tipo": tipo, "fecha": fecha, "valores": formularios.leer(tipo, fecha),
+            "sugerencias": formularios.sugerencias(tipo, fecha)}
 
 
 @app.post("/formulario/{tipo}")

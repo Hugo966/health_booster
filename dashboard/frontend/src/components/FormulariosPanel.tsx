@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Panel from "./Panel";
 import { theme } from "../lib/theme";
 import {
@@ -188,8 +188,139 @@ function Zonas({ zonas, valor, onChange }: {
   );
 }
 
-function CampoUI({ campo, zonas, valor, onChange }: {
-  campo: Campo; zonas: string[]; valor: string | number | undefined; onChange: (v: string) => void;
+// Rueda tipo Zepp: una columna que se desliza y se engancha al valor. Dos motivos para
+// que exista, y el segundo pesa más que el primero: no se puede teclear un peso con dos
+// decimales ni una cafeína a ojo (el formato es el que es), y de un gesto se mete el
+// valor sin sacar el teclado del móvil.
+//
+// Va DESPLEGADA solo mientras se usa: abierta siempre, ocupa cinco filas de alto por
+// campo y el formulario se vuelve una tira. El botón enseña lo que vale y nada más.
+const ALTO = 32;       // alto de cada opción, en px
+const VISIBLES = 5;    // cuántas se ven; la de en medio es la elegida
+const VENTANA = 50;    // cuántos pasos se pintan a cada lado del de partida
+
+function Rueda({ campo, valor, sugerencia, onChange }: {
+  campo: Campo; valor: string | number | undefined;
+  sugerencia: string | number | undefined; onChange: (v: string) => void;
+}) {
+  const [abierta, setAbierta] = useState(false);
+  const paso = campo.paso ?? 1;
+  const dec = (String(paso).split(".")[1] ?? "").length;
+  const min = campo.minimo ?? 0;
+  const max = campo.maximo ?? min + 100;
+  const puesto = String(valor ?? "").trim() !== "";
+
+  // De dónde arranca: lo que ya tuviera ese día y, si no hay nada, lo último que
+  // registró (su peso de la semana pasada). Es la diferencia entre girar dos muescas y
+  // girar cincuenta.
+  const partida = Number(puesto ? valor : sugerencia);
+  const total = Math.round((max - min) / paso) + 1;
+  const centro = Number.isFinite(partida)
+    ? Math.min(total - 1, Math.max(0, Math.round((partida - min) / paso)))
+    : Math.round((total - 1) / 2);
+
+  // Solo una ventana alrededor: el peso va de 30 a 300 kg, que a 0,1 son 2701 opciones.
+  // Pintarlas todas es un scroll eterno en el móvil y DOM de sobra para nada; ±5 kg
+  // cubre cualquier pesada real, y la ventana se recoloca al abrirla otro día.
+  const { opciones, desde } = useMemo(() => {
+    const i0 = Math.max(0, centro - VENTANA);
+    const i1 = Math.min(total - 1, centro + VENTANA);
+    return {
+      desde: i0,
+      opciones: Array.from({ length: i1 - i0 + 1 },
+                           (_, k) => +(min + (i0 + k) * paso).toFixed(dec)),
+    };
+    // `centro` solo manda al abrir: si entrara en cada giro, la ventana se movería bajo
+    // el dedo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campo.nombre, total, min, paso, dec, abierta]);
+
+  const caja = useRef<HTMLDivElement>(null);
+  const globo = useRef<HTMLDivElement>(null);
+  const tocada = useRef(false);
+
+  useEffect(() => {
+    // Al abrirla, colocarse en el valor de partida. El scroll programado NO cuenta como
+    // tocar la rueda: si contara, abrirla y darle a Guardar apuntaría la sugerencia como
+    // si fuera la pesada de hoy.
+    tocada.current = false;
+    if (!abierta || !caja.current) return;
+    caja.current.scrollTop = (centro - desde) * ALTO;
+    // Si el campo cae al final del panel, la rueda se abriría medio tapada por el borde
+    // del formulario, que tiene su propio scroll. `nearest` lo corrige y no mueve nada
+    // cuando ya se ve entera.
+    globo.current?.scrollIntoView({ block: "nearest" });
+  }, [abierta, centro, desde]);
+
+  const elegir = (v: number) => onChange(v.toFixed(dec));
+
+  const alScroll = () => {
+    if (!tocada.current || !caja.current) return;
+    const i = Math.round(caja.current.scrollTop / ALTO);
+    const v = opciones[Math.min(opciones.length - 1, Math.max(0, i))];
+    if (v !== undefined) elegir(v);
+  };
+
+  const marcar = () => { tocada.current = true; };
+  const relleno = ((VISIBLES - 1) / 2) * ALTO;
+
+  return (
+    <div className="relative" data-no-expand>
+      <button
+        type="button" onClick={() => setAbierta((a) => !a)}
+        className="jarvis-input flex w-full items-center justify-between text-left"
+      >
+        <span style={{ color: puesto ? theme.text : theme.muted }}>
+          {puesto ? Number(valor).toFixed(dec)
+            : sugerencia !== undefined && sugerencia !== "" ? `— (última vez: ${sugerencia})`
+            : "—"}
+        </span>
+        <span style={{ color: theme.muted }}>{abierta ? "▲" : "▼"}</span>
+      </button>
+      {abierta && (
+        // Encima de lo que haya debajo, no empujándolo: si el formulario se recolocara al
+        // abrirla, el campo saltaría bajo el dedo justo antes de girarlo.
+        <div ref={globo} className="absolute left-0 z-20 mt-1 overflow-hidden rounded"
+             style={{ top: "100%", height: VISIBLES * ALTO, width: 120,
+                      background: "#0b1a24",
+                      border: `1px solid ${theme.accent}`,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+          {/* la banda de la elegida, como en la báscula */}
+          <div className="pointer-events-none absolute inset-x-0 z-10"
+               style={{ top: relleno, height: ALTO, background: "rgba(0,212,255,0.10)",
+                        borderTop: "1px solid rgba(0,212,255,0.35)",
+                        borderBottom: "1px solid rgba(0,212,255,0.35)" }} />
+          <div
+            ref={caja} onScroll={alScroll}
+            onPointerDown={marcar} onWheel={marcar} onKeyDown={marcar} tabIndex={0}
+            className="h-full overflow-y-auto"
+            style={{ scrollSnapType: "y mandatory", paddingTop: relleno,
+                     paddingBottom: relleno, scrollbarWidth: "none" }}
+          >
+            {opciones.map((o) => {
+              const activo = puesto && Number(valor) === o;
+              return (
+                // Pinchable además de deslizable: con el ratón, acertar girando es un
+                // incordio, y el valor que quieres suele estar a la vista.
+                <div key={o} role="button" onClick={() => { marcar(); elegir(o); setAbierta(false); }}
+                     className="flex cursor-pointer items-center justify-center text-[13px]"
+                     style={{ height: ALTO, scrollSnapAlign: "center",
+                              color: activo ? theme.accent : theme.text,
+                              fontWeight: activo ? 700 : 400 }}>
+                  {o.toFixed(dec)}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CampoUI({ campo, zonas, valor, sugerencia, onChange }: {
+  campo: Campo; zonas: string[]; valor: string | number | undefined;
+  sugerencia: string | number | undefined; onChange: (v: string) => void;
 }) {
   const esEscala = campo.tipo === "entero" && campo.minimo !== null
     && campo.maximo !== null && campo.maximo - campo.minimo <= 9;
@@ -201,6 +332,8 @@ function CampoUI({ campo, zonas, valor, onChange }: {
       </span>
       {campo.tipo === "zonas" ? (
         <Zonas zonas={zonas} valor={valor} onChange={onChange} />
+      ) : campo.paso ? (
+        <Rueda campo={campo} valor={valor} sugerencia={sugerencia} onChange={onChange} />
       ) : esEscala ? (
         <Escala campo={campo} valor={valor} onChange={onChange} />
       ) : campo.tipo === "texto" ? (
@@ -209,12 +342,16 @@ function CampoUI({ campo, zonas, valor, onChange }: {
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
+        // Las horas, con el selector del propio móvil: en Android sale la ruleta de
+        // reloj y no hay forma de escribir algo que no sea HH:MM, que es justo lo que
+        // el backend exige. Escribiéndolas a mano, un "23.40" se lo comía el validador.
         <input
           className="jarvis-input w-full"
-          type={campo.tipo === "hora" ? "text" : "number"}
-          inputMode={campo.tipo === "hora" ? "text" : "decimal"}
-          placeholder={campo.tipo === "hora" ? "HH:MM" : ""}
-          step={campo.tipo === "decimal" ? "0.1" : "1"}
+          type={campo.tipo === "hora" ? "time" : "number"}
+          inputMode={campo.tipo === "hora" ? undefined : "decimal"}
+          // Sin `step` en las horas: con step=1 el navegador entiende "un segundo" y
+          // pinta un hueco de segundos (--:--:--) que no se usa para nada.
+          step={campo.tipo === "hora" ? undefined : campo.tipo === "decimal" ? "0.1" : "1"}
           value={String(valor ?? "")}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -227,6 +364,7 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
   tipo: TipoFormulario; esquema: Esquema; fecha: string; onGuardado: () => void;
 }) {
   const [valores, setValores] = useState<Valores>({});
+  const [sugerencias, setSugerencias] = useState<Valores>({});
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,7 +375,7 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
     setCargando(true); setError(null); setOk(false);
     // Precargar lo que ya hay es lo que permite CORREGIR y no solo añadir.
     fetchValores(tipo, fecha)
-      .then((v) => vivo && setValores(v))
+      .then((r) => { if (vivo) { setValores(r.valores); setSugerencias(r.sugerencias); } })
       .catch((e) => vivo && setError(String(e.message ?? e)))
       .finally(() => vivo && setCargando(false));
     return () => { vivo = false; };
@@ -273,7 +411,8 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {esquema[tipo].campos.map((c) => (
           <CampoUI key={c.nombre} campo={c} zonas={esquema.zonas}
-                   valor={valores[c.nombre]} onChange={(v) => cambiar(c.nombre, v)} />
+                   valor={valores[c.nombre]} sugerencia={sugerencias[c.nombre]}
+                   onChange={(v) => cambiar(c.nombre, v)} />
         ))}
       </div>
       <div className="flex items-center gap-3">
