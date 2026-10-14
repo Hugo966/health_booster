@@ -124,8 +124,9 @@ canal de sincronización, así que:
   no los declaran por su cuenta.
 - **El alcohol y la cafeína del AM son del día ANTERIOR**, no del día de la fila: el
   formulario se rellena al levantarse. Jarvis llegó a dar por hecho que `alcohol_ayer`
-  era lo de hoy. Lo dicen ya la etiqueta del campo, el prompt y la descripción de la
-  herramienta `guardar_am`.
+  era lo de hoy. Lo dicen el prompt y la descripción de la herramienta `guardar_am`, no
+  la etiqueta del campo: eso había que enseñárselo a JARVIS, y la etiqueta del alcohol se
+  dejó como estaba porque Hugo ya sabe de qué día es lo que rellena (2026-10-14).
 - **Los campos con `paso` se pintan como RUEDA** (peso 0,1 kg, cafeína 50 mg), y las
   horas usan `<input type="time">`, que en el móvil abre el reloj nativo. La rueda
   ARRANCA en el último valor registrado (`formularios.sugerencias`), pero esa sugerencia

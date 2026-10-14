@@ -96,7 +96,7 @@ ESQUEMA: dict[str, Formulario] = {
         Campo("molestias_zona", "Zonas con molestias", "zonas"),
         Campo("cafeina_ayer_mg", "Cafeína de AYER (mg)", "entero", 0, 2000, paso=50),
         Campo("cafeina_ayer_hora", "Hora de la última cafeína de ayer", "hora", ayuda="HH:MM"),
-        Campo("alcohol_ayer", "Alcohol de AYER", "entero", 0, 27, "0 a 27 · 0 = nada · lo de ayer, no lo de hoy"),
+        Campo("alcohol_ayer", "Alcohol de ayer", "entero", 0, 27, "0 a 27 · 0 = nada"),
         Campo("notas_am", "Notas de la mañana", "texto"),
     ]),
     "pm": Formulario("pm", "wellness_pm", "Formulario PM", [
