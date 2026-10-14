@@ -584,6 +584,18 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 
 ## 6. Cambios de esta sesión
 
+### Sesión 2026-10-14 (la rueda, con el dedo)
+Hugo probó en el móvil lo de ayer y volvió con dos fallos. El primero era un clásico de
+HTML: el campo va dentro de un `<label>`, y el label **reenvía cada clic a su control**,
+o sea al botón que abre la rueda, así que tocar un número la cerraba y la volvía a abrir
+en el mismo dedazo. El segundo escribía datos falsos: el editor precarga lo que ya hay
+guardado y lo reenviaba entero, de forma que abrir "Peso" y darle a Guardar apuntaba el
+peso de la semana pasada como la pesada de hoy. Ahora solo viaja lo que él ha tocado en
+esa visita. Y la etiqueta del alcohol vuelve a ser la de siempre: lo de "es de AYER"
+había que enseñárselo a Jarvis, no a Hugo. **Detalle en §19.8.**
+
+Tocado: `FormulariosPanel.tsx`, `formularios.py`, `CLAUDE.md`, `HANDOFF.md`.
+
 ### Sesión 2026-10-13 (que lo que Hugo escribe signifique lo que significa)
 Seis peticiones suyas de una tacada, todas de lo mismo: el programa entero tiene que ser
 la base de conocimiento de Jarvis. El `0x0` dejó de contar como serie fallada —era un
@@ -1951,6 +1963,8 @@ sobrevive **solo como freno**: si la sesión muere en menos de 400 ms desde que 
 espera 600 ms. La causa de raíz sigue siendo **§17**, con su orden de medir primero.
 
 ### 18.5 Pendiente de esto
+- **Esto se retoma en el OTRO equipo** (decidido el 2026-10-14): es lo único que queda
+  abierto del proyecto, lo demás está cerrado y desplegado.
 - Que Hugo rellene un formulario entero hablando. Es el único criterio que importa.
 - **A veces confirma dos veces seguidas** al guardar (bucle de herramientas). Feo, no
   rompe nada, sin mirar.
@@ -2073,9 +2087,52 @@ daño es silencioso. Un `itertools.combinations` con Jaccard de palabras sobre
 `extract_exercises` saca los candidatos en un minuto.
 
 ### 19.7 Pendiente de esto
-- **Probar la rueda en el móvil con el dedo.** En el ordenador va con la rueda del ratón
-  (y pinchando), que es lo único que se puede probar aquí; el gesto táctil con
-  `scroll-snap` no se simula ni se puede pinchar la pestaña "Peso" desde el navegador
-  headless.
+- ~~Probar la rueda en el móvil con el dedo~~: probado el 2026-10-14, y salieron dos
+  fallos. Ver §19.8.
+- **Hablar con Jarvis de un día con `0x0`** (el 15/09 vale) y ver que dice "no hiciste
+  las elevaciones laterales" en vez de preguntar por una serie fallada. Hugo no pudo
+  probarlo el día 13 y sigue sin probar.
 - `test_entreno.py` (nuevo, en la raíz): `./venv/bin/python test_entreno.py`. Cubre el
   enrutado de Build II, el calentamiento, `0x0` vs `200x0`, las compuestas y los rangos.
+
+### 19.8 Lo que falló al probarlo con el dedo (2026-10-14)
+**El `<label>` reabría la rueda.** `CampoUI` envuelve cada campo en un `<label>`, y un
+clic en cualquier sitio de dentro activa el control del label —aquí, el botón que abre y
+cierra la rueda—. Tocar una opción hacía `setAbierta(false)` y acto seguido el label lo
+volvía a abrir: desde fuera, el toque "no hacía nada". Se corta con un
+`onClick={e => e.preventDefault()}` en el globo de la rueda. Es la clase de fallo que no
+se ve leyendo el componente, porque el culpable está dos niveles más arriba.
+
+**Deslizar NO cierra, el toque sí.** Primero se cerró sola medio segundo después de parar
+de girar; Hugo lo rechazó: pararse a mirar es parte de elegir. El criterio es suyo —
+*"tiene que ser después de realizar un toque seco sobre esa opción"*.
+
+**Guardar sin tocar nada guardaba.** El editor precarga el día para poder CORREGIR, y
+mandaba todo lo precargado. En el formulario de peso eso convierte un Guardar de más en
+una pesada que nadie se hizo. Ahora `Editor` lleva un `tocados` (los campos editados en
+esa visita) y solo manda esos; si no hay ninguno, el backend contesta "No has mandado
+ningún campo con valor". **Corolario que importa**: si su peso no ha cambiado, tiene que
+TOCAR el número igualmente —un toque sobre el valor ya centrado vale—, porque es la única
+forma de distinguir "peso 79,8 otra vez" de "no me he pesado".
+
+**Lo del alcohol era para Jarvis, no para él.** La etiqueta "Alcohol de AYER · lo de
+ayer, no lo de hoy" se revirtió a "Alcohol de ayer · 0 a 27 · 0 = nada". Lo de ayer/hoy
+vive en el prompt y en la descripción de `guardar_am`, que es donde hacía falta.
+
+**El reloj de Android sale cortado** (le falta la mitad de "Establecer"): es el diálogo
+nativo, no la página. Comprobado que a 412 px de viewport el contenido mide 412 px, sin
+desbordamiento horizontal. Si algún día molesta, la salida es pintar las horas con la
+misma rueda (columna de horas + columna de minutos) y dejar de usar `<input type="time">`.
+
+**Mientras se probaba, el guardado machacó el peso real de Hugo** (79,8 → 80,1) porque la
+prueba pulsaba Guardar de verdad. Se restauró. Para probar el guardado **se intercepta el
+`fetch`** del POST desde el propio navegador y se mira el cuerpo que iba a salir; así no
+se escribe en la hoja. Está en el guion de prueba de la sesión, y es la forma de hacerlo.
+
+**Dos decisiones que cerró Hugo ese día.**
+- *Volumen de un unilateral*: se cuenta **un solo lado** (las repes se promedian, `7-8` →
+  7,5). Contar los dos no es más generoso, es falso. No se toca.
+- *Reparsear el keep entero cada hora*: se queda. Medido: parsear las 806 líneas cuesta
+  0,07 s y bajar el plan de Drive 58,5 s. Lo caro es Google, no el parser, y reescribir de
+  cero es lo que permite que Hugo apunte sucio y limpie dos días después. Si alguna vez
+  molestan esos 58 s, se toca la lectura del plan (`values_batch_get`), no el parser.

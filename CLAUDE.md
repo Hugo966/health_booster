@@ -76,7 +76,10 @@ canal de sincronización, así que:
   **series** (2) y los tramos separados por guion son el trabajo dentro de cada una
   (30 s + descanso + 30 s), no series sueltas; pueden ser más de dos
   (`2x30"-30"-30"-20"`). Los separa del caso normal que **entre series hay espacio y
-  aquí no** (`2x7x10RIR0 - 6x10RIR0` son dos series; `2x7-8x10RIR0` es una). Las
+  aquí no** (`2x7x10RIR0 - 6x10RIR0` son dos series; `2x7-8x10RIR0` es una). En un unilateral (`2x10x7-8RIR0`) las repes se
+  promedian (7,5) y el volumen es el de UN LADO: contar los dos lados no sería más
+  generoso, sería falso, porque la serie que hace cada brazo es la que se promedió.
+  Decidido el 2026-10-14. Las
   duraciones van a la columna `nota` (`30"+30" = 60s`), no a una columna propia: se
   quieren para leerlas, no para graficarlas. Antes se perdían enteras.
 - **La clave del lookup lleva el PLAN, no solo el bloque, y no es opcional.** Indexando
@@ -111,6 +114,15 @@ canal de sincronización, así que:
   saltó le metía 30 puntos de carga. Son la única señal automática de que una sesión se
   torció, y se agregan por sesión en `n_fallos_total` / `n_sin_intensidad_total` /
   `no_hechos` (esta última con los NOMBRES, que es lo que Jarvis necesita decir).
+- **El pipeline reparsea el keep ENTERO cada hora, y está bien así.** Medido el
+  2026-10-14: parsear las 806 líneas (1119 series) cuesta **0,07 s**; bajar el keep, 1,5 s;
+  y bajar el plan —27 pestañas, una petición cada una— **58,5 s**. Lo caro es hablar con
+  Google, no parsear, así que un parseo incremental ahorraría centésimas a cambio de
+  llevar estado de qué sesión cambió. Y reescribir las pestañas de cero es justo lo que
+  hace que Hugo pueda apuntar el entreno sucio y limpiarlo dos días después: a la hora
+  siguiente queda como él lo dejó, sin series fantasma ni PRs inventados. Si algún día
+  molestan esos 58 s, lo que hay que tocar es la lectura del plan (`values_batch_get`, una
+  petición en vez de 27), no el parser.
 - **Intervals llega con retraso, a veces de días, y NO es un fallo.** Si la API devuelve
   filas con los campos a `None`, es que el reloj aún no ha subido; el campo `updated` dice
   cuándo llegó de verdad. Reejecutar el pipeline más tarde lo alinea. No diagnostiques
