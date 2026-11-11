@@ -255,11 +255,18 @@ def _key(name):
 # clave normalizada -> nombre canónico para mostrar.
 #
 # Solo fusiona ABREVIATURAS del mismo ejercicio. "Sq low bar" es literalmente
-# "Sentadilla LB" (low bar). Lo que NO se fusiona nunca son variantes distintas:
+# "Sentadilla low bar". Lo que NO se fusiona nunca son variantes distintas:
 # Banca comp / Banca 3ct / Banca mid grip, o Sq high bar / Sq high bar pausa 2ct.
 ALIAS = {
     'comp bp':                             'Banca comp',
-    'sq low bar':                          'Sentadilla LB',
+    # Low bar SIN tacón, los tres nombres. El entrenador le puso un tacón de 2 cm en
+    # septiembre por un dolor de pie y se lo quitó en Build II S6 al quitarse el dolor:
+    # al quitárselo no empieza un ejercicio nuevo, VUELVE al de junio-julio, que estaba
+    # apuntado como 'Sentadilla LB' y llega a 170 kg. Sin esto su sentadilla nacía el
+    # 10/11 en 125 kg y la progresión se medía contra un suelo falso. Confirmado por Hugo
+    # el 2026-11-11. El del tacón NO entra aquí: ese sí es otro movimiento.
+    'sq low bar':                          'Sentadilla low bar',
+    'sentadilla lb':                       'Sentadilla low bar',
     # Los dos nombres del sumo van al que usa el plan HOY; si se quedara 'Sumo dl', el
     # mismo básico tendría dos históricos (Peaking/Volumen por un lado, Build II por otro).
     'dl sumo':                             'Peso muerto sumo',

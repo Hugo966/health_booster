@@ -68,6 +68,15 @@ canal de sincronización, así que:
   (ignora tildes, mayúsculas y espacios de más). **Al dar de alta una etapa nueva, pasar
   un barrido de parecidos por los nombres del plan** y preguntarle a Hugo los dudosos:
   adivinar es caro en las dos direcciones.
+  Segundo caso, el 2026-11-11 y en la misma sentadilla: el entrenador le puso un **tacón
+  de 2 cm** en septiembre por un dolor de pie y se lo quitó en Build II S6. Quitarlo NO
+  es un ejercicio nuevo, es **volver** al de junio-julio, que estaba apuntado como
+  `Sentadilla LB` con un máximo de 170 kg; sin fusionarlos, su sentadilla nacía el 10/11
+  en 125 kg y la progresión de vuelta se medía contra un suelo falso. `Sentadilla LB` y
+  `sq low bar` apuntan ya a `Sentadilla low bar`, que es como lo escribe el plan HOY (el
+  mismo criterio que el sumo). **El del tacón sigue aparte**: ese sí era otro movimiento.
+  La pista que lo destapó fue el panorama: dos nombres casi iguales, uno con cinco
+  semanas de histórico y el otro con una sola.
 - **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
   **(plani, bloque)**, y el número capturado es la semana. Hugo **reinicia la numeración
