@@ -67,6 +67,12 @@ genérica. Si no le convence **se apaga vaciando `GROQ_MODELO`**, sin tocar cód
 Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya**.
 El porqué de cada decisión, al final de §16.
 
+### LO SIGUIENTE (2026-11-11): medir el VAD en el coche
+Lo único que queda abierto de la sesión del 11/11 y **lo tiene que hacer Hugo**: entrar con
+`?vozdebug=1`, pedirle algo largo en marcha, callarse y copiar la traza. `TECHO_HABLANDO`
+está puesto a 0.10 **de estimación**, no de medida. Los pasos exactos y qué hacer con los
+números están en **§13, "El coche (2026-11-11)"**. Apagar después con el botón `apagar`.
+
 ### LO SIGUIENTE: la voz del móvil sigue perdiendo palabras (§17)
 **No está resuelto y hay una pista nueva que cambia el diagnóstico.** Hugo dice que suena
 "turum, turum" todo el rato: es el pitido de Android al abrir y cerrar su reconocedor, o
@@ -583,6 +589,46 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-11-11 (que lo que dice cuadre con lo que ves, y que el coche no le calle)
+Sesión larga, nueve bloques, todo desplegado. El hilo común: **números que nadie podía ver
+que estaban mal**, porque ninguno daba error.
+
+- **La cafeína se preguntaba dos veces** (AM y PM) y era rellenar lo mismo cada día. Pasa a
+  apuntarse solo en el PM, el día que se toma; `cafeina_ayer_mg` de `derived_diario` se
+  calcula desplazando por FECHA NATURAL, no con `shift(1)`. La hora, que se guardaba y
+  moría ahí, ya viaja. **Y cafeína no es café**: Hugo toma pastillas, y el prompt le decía
+  a Jarvis que le hablara de tazas.
+- **Las pestañas del plan se enrutan solas.** Etapa desconocida = bloque siguiente del plan
+  en curso (acierta en las cinco del histórico), con dos frenos: acabar en número y traer
+  `Sesión N` en la columna A. Si no acaba en número **no se adivina: lo pregunta Jarvis** y
+  se contesta por chat o desde el panel con tres ruedas. Ver §19 y CLAUDE.md.
+- **Se puede BORRAR un dato de un formulario.** "Vacío" y "bórralo" viajan por separado;
+  hacía falta porque mete el RPE de días que no entrenó y un 0 es un entreno que fue fatal.
+- **El nombre del usuario sale del `.env`** (`JARVIS_USUARIO`), no del prompt, y en el
+  código se habla de "el usuario". Hugo sigue siendo el autor; la app tiene que poder
+  adoptarla cualquiera.
+- **Jarvis sabe la HORA y cuánto hace que no hablas con él.** Las dos cosas faltaban y
+  juntas le hicieron despedir a Hugo a las 7:10 con un "corre que llegas tarde al alemán".
+- **El tiempo**, por Open-Meteo, con la ubicación que **pregunta la app** (dirección,
+  ciudad o código postal) y se cambia desde el ⚙. Probado por él: metió su código postal y
+  resolvió.
+- **Jarvis veía MENOS que los paneles.** Carga y peso daban números que le contradecían en
+  pantalla. Ahora lleva los dos anclajes de la carga y las cuatro ventanas de ritmo, y
+  `refrescar` trae el panorama entero (~460 tokens) cuando algo no cuadra.
+- **La batería de nombres de los básicos**, y el fallo gordo que destapó: `ejercicio`
+  buscaba por subcadena y mezclaba las tres bancas en un "mejor e1RM" de 106 kg que no era
+  de ningún ejercicio.
+- **El VAD en el coche** (§13, "El coche"). Tres defectos verificados, test nuevo
+  (`test_vad.cjs`) y **medición pendiente, que la tiene que hacer él**.
+
+Tocado: `formularios.py`, `status_pipeline.py`, `entreno_pipeline.py`, `chat.py`,
+`briefing.py`, `personalidad.py`, `memoria.py`, `huecos.py`, `main.py`, `sheets.py`,
+`rapido.py`, y nuevos `plan_pestanas.py`, `meteo.py`, `ajustes.py`, `panorama.py`,
+`vocabulario.py`; en el front `FormulariosPanel.tsx`, `App.tsx`, `TrazaVoz.tsx`, `vad.ts`,
+`voz.ts` y nuevos `Ubicacion.tsx`, `Ajustes.tsx`. Tests nuevos: `test_cafeina.py`,
+`test_formularios.py`, `test_memoria.py`, `test_panorama.py`, `test_vocabulario.py`,
+`test_vad.cjs`. Dos pestañas nuevas en la hoja: `plan_pestanas` y `ajustes`.
 
 ### Sesión 2026-10-14 (la rueda, con el dedo)
 Hugo probó en el móvil lo de ayer y volvió con dos fallos. El primero era un clásico de

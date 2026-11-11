@@ -114,7 +114,47 @@ speaking and typing are the same conversation.
 
 Cost is roughly **$6–12/month** on pay-as-you-go — about two cents per spoken reply.
 
+### Bugs that return a number instead of an error
+
+The failures worth writing down here are the ones that never throw. They come back as a
+plausible figure, and the only way to catch them is to ask where the figure came from.
+
+- **A best bench press of 106 kg that belonged to no exercise.** Looking up a lift matched
+  by substring, so "banca" swept competition bench, larssen and a complex into one pile and
+  reported the maximum across all three. Variants are now answered one at a time, with the
+  siblings listed separately.
+- **A squat that restarted at 125 kg.** The coach put a 2 cm heel wedge under it for an
+  injury and removed it months later, spelling the lift differently on the way back. Same
+  movement, new name, so the panel drew a line starting from scratch — 3 sets instead of 24,
+  and a personal best of 125 kg instead of 170. Merging exercise names is dangerous in the
+  other direction too, so the alias table is exact and earned by hand; the wedge version is
+  still kept separate, because that one really was a different lift.
+- **Two different "7-day load" numbers, both correct.** The dashboard closes the window on
+  the last session, the assistant closed it on today, so after a rest week one said 622 and
+  the other 385. Neither was wrong. The assistant now carries both and has to say which is
+  which, because agreeing with whoever is holding the screen is not an answer.
+- **A voice detector that could not be cut off, or could not stop cutting off.** Used in a
+  car at 100 km/h it interrupted itself constantly. The noise floor was being erased on
+  every sentence, so the threshold never adapted no matter how long you waited, and
+  "sustained 220 ms" allowed 250 ms gaps, which fluctuating road noise satisfies trivially.
+  Simulated on a car-shaped signal: one false cut before, none after. Fixing the floor then
+  pushed the threshold to 0.2-0.3 against a measured voice of 0.04-0.08 — trading one
+  failure for its opposite — so it is capped. The thresholds have a test now, which they
+  never had, including one that pins a limitation rather than hiding it: a hard breath near
+  the microphone does cross the quiet-room threshold. The detector measures energy, not
+  timbre.
+
 ### Also worth a look
+
+- **Light by default, complete on demand.** The state briefing is rebuilt on every message,
+  so it stays short; a `refrescar` tool drops the cache and returns everything the panels
+  show — strength by block, the load series, sleep efficiency, the correlation matrix — for
+  about 460 tokens, paid only when a number is disputed.
+- **It knows what time it is.** The prompt carried the date but not the hour, and the
+  conversation arrived with no timestamps, so "I have work now, German this afternoon"
+  turned into being sent to German five minutes later. Messages are stamped, and it also
+  knows how long since you last spoke: the thread is daily, so without that, coming back
+  after lunch and after a week looked identical.
 
 - **Tool calls split by who can run them.** Read tools (query a day, a lift) execute on the
   server; UI tools (open a panel, highlight) are returned to the browser as a list of
