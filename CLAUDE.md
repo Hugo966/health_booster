@@ -182,7 +182,7 @@ canal de sincronización, así que:
   sigue existiendo pero ya es DERIVADA**: `status_pipeline.cafeina_de_ayer()` desplaza la
   del PM un día. Desplaza por **fecha natural, no con `shift(1)`**, porque
   `derived_diario` solo tiene los días con datos y un hueco de dos días le colgaría el
-  café del martes a la noche del jueves (`hrv_ayer` y `sueno_horas_ayer` sí arrastran ese
+  cafeína del martes a la noche del jueves (`hrv_ayer` y `sueno_horas_ayer` sí arrastran ese
   defecto, sin arreglar). La columna del AM se queda en la hoja y hace de respaldo donde
   no hay PM del día anterior, que es todo el histórico. Si se borrara sin reponerla, el
   par "Cafeína ayer × sueño" del panel de Correlaciones se iría degradando a "n insuf"

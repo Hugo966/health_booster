@@ -399,7 +399,7 @@ def cafeina_de_ayer(df):
     columna que el panel de Correlaciones cruza con el sueño se calcula aquí en vez de
     preguntarse. Se desplaza por FECHA NATURAL y no con `shift(1)` como `hrv_ayer`:
     `derived_diario` solo tiene los días con datos, y un hueco de dos días le colgaría el
-    café del martes a la noche del jueves. Donde no hay PM del día anterior manda el
+    cafeína del martes a la noche del jueves. Donde no hay PM del día anterior manda el
     histórico del formulario AM, que es donde se preguntaba hasta esa fecha.
     """
     if "cafeina_hoy_mg" not in df:

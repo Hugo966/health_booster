@@ -233,7 +233,7 @@ def generar() -> str:
 
     # Cafeína: va pegada al sueño a propósito. Se apunta el día que se la toma (PM), así
     # que el sello de fecha de `_linea` —"(ayer)"— es lo que deja ver sin explicar nada
-    # que el café de ayer es el que le tocó la noche. Y la HORA pesa más que los mg: 300
+    # que la cafeína de ayer es la que le tocó la noche. Y la HORA pesa más que los mg: 300
     # a las nueve de la mañana no es lo mismo que 300 a las siete de la tarde. Si no hay
     # número apuntado no se pinta la línea, para no ensuciar el parte con un "sin datos"
     # de algo que él no persigue.
