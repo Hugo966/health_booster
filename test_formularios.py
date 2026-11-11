@@ -68,10 +68,14 @@ f.guardar("pm", "2026-11-10", {"energia": 5}, borrar=["rpd_sesion"])
 assert hoja.escrito == {"B2": 5, "D2": ""}, hoja.escrito
 
 # --- un campo no puede venir en los dos sitios -------------------------------
-# Gana el borrado: si pidió quitarlo, quitarlo es lo que quiere.
+# Gana el borrado: si pidió quitarlo, quitarlo es lo que quiere. Pero entonces NO se puede
+# devolver que se guardó su valor: eso le hizo a Jarvis jurar que el RPE del 10/11 estaba
+# puesto mientras la celda quedaba vacía y el panel lo reclamaba (2026-11-11).
 hoja = montar({"rpd_sesion": 7})
-f.guardar("pm", "2026-11-10", {"rpd_sesion": 9}, borrar=["rpd_sesion"])
+res = f.guardar("pm", "2026-11-10", {"rpd_sesion": 9}, borrar=["rpd_sesion"])
 assert hoja.escrito == {"D2": ""}, hoja.escrito
+assert "rpd_sesion" not in res["guardado"], res["guardado"]
+assert any("rpd_sesion" in a for a in res["avisos"]), res["avisos"]
 
 # --- borrar un campo que no existe es un error, no un silencio ---------------
 hoja = montar({})
@@ -96,5 +100,37 @@ assert hoja.escrito == {}
 hoja = montar({})
 f.guardar("pm", "2026-11-09", {}, borrar=["rpd_sesion"])
 assert hoja.escrito == {} and len(hoja.filas) == 1, (hoja.escrito, hoja.filas)
+
+# --- lo que ve JARVIS de un campo borrado ------------------------------------
+# Vive aquí y no en un fichero aparte porque es la otra mitad del borrado: no basta con
+# vaciar la celda si la herramienta que lee el día sigue cantando el valor viejo.
+# `derived_diario` solo lo regenera el pipeline (cada hora), así que justo después de
+# borrar algo el derivado está caducado. El 2026-11-11 eso hizo que `dia` contestara
+# rpd_sesion 7 del día 10 con la celda ya vacía: Jarvis le discutía al panel un dato que
+# el propio usuario acababa de quitar.
+import chat  # noqa: E402
+
+chat.fetch_all = lambda *a, **kw: {
+    # el derivado, con el valor de antes del borrado
+    "derived_diario": [{"fecha": "2026-11-10", "rpd_sesion": 7, "readiness": 71,
+                        "energia": 8}],
+    "wellness_am": [],
+    # el origen, ya vaciado por el borrado de arriba
+    "wellness_pm": [{"fecha": "2026-11-10", "energia": 8, "sensacion_global": 7,
+                     "rpd_sesion": ""}],
+    "peso": [],
+    "entreno_sets": [],
+}
+d = chat._tool_dia("2026-11-10")["datos"]
+assert "rpd_sesion" not in d, d          # vaciado: el derivado NO puede resucitarlo
+assert d["energia"] == 8, d              # y lo que sí está sigue estando
+
+# Sin fila de PM ese día no se afirma nada: el derivado es lo único que hay y se respeta.
+chat.fetch_all = lambda *a, **kw: {
+    "derived_diario": [{"fecha": "2026-11-10", "rpd_sesion": 7}],
+    "wellness_am": [{"fecha": "2026-11-10", "sueno_calidad": 6}],
+    "wellness_pm": [], "peso": [], "entreno_sets": [],
+}
+assert chat._tool_dia("2026-11-10")["datos"]["rpd_sesion"] == 7
 
 print("OK")

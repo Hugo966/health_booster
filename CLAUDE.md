@@ -88,6 +88,27 @@ canal de sincronización, así que:
   subcadena y metía en el mismo saco todo lo que coincidía: preguntar por "banca" daba
   un "mejor e1RM" de 106 kg salido de juntar comp + larssen + complex, que no es de
   ningún ejercicio. Ahora contesta por UNA y lista las demás en `otras_variantes`.
+- **Su peso muerto es el SUMO** (dicho por él, 2026-11-11): es con el que compite, así que
+  "peso muerto", "muerto", "deadlift", "dl" y "pm" resuelven al sumo, y el convencional
+  hay que pedirlo por su nombre. No estaba en ninguna lista de `vocabulario.BASICOS` y
+  caía en la subcadena, que ordena por longitud y contestaba por `Peso muerto comp`
+  —otro ejercicio—, así que preguntar por su básico no lo encontraba ni como variante.
+  Va en los DOS sitios: `vocabulario.BASICOS` para la búsqueda y `PERSONAJE` para que no
+  lo suponga al hablar, que es de donde salía el "tu convencional".
+- **El origen manda sobre lo derivado también cuando está VACÍO** (`chat._tool_dia`,
+  2026-11-11). `derived_diario` solo lo regenera el pipeline (cada hora), así que justo
+  después de borrar un dato el derivado está caducado. Pisando el derivado solo cuando el
+  origen trae valor, un campo recién vaciado conservaba el viejo: se borró el `rpd_sesion`
+  del 10/11 y `dia` seguía contestando 7, o sea que Jarvis le discutía al panel —que leía
+  bien la pestaña origen— un dato que él mismo acababa de quitar, y daba el borrado por no
+  hecho. Ahora, **si existe fila de ese formulario**, el origen decide también la ausencia;
+  sin fila no se afirma nada (de qué formulario es cada campo lo dice `ESQUEMA`). Mismo
+  patrón que "vacío ≠ bórralo": una ausencia tiene que poder ganar.
+- **Si un campo llega en `valores` y en `borrar` a la vez, gana el borrado pero hay que
+  DECIRLO.** `formularios.guardar` quitaba el valor de la celda y seguía devolviéndolo en
+  `guardado`/`asi_queda`, así que Jarvis daba por puesto un número que acababa de
+  vaciarse. Ahora sale del informe y se avisa. Es la misma familia de fallo que el resto
+  del 11/11: **devolver un número en vez de un error**.
 - **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
   **(plani, bloque)**, y el número capturado es la semana. Hugo **reinicia la numeración

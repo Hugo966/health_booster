@@ -316,15 +316,28 @@ def _tool_dia(fecha: str) -> dict:
                 "energia", "molestias_nivel", "rpd_sesion", "volumen_total", "n_series_total"]
     resumen = {k: fila[k] for k in interesa if fila.get(k) not in ("", None)}
 
-    # El origen manda sobre lo derivado: es lo que el usuario acaba de escribir.
+    # El origen manda sobre lo derivado: es lo que el usuario acaba de escribir. Y manda
+    # TAMBIÉN CUANDO ESTÁ VACÍO, que es lo que faltaba: pisando solo cuando trae valor, un
+    # campo que el usuario acaba de borrar conservaba el valor viejo del derivado, porque
+    # `derived_diario` solo lo regenera el pipeline (cada hora). Pasó el 2026-11-11: borró
+    # el RPE del día 10 y `dia` seguía contestando 7, así que Jarvis le discutía al panel
+    # un dato que él mismo acababa de quitar — y encima daba el borrado por no hecho.
+    # De qué formulario es cada campo lo dice el ESQUEMA: si de ese día solo hay fila de
+    # AM, el PM no afirma nada y no se toca.
     del_origen = ["sueno_calidad", "sensacion_am", "animo", "estres", "molestias_nivel",
                   "molestias_zona", "alcohol_ayer", "notas_am",
                   "energia", "sensacion_global", "cafeina_hoy_mg", "cafeina_hoy_hora", "rpd_sesion",
                   "dolor_sesion_zona", "dolor_sesion_nota", "notas_pm"]
-    for origen in (am, pm):
+    for tipo, origen in (("am", am), ("pm", pm)):
+        if not origen:
+            continue        # sin fila de ese formulario no hay nada que afirmar
         for k in del_origen:
+            if formularios.ESQUEMA[tipo].campo(k) is None:
+                continue    # ese campo es del otro formulario
             if origen.get(k) not in ("", None):
                 resumen[k] = origen[k]
+            else:
+                resumen.pop(k, None)
     if peso.get("peso_kg") not in ("", None):
         resumen["peso_kg"] = peso["peso_kg"]
     # `dolor_sesion_keep` NO se incluye nunca: es el borrador que el usuario escribe en el keep y

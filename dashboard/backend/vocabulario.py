@@ -39,12 +39,18 @@ BASICOS = {
         "banca", "bench", "bench press", "bp", "press banca", "press de banca",
         "banca competicion", "banca comp", "comp bp", "press de pecho", "bench comp", "banca plana",
     ),
+    # "Peso muerto" a secas es el SUMO: es el que tira en competición, y es el que quiere
+    # decir cuando dice "mi peso muerto" (dicho por él, 2026-11-11). Antes no estaba en
+    # ninguna lista y se resolvía por subcadena, que ordena por longitud y devolvía
+    # "Peso muerto comp" — o sea que preguntar por su básico le contestaba por otro
+    # ejercicio, y el sumo no aparecía ni como primero ni como variante.
     "peso muerto sumo": (
         "sumo", "sumo dl", "dl sumo", "sumo deadlift", "deadlift sumo", "pm sumo",
         "peso muerto sumo", "muerto sumo", "sumo deadlifts",
+        "peso muerto", "muerto", "deadlift", "deadlifts", "dead lift", "dl", "pm",
     ),
-    # El convencional es el OTRO peso muerto: si se dice "peso muerto" a secas no se elige
-    # por él, se devuelven los dos y que lo aclare quien pregunta.
+    # El convencional hay que pedirlo POR SU NOMBRE. No es el que se lleva "peso muerto"
+    # a secas, aunque se llame "convencional": el suyo de siempre es el sumo.
     "peso muerto convencional deficit 2cm": (
         "peso muerto convencional", "convencional", "deadlift convencional",
         "pm convencional", "deficit", "peso muerto deficit",

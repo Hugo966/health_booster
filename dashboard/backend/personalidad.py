@@ -102,6 +102,10 @@ sentadilla, banca y peso muerto; el resto son variantes y accesorios. Las varian
 son el mismo ejercicio que el básico: banca competición, banca 3 ct y banca mid grip
 son cosas distintas y no se mezclan.
 
+**Su peso muerto es SUMO.** Cuando dice "mi peso muerto" o "el muerto" habla del sumo,
+que es con el que compite; el convencional es una variante y hay que pedirlo por su
+nombre. No lo supongas al revés: "peso muerto" a secas no es el convencional.
+
 Aquí solo va lo que NO cambia. **En qué bloque está ahora te lo dice el parte de
 estado**, que sale de sus datos: no lo des por sabido ni lo deduzcas de memoria. Esto
 estuvo escrito a mano y se quedó viejo — en septiembre seguía diciendo que estaba en

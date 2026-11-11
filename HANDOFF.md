@@ -68,7 +68,8 @@ Ojo: la clave va en el `.env`, que NO viaja por git — **la VM necesita la suya
 El porqué de cada decisión, al final de §16.
 
 ### LO SIGUIENTE (2026-11-11): medir el VAD en el coche
-Lo único que queda abierto de la sesión del 11/11 y **lo tiene que hacer Hugo**: entrar con
+Queda abierto de la sesión del 11/11 —con el `rpd_sesion` del 10/11, que sigue vacío en
+`wellness_pm` y hay que volver a meter (§6, 2ª parte)— y **lo tiene que hacer Hugo**: entrar con
 `?vozdebug=1`, pedirle algo largo en marcha, callarse y copiar la traza. `TECHO_HABLANDO`
 está puesto a 0.10 **de estimación**, no de medida. Los pasos exactos y qué hacer con los
 números están en **§13, "El coche (2026-11-11)"**. Apagar después con el botón `apagar`.
@@ -589,6 +590,36 @@ zoom FLIP al ampliar panel, hash-routing (`/#fuerza` compartible y persistente).
 - `lib/stats.ts` — `mean`, percentiles, etc. `lib/goal.ts` — objetivo de peso en localStorage.
 
 ## 6. Cambios de esta sesión
+
+### Sesión 2026-11-11, 2ª parte (probándolo él, en el otro equipo)
+Hugo probó por la noche lo que había salido por la mañana (la lista de §0). **Cuadra casi
+todo**: le llama por su nombre, clava la hora y el tiempo, la carga y el peso ya no
+contradicen a los paneles, los básicos salen por su nombre sin mezclar variantes, la
+cafeína ya no se pregunta dos veces y un dato se puede borrar. Salieron dos cosas:
+
+- **Su peso muerto es el SUMO**, y ni el vocabulario ni el prompt lo sabían. "Peso muerto"
+  a secas no estaba en `BASICOS`, caía en la subcadena —que ordena por longitud— y
+  contestaba por `Peso muerto comp`, que es otro ejercicio; el sumo no aparecía ni como
+  variante. Arreglado en `vocabulario.BASICOS` (+ "muerto", "deadlift", "dl", "pm") y en
+  `PERSONAJE`, porque la suposición de que "peso muerto" es el convencional la hacía el
+  modelo al hablar, no solo la búsqueda.
+- **Borró el RPE del 10/11, pidió volver a ponerlo y no apareció**, mientras Jarvis juraba
+  que en la fuente sí estaba. Jarvis mentía y el panel tenía razón. Dos fallos encadenados,
+  los dos de la misma familia del resto del día (**devolver un número en vez de un error**):
+  1. `chat._tool_dia` arranca de `derived_diario` y dejaba que el origen lo pisara **solo
+     si traía valor**. El derivado lo regenera el pipeline cada hora, así que llevaba
+     todavía el 7 de antes del borrado y la celda vacía no podía ganarle: `dia("2026-11-10")`
+     devolvía `rpd_sesion: 7` con la celda vacía (reproducido contra la hoja real). Ahora,
+     si hay fila de ese formulario, el origen decide también la ausencia.
+  2. `formularios.guardar`, con un campo en `valores` Y en `borrar`, vacía la celda —eso es
+     deliberado y tiene test— pero seguía devolviéndolo en `asi_queda`. Ahora no, y lo
+     avisa. Era suficiente para que Jarvis diera el RPE por puesto sin haberlo escrito.
+
+**Pendiente**: el `rpd_sesion` del 10/11 **sigue vacío** en `wellness_pm` (el derivado dice
+que era 7, sRPE 119); hay que volver a meterlo, y hasta la siguiente pasada del pipeline
+`derived_diario` seguirá enseñando el viejo. Y la medición del VAD en el coche, que no se ha
+hecho. Tests: `test_formularios.py` cubre ya lo que ve Jarvis de un campo borrado, y
+`test_vocabulario.py` el peso muerto.
 
 ### Sesión 2026-11-11 (que lo que dice cuadre con lo que ves, y que el coche no le calle)
 Sesión larga, nueve bloques, todo desplegado. El hilo común: **números que nadie podía ver

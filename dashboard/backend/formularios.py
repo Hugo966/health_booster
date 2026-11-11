@@ -315,6 +315,7 @@ def guardar(tipo: str, fecha: str, valores: dict, borrar=()) -> dict:
                          else "No has mandado ningún campo con valor.")
 
     coincidencias: list[int] = []
+    pisados: list[str] = []
     with _lock:
         ws = _hoja(tipo)
         cabeceras = ws.row_values(1)
@@ -350,6 +351,15 @@ def guardar(tipo: str, fecha: str, valores: dict, borrar=()) -> dict:
         if fila_idx is not None:
             crudos = crudos | {n: "" for n in a_vaciar}
             calculados = {n: v for n, v in calculados.items() if n not in a_vaciar}
+            # Un campo que llega en `valores` Y en `borrar`: gana el borrado (si pidió
+            # quitarlo, quitarlo es lo que quiere), pero entonces NO se puede devolver que
+            # se guardó su valor. Decirlo igual era una mentira con mucho aplomo: la celda
+            # quedaba vacía y `asi_queda` seguía enseñando el número, así que Jarvis daba
+            # el dato por puesto y el panel decía que faltaba. Sale por `avisos`, que es
+            # lo que él lee para volver a preguntar.
+            pisados = [n for n in a_vaciar if n in limpios]
+            for n in pisados:
+                limpios.pop(n)
 
         def _celda(fila: int, nombre: str) -> str:
             return gspread.utils.rowcol_to_a1(fila, cabeceras.index(nombre) + 1)
@@ -393,6 +403,10 @@ def guardar(tipo: str, fecha: str, valores: dict, borrar=()) -> dict:
     faltan = [c.nombre for c in ESQUEMA[tipo].campos
               if str(actual.get(c.nombre, "")).strip() == ""]
     avisos = list(avisos_val)
+    if pisados:
+        avisos.append(f"{', '.join(pisados)} venía con valor y en 'borrar' a la vez, así "
+                      "que lo he VACIADO, no guardado. Si lo que querías era ponerlo, "
+                      "mándalo otra vez sin 'borrar'.")
     if len(coincidencias) > 1:
         # Ya hay duplicados de antes en la hoja (wellness_am 2026-06-25 y 2026-08-04,
         # peso 2026-08-11). Se edita la ÚLTIMA porque es la que gana en consolidate(),

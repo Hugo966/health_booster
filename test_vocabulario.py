@@ -42,6 +42,17 @@ for dicho in ("sumo", "sumo dl", "dl sumo", "sumo deadlift", "peso muerto sumo",
               "el sumo"):
     assert primero(dicho)[0] == "Peso muerto sumo", dicho
 
+# "Peso muerto" a secas TAMBIÉN es el sumo: es el que tira en competición. Antes se
+# resolvía por subcadena y contestaba por "Peso muerto comp", que es otro ejercicio.
+for dicho in ("peso muerto", "mi peso muerto", "el peso muerto", "deadlift", "dl", "pm"):
+    assert primero(dicho)[0] == "Peso muerto sumo", dicho
+# Y las demás salen como variantes, no fundidas ni perdidas.
+lista, _ = v.resolver("mi peso muerto", NOMBRES)
+assert "Peso muerto comp" in lista[1:] and "Peso muerto convencional déficit 2cm" in lista[1:], lista
+# Pero pedir una variante por su nombre sigue dando esa: el comp no es el sumo.
+assert primero("Peso muerto comp")[0] == "Peso muerto comp"
+assert primero("peso muerto convencional")[0] == "Peso muerto convencional déficit 2cm"
+
 # --- con faltas, que es como se escribe de verdad ----------------------------
 for dicho, espera in (("sentadila", "Sentadilla low bar"),
                       ("squad", "Sentadilla low bar"),
