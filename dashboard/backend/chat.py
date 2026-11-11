@@ -31,6 +31,7 @@ import memoria
 import personalidad
 import plan_pestanas
 import proveedor
+import sheets
 from sheets import fetch_all
 
 log = logging.getLogger(__name__)
@@ -86,6 +87,20 @@ HERRAMIENTAS_LECTURA = [
             "texto": {"type": "string", "description": "El hecho, en una frase"},
         },
         "requeridos": ["tema", "texto"],
+    },
+    {
+        "nombre": "refrescar",
+        "descripcion": (
+            "Vuelve a leer la hoja AHORA MISMO y te devuelve el parte de estado recién "
+            "hecho. El parte que te llega al empezar la conversación puede tener hasta "
+            "cinco minutos, y además {usuario} puede haber rellenado algo o haber pasado "
+            "el pipeline mientras habláis. ÚSALA cuando te diga que acaba de apuntar "
+            "algo, cuando te lleve la contraria con un número que está viendo en "
+            "pantalla, o cuando te pida que te actualices. No la llames en cada mensaje: "
+            "cuesta una lectura entera de la hoja."
+        ),
+        "params": {},
+        "requeridos": [],
     },
     {
         "nombre": "estado_formularios",
@@ -444,13 +459,18 @@ def _tool_guardar(tipo: str, args: dict) -> dict:
                 "avisos": ["Se ha guardado, pero no he podido leer cómo queda."]}
 
 
-def _ejecutar_backend(llamada) -> str:
+def _ejecutar_backend(llamada, sesion: str | None = None) -> str:
     """Ejecuta una herramienta de backend y devuelve su resultado como texto."""
     try:
         if llamada.nombre == "dia":
             res = _tool_dia(str(llamada.args.get("fecha", "")))
         elif llamada.nombre == "ejercicio":
             res = _tool_ejercicio(str(llamada.args.get("nombre", "")))
+        elif llamada.nombre == "refrescar":
+            # Tira la caché de 5 min y relee. Es lo que hace que "oye, actualízate" o
+            # "pues yo veo 622" tengan arreglo sin esperar a la conversación siguiente.
+            sheets.invalidar()
+            res = {"parte_actualizado": briefing.generar(sesion)}
         elif llamada.nombre == "estado_formularios":
             res = huecos.estado(dias=int(llamada.args.get("dias") or 14))
         elif llamada.nombre in ("guardar_am", "guardar_pm", "guardar_peso"):
@@ -700,7 +720,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
             args = json.dumps(ll.args, ensure_ascii=False)
             mensajes.append({
                 "role": "user",
-                "content": f"[resultado de {ll.nombre}({args})]: {_ejecutar_backend(ll)}",
+                "content": f"[resultado de {ll.nombre}({args})]: {_ejecutar_backend(ll, sesion)}",
             })
 
     # Al pedirle que comente una acción de UI, a veces vuelve a llamar a la herramienta

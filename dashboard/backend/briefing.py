@@ -123,17 +123,8 @@ def _banda_readiness(v):
     return "READY"
 
 
-def _ritmo_peso(peso_rows, dias=42):
-    """kg/semana por regresión lineal, como hace WeightTrend en el panel."""
-    pts = []
-    for r in peso_rows:
-        v = _num(r.get("peso_kg"))
-        f = str(r.get("fecha", ""))
-        if v is None or not f:
-            continue
-        d = _dias_desde(f)
-        if d <= dias:
-            pts.append((-d, v))  # x en días, creciente hacia hoy
+def _pendiente(pts):
+    """kg/semana por mínimos cuadrados sobre (días, kg). `None` si no se puede."""
     if len(pts) < 3:
         return None
     n = len(pts)
@@ -144,6 +135,40 @@ def _ritmo_peso(peso_rows, dias=42):
     if den == 0:
         return None
     return num / den * 7  # kg/día -> kg/semana
+
+
+def _pesadas(peso_rows):
+    """(días desde hoy en negativo, kg), en orden, descartando lo ilegible."""
+    pts = []
+    for r in peso_rows:
+        v = _num(r.get("peso_kg"))
+        f = str(r.get("fecha", ""))
+        if v is not None and f:
+            pts.append((-_dias_desde(f), v))
+    return sorted(pts)
+
+
+def _ritmos_peso(peso_rows) -> dict:
+    """El ritmo en las MISMAS ventanas que enseña el panel: últimas 4, 6 y 12 pesadas, e
+    histórico.
+
+    Por PESADAS y no por días, que es como lo hace `WeightTrend`: se pesa una vez por
+    semana, así que "últimas 12 pesadas" es una ventana estable y "últimos 84 días" se
+    queda en nada si estuvo un mes sin pesarse. El parte daba un solo número sobre 42
+    días, o sea ni el mismo valor ni la misma pregunta que la pantalla.
+    """
+    pts = _pesadas(peso_rows)
+    salida = {}
+    for etiqueta, n in (("4", 4), ("6", 6), ("12", 12), ("histórico", None)):
+        r = _pendiente(pts if n is None else pts[-n:])
+        if r is not None:
+            salida[etiqueta] = r
+    return salida
+
+
+def _ritmo_peso(peso_rows, dias=42):
+    """kg/semana de las últimas `dias`. Se mantiene para la línea corta del parte."""
+    return _pendiente([p for p in _pesadas(peso_rows) if -p[0] <= dias])
 
 
 def _obsoleto(dato, clave="_defecto") -> bool:
@@ -288,6 +313,16 @@ def generar(sesion: str | None = None) -> str:
     extra = f" — {ritmo:+.2f} kg/semana (últimas 6 sem)" if ritmo is not None else ""
     partes.append(_linea("Peso", peso, " kg", extra, clave="peso"))
 
+    # Las mismas cuatro ventanas que los tiles del panel de Peso. Antes el parte daba una
+    # sola y sobre otra base, así que si el usuario comentaba "llevo doce semanas
+    # subiendo" Jarvis no tenía con qué responder: veía MENOS que la pantalla.
+    ritmos = _ritmos_peso(data.get("peso", []))
+    if ritmos:
+        detalle = " · ".join(
+            (f"{k} pesadas: {v:+.2f}" if k.isdigit() else f"{k}: {v:+.2f}")
+            for k, v in ritmos.items())
+        partes.append(f"  Ritmo por ventana, como en el panel (kg/semana) — {detalle}")
+
     # Carga: sRPE de 7 días contra los percentiles de su propio histórico.
     # `sRPE_series_7d` (RPE de sesión × series) sale de la MISMA columna que pinta el panel
     # de Carga. `sRPE_7d` (rpd × duración) queda de respaldo para el histórico anterior a
@@ -307,6 +342,23 @@ def generar(sesion: str | None = None) -> str:
         nivel = "baja" if srpe[0] < p33 else ("alta" if srpe[0] > p67 else "normal")
         extra = f" — carga {nivel} para él"
     partes.append(_linea("Carga sRPE 7 días", srpe, "", extra))
+
+    # El MISMO número que pinta el panel de Carga, cuando no coincide con el de arriba.
+    # Los dos son ciertos —uno ancla a hoy y el otro al último entreno—, pero Jarvis solo
+    # veía el suyo: cuando el usuario le decía "pues yo veo 622", contestaba "puede ser" y
+    # se quedaba tan ancho. Teniendo los dos puede explicar la diferencia, que es lo que
+    # se le pide.
+    ult_sesion = max((str(x.get("fecha", ""))[:10]
+                      for x in data.get("entreno_sesion", []) if x.get("fecha")), default=None)
+    if ult_sesion and srpe:
+        en_panel = next((_num(r.get(col)) for r in dd
+                         if str(r.get("fecha", ""))[:10] == ult_sesion), None)
+        if en_panel is not None and round(en_panel) != round(srpe[0]):
+            partes.append(
+                f"  (El panel de Carga enseña {en_panel:g}: es la misma cuenta pero cerrada "
+                f"en su último entreno, el {ult_sesion}, no hoy. La de arriba va bajando "
+                "con cada día de descanso. Si te dice que ve otro número, es ESTE, y los dos "
+                "son correctos: explícaselo en vez de darle la razón sin más.)")
 
     # Sesiones recientes que NO están contadas en esa cifra. El sRPE necesita el RPE de
     # sesión del formulario PM, y ese formulario puede tardar días en llegar: mientras tanto

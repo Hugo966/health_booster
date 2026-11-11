@@ -244,6 +244,20 @@ canal de sincronización, así que:
   sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
   entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
   entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
+- **Jarvis tiene que ver lo MISMO que los paneles, nunca menos** (principio de Hugo,
+  2026-11-11). Dos sitios donde no era así, y los dos daban números que le contradecían
+  en pantalla: la **carga** (la del parte cierra la ventana HOY y la del panel en el
+  último entreno; con días de descanso la primera baja y la segunda no — ahora el parte
+  lleva **las dos** y dice cuál es cuál) y el **peso** (el panel enseña cuatro ventanas de
+  ritmo —4, 6, 12 pesadas e histórico— y el parte daba una sola, encima sobre días y no
+  sobre pesadas: `_ritmos_peso` replica las cuatro). Al tocar un panel, mirar si el parte
+  dice lo mismo.
+- **`refrescar` es la herramienta para ponerse al día a mitad de conversación.** El parte
+  se monta al empezar el turno pero `sheets.fetch_all` cachea 5 minutos, así que Hugo
+  puede estar viendo en pantalla algo que Jarvis no. La herramienta tira la caché y
+  devuelve el parte recién hecho. En el prompt le queda dicho que la use cuando le lleven
+  la contraria con un número **en vez de decir "puede ser"**, y que no la llame en cada
+  mensaje: cuesta una lectura entera de la hoja.
 - **Jarvis sabe cuánto hace que no hablas con él** (`memoria.ultima_visita`), y el parte
   lo dice: *"Última vez que hablasteis: viernes, 11 de septiembre (hace 61 días)"*. El
   registro existía desde siempre —cada mensaje se guarda con su `ts`—, solo que nadie
