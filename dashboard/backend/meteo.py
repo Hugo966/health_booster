@@ -18,7 +18,13 @@ import ajustes
 log = logging.getLogger(__name__)
 
 URL = "https://api.open-meteo.com/v1/forecast"
-URL_CIUDADES = "https://geocoding-api.open-meteo.com/v1/search"
+# Nominatim (OpenStreetMap) y no el geocodificador de Open-Meteo porque ese solo entiende
+# NOMBRES de sitio: este traga dirección, ciudad y código postal con la misma consulta,
+# que es como la gente escribe dónde vive. Su política pide identificar al cliente y no
+# pasar de una petición por segundo; lo primero se cumple con el nombre de la app (no con
+# datos de nadie), y lo segundo sobra: esto se usa UNA vez.
+URL_LUGARES = "https://nominatim.openstreetmap.org/search"
+CABECERAS = {"User-Agent": "jarvis-health-dashboard/1.0"}
 # El tiempo no cambia en dos minutos y el parte se monta en CADA mensaje: sin caché, cada
 # "hola" se iría medio segundo a pedirlo. 20 min es más fino que el dato real.
 TTL_S = 20 * 60
@@ -40,21 +46,31 @@ _CIELO = {
 _cache = {"ts": 0.0, "datos": None, "clave": None}
 
 
-def buscar_ciudad(nombre: str) -> dict | None:
-    """Nombre de ciudad -> {nombre, lat, lon}. `None` si no se encuentra."""
+def buscar_lugar(texto: str) -> dict | None:
+    """Dirección, ciudad o código postal -> {nombre, lat, lon}. `None` si no sale nada.
+
+    Da igual cómo lo escriba: "Madrid", "28001" y "Calle de Alcalá 1, Madrid" valen las
+    tres. Lo que se GUARDA es siempre la ciudad y el país, nunca la calle: para saber si
+    llueve sobra, y así ni la hoja ni el parte de estado acaban con su portal escrito.
+    """
     try:
-        r = requests.get(URL_CIUDADES, timeout=TIMEOUT_S,
-                         params={"name": nombre, "count": 1, "language": "es"})
-        res = (r.json() or {}).get("results") or []
+        r = requests.get(URL_LUGARES, timeout=TIMEOUT_S, headers=CABECERAS,
+                         params={"q": texto, "format": "jsonv2", "limit": 1,
+                                 "addressdetails": 1})
+        res = r.json() or []
     except Exception as e:
-        log.warning("geocoding falló: %s", e)
+        log.warning("no pude buscar el sitio: %s", e)
         return None
     if not res:
         return None
-    c = res[0]
-    # El país ayuda a distinguir las muchas ciudades que comparten nombre.
-    etiqueta = ", ".join(x for x in (c.get("name"), c.get("country_code")) if x)
-    return {"nombre": etiqueta, "lat": c["latitude"], "lon": c["longitude"]}
+    sitio = res[0]
+    d = sitio.get("address", {})
+    # De lo más concreto a lo menos: un código postal rural puede no tener "city".
+    ciudad = next((d[k] for k in ("city", "town", "village", "municipality", "county",
+                                  "state") if d.get(k)), None)
+    pais = (d.get("country_code") or "").upper()
+    etiqueta = ", ".join(x for x in (ciudad, pais) if x) or texto.strip()
+    return {"nombre": etiqueta, "lat": float(sitio["lat"]), "lon": float(sitio["lon"])}
 
 
 # La última ubicación que se leyó bien. Si la hoja no contesta —la cuota de Google se

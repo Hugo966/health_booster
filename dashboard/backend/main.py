@@ -122,12 +122,15 @@ def ubicacion_leer():
 
 @app.post("/ubicacion")
 def ubicacion_guardar(datos: dict = Body(...)):
-    ciudad = str(datos.get("ciudad", "")).strip()
-    if not ciudad:
-        raise HTTPException(422, "Dime una ciudad.")
-    lugar = meteo.buscar_ciudad(ciudad)
+    # Vale dirección, ciudad o código postal: se resuelve lo que escriba y se guarda solo
+    # la ciudad y el país, nunca la calle.
+    texto = str(datos.get("lugar", "") or datos.get("ciudad", "")).strip()
+    if not texto:
+        raise HTTPException(422, "Dime una dirección, una ciudad o un código postal.")
+    lugar = meteo.buscar_lugar(texto)
     if not lugar:
-        raise HTTPException(422, f"No encuentro '{ciudad}'. Prueba con el nombre a secas.")
+        raise HTTPException(422, f"No encuentro '{texto}'. Prueba con la ciudad a secas "
+                                 "o con el código postal.")
     try:
         meteo.guardar_ubicacion(lugar)
     except Exception as e:

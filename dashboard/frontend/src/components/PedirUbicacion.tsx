@@ -1,4 +1,4 @@
-// La app pregunta dónde vive quien la usa, UNA vez, la primera que la abre.
+// La app pregunta dónde está quien la usa, UNA vez, la primera que la abre.
 //
 // Va aquí y no en el `.env` porque esto no lo contesta quien instala el proyecto, sino
 // quien lo usa: el nombre de tu ciudad no es configuración de despliegue. Se guarda en
@@ -6,7 +6,10 @@
 // desde la VM, y sobrevive a los despliegues.
 //
 // Solo sirve para el tiempo, y eso es lo único que se dice: pedir la ubicación sin
-// explicar para qué es como se consiguen los "no, gracias".
+// explicar para qué es como se consiguen los "no, gracias". Vale dirección, ciudad o
+// código postal —cada uno lo tiene en la cabeza de una forma—, pero lo que se guarda
+// es siempre la ciudad y el país: para saber si llueve sobra, y así el portal de nadie
+// acaba escrito en la hoja.
 import { useEffect, useState } from "react";
 
 import { API_BASE } from "../lib/api";
@@ -16,7 +19,7 @@ type Tiempo = { lugar: string; temp: number; cielo: string } | null;
 
 export default function PedirUbicacion() {
   const [haceFalta, setHaceFalta] = useState(false);
-  const [ciudad, setCiudad] = useState("");
+  const [lugar, setLugar] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [tiempo, setTiempo] = useState<Tiempo>(null);
@@ -40,10 +43,10 @@ export default function PedirUbicacion() {
       const r = await fetch(`${API_BASE}/ubicacion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ciudad }),
+        body: JSON.stringify({ lugar }),
       });
       const c = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(c.detail ?? "no pude guardar esa ciudad");
+      if (!r.ok) throw new Error(c.detail ?? "no pude guardar ese sitio");
       setTiempo(c.tiempo ?? null);
       setHaceFalta(false);
     } catch (e) {
@@ -60,21 +63,21 @@ export default function PedirUbicacion() {
       data-no-expand
     >
       <span className="text-[11px]" style={{ color: theme.text }}>
-        ¿En qué ciudad estás? Es para que Jarvis sepa qué tiempo hace.
+        ¿Dónde estás? Dirección, ciudad o código postal — para que Jarvis sepa qué tiempo hace.
       </span>
       <input
         className="jarvis-input w-40"
-        placeholder="Madrid"
-        value={ciudad}
-        onChange={(e) => setCiudad(e.target.value)}
+        placeholder="Madrid · 28001 · Calle…"
+        value={lugar}
+        onChange={(e) => setLugar(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && ciudad.trim()) guardar();
+          if (e.key === "Enter" && lugar.trim()) guardar();
         }}
       />
       <button
         type="button"
         className="jarvis-chip px-3 py-1 text-[11px]"
-        disabled={guardando || !ciudad.trim()}
+        disabled={guardando || !lugar.trim()}
         onClick={guardar}
       >
         {guardando ? "Buscando…" : "Guardar"}

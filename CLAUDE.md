@@ -253,7 +253,14 @@ canal de sincronización, así que:
   lo que responde). La regla de que los planes van en orden está en `OPERACION`, sección
   "LA HORA, Y EN QUÉ ORDEN PASAN SUS COSAS".
 - **El tiempo sale de Open-Meteo, sin clave, y la ubicación la pregunta la APP** la
-  primera vez que se abre (`PedirUbicacion.tsx` → `POST /ubicacion`). No va en el `.env`
+  primera vez que se abre (`PedirUbicacion.tsx` → `POST /ubicacion`). Acepta **dirección,
+  ciudad o código postal**, las tres, porque cada uno tiene su sitio en la cabeza de una
+  forma: eso lo resuelve **Nominatim** (OpenStreetMap, tampoco pide clave) y no el
+  geocodificador de Open-Meteo, que solo entiende nombres de sitio. Su política pide
+  identificar al cliente por `User-Agent` — va el nombre de la app, **nunca datos de
+  nadie**— y máximo una petición por segundo, que sobra para algo que se usa una vez.
+  **Se guarda solo la ciudad y el país**, nunca la calle: para saber si llueve sobra, y
+  así ni la hoja ni el parte acaban con el portal de nadie escrito. No va en el `.env`
   a propósito: esto lo contesta quien USA la app, no quien la instala, y así vale desde
   el móvil, el portátil y la VM. Se guarda en la pestaña **`ajustes`** (clave/valor) de
   la hoja. `meteo.frase()` mete una línea en el parte y **devuelve `None` si falla o si
