@@ -77,6 +77,17 @@ canal de sincronización, así que:
   mismo criterio que el sumo). **El del tacón sigue aparte**: ese sí era otro movimiento.
   La pista que lo destapó fue el panorama: dos nombres casi iguales, uno con cinco
   semanas de histórico y el otro con una sola.
+- **`vocabulario.py` NO es `ALIAS`, y la diferencia es de riesgo.** `ALIAS` reetiqueta
+  DATOS (fundir dos nombres reescribe el histórico, y equivocarse junta ejercicios
+  distintos), así que es exacta y se gana a mano. `vocabulario.resolver` es una BÚSQUEDA:
+  traduce lo que se dice en voz alta —"mi squat", "la bp", "sumo deadlight"— al nombre
+  que está en la hoja, por eso **ahí sí** se tolera el inglés, el artículo delante y la
+  falta de ortografía (`difflib`, umbral 0,78). Equivocarse solo devuelve otro ejercicio,
+  y `resuelto_como` obliga a decir cuál. **La regla que no se rompe en ninguno de los
+  dos**: las variantes no se funden. Hasta el 2026-11-11 `ejercicio` buscaba por
+  subcadena y metía en el mismo saco todo lo que coincidía: preguntar por "banca" daba
+  un "mejor e1RM" de 106 kg salido de juntar comp + larssen + complex, que no es de
+  ningún ejercicio. Ahora contesta por UNA y lista las demás en `otras_variantes`.
 - **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
   **(plani, bloque)**, y el número capturado es la semana. Hugo **reinicia la numeración

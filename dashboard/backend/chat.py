@@ -32,6 +32,7 @@ import panorama
 import personalidad
 import plan_pestanas
 import proveedor
+import vocabulario
 import sheets
 from sheets import fetch_all
 
@@ -68,9 +69,18 @@ HERRAMIENTAS_LECTURA = [
     },
     {
         "nombre": "ejercicio",
-        "descripcion": "Histórico de un ejercicio: mejor marca y series recientes. "
-                       "Úsala cuando pregunte por cómo va en un movimiento concreto.",
-        "params": {"nombre": {"type": "string", "description": "Nombre del ejercicio, p.ej. 'banca'"}},
+        "descripcion": (
+            "Histórico de UN ejercicio: mejor marca y series recientes. Úsala cuando "
+            "pregunte por cómo va en un movimiento concreto. Pásale lo que haya dicho "
+            "él, tal cual —'squat', 'la bp', 'sumo'—: la herramienta lo traduce al "
+            "nombre de la hoja y aguanta las faltas. Te devuelve `ejercicio` (el que ha "
+            "elegido), `resuelto_como` y `otras_variantes`. **Los números son SOLO del "
+            "elegido**: banca de competición y banca 3ct son ejercicios distintos y no "
+            "se suman nunca. Si `resuelto_como` no es 'exacto', di de cuál le estás "
+            "hablando antes de soltar el número."
+        ),
+        "params": {"nombre": {"type": "string", "description": "Como lo haya dicho él: "
+                                                               "'banca', 'squat', 'sumo'"}},
         "requeridos": ["nombre"],
     },
     {
@@ -339,13 +349,23 @@ def _tool_dia(fecha: str) -> dict:
 
 def _tool_ejercicio(nombre: str) -> dict:
     data = fetch_all()
-    aguja = nombre.lower().strip()
-    filas = [s for s in data.get("entreno_sets", [])
-             if aguja in str(s.get("ejercicio", "")).lower()]
-    if not filas:
-        return {"error": f"no encuentro ningún ejercicio que contenga '{nombre}'"}
+    sets = data.get("entreno_sets", [])
+    nombres = sorted({str(s.get("ejercicio")) for s in sets if s.get("ejercicio")})
+    # Lo que se dice en voz alta ("mi squat", "la bp", "sumo deadlight") no es lo que pone
+    # en la hoja. `vocabulario` lo traduce y aguanta la falta de ortografía; ver su
+    # cabecera para por qué eso se tolera aquí y no en `ALIAS`.
+    candidatos, como = vocabulario.resolver(nombre, nombres)
+    if not candidatos:
+        return {"error": f"no encuentro ningún ejercicio que se parezca a '{nombre}'"}
 
-    variantes = sorted({str(s.get("ejercicio")) for s in filas})
+    # SOLO el primero. Antes se buscaba por subcadena y se juntaban todas las coincidencias
+    # en un único montón: preguntar por "banca" mezclaba la de competición, la larssen y el
+    # complex, y devolvía un "mejor e1RM" de 106 kg que no es de ningún ejercicio. Las
+    # otras se nombran aparte para que Jarvis pueda ofrecerlas, nunca sumarlas.
+    elegido = candidatos[0]
+    filas = [s for s in sets if str(s.get("ejercicio")) == elegido]
+    variantes = candidatos[1:]
+
     def _f(v):
         try:
             return float(v)
@@ -372,9 +392,14 @@ def _tool_ejercicio(nombre: str) -> dict:
     ]
     return {
         "buscado": nombre,
+        "ejercicio": elegido,
+        # Cómo se ha llegado a ese ejercicio. Si fue por parecido o por vocabulario, DILO
+        # ("entiendo que me hablas de la banca de competición"): quien pregunta corrige en
+        # dos palabras, y callárselo es como se contesta con seguridad sobre otra cosa.
+        "resuelto_como": como,
         # Las variantes NO se fusionan: banca competición y banca 3ct son ejercicios
-        # distintos, así que se listan para que el modelo no las mezcle al hablar.
-        "variantes_encontradas": variantes,
+        # distintos. Van aparte, y los números de arriba son SOLO del elegido.
+        "otras_variantes": variantes,
         "mejor_e1rm_estimado": {"valor": mejor[0], "fecha": mejor[1],
                                 "aviso": "1RM ESTIMADO a partir de peso/repes/RPE, "
                                          "NO un peso que haya levantado"} if mejor else None,
