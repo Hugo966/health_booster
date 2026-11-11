@@ -355,6 +355,11 @@ canal de sincronización, así que:
   backend da por vacío.
 - **Al tocar `personalidad.py` hay que reiniciar el backend** (`systemctl restart jarvis`
   en la VM): el prompt se lee al importar, no en cada mensaje.
+- **El VAD tiene test desde el 2026-11-11: `node test_vad.cjs`** (transpila `vad.ts` con
+  esbuild y prueba las tres decisiones puras — `sueloSiguiente`, `umbralDe`, `pasoCorte`).
+  Los umbrales se afinaban de oído y §13 pedía rehacer la prueba cada vez que se movieran;
+  vivía en `scratchpad/` y no entraba al repo. **Al tocar cualquier perilla del VAD, pasar
+  este test.** Lo destapó el coche: ver §13, "El coche (2026-11-11)".
 - **Alturas de panel en px fijos, nunca en %.** `ResponsiveContainer height="100%"` dentro
   de un `flex-1` sin altura definida provoca un bucle de ResizeObserver.
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.

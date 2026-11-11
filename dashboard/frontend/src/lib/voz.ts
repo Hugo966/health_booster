@@ -672,19 +672,32 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     r.maxAlternatives = 1;
 
     r.onresult = (ev: any) => {
-      if (estadoRef.current === "hablando") {
-        // Con ALTAVOZ se ignora todo mientras habla: sería su propio eco.
-        if (!cascosRef.current) return;
-        // Con CASCOS es al revés: su voz no llega al micro, así que si aquí llega algo
-        // solo puede ser el usuario hablándole encima. Eso ES la señal de corte — y como el
-        // reconocedor nunca soltó el micro, lo que ha dicho está entero. No se hace
-        // `return`: se sigue y se procesa.
-        traza("=> CORTADO por tu voz (cascos)");
-        pararRef.current();
-      }
+      const jarvisHablando = estadoRef.current === "hablando";
+      // Con ALTAVOZ se ignora todo mientras habla: sería su propio eco.
+      if (jarvisHablando && !cascosRef.current) return;
       if (Date.now() < ignorarHastaRef.current) return;
 
       const { finales, interino } = reconstruir(ev.results);
+
+      if (jarvisHablando) {
+        // Con CASCOS es al revés: su voz no llega al micro, así que lo que llegue aquí
+        // solo puede ser el usuario hablándole encima. Eso ES la señal de corte — y como
+        // el reconocedor nunca soltó el micro, lo que ha dicho está entero. No se hace
+        // `return`: se sigue y se procesa.
+        //
+        // Pero SOLO si lo oído sobreviviría al filtro de ruido. Antes el corte iba antes
+        // de `clasificar`, así que un parcial a medio cocer —que dos líneas más abajo se
+        // tira como "DESCARTADO por corto"— ya le había cortado. Con el reconocedor de
+        // Android inventándose palabras encima del ruido de un coche, eso es cortarle en
+        // bucle sin que el nivel de sonido pinte nada.
+        const oido = (finales || interino || "").trim();
+        if (clasificar(oido) === "texto") {
+          traza("=> CORTADO por tu voz (cascos)");
+          pararRef.current();
+        } else {
+          traza("cascos: NO le corto, suena a ruido", oido);
+        }
+      }
 
       if (!finales) {
         if (!interino) return;

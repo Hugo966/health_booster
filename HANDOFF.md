@@ -1325,6 +1325,9 @@ Casi todos estos números se movieron con Hugo delante. **No tocarlos a ciegas.*
 | `.env` | `GROQ_TIMEOUT_MS` | 3000 | Plazo duro de la muletilla a medida. Pasado, se tira de las pregrabadas: una muletilla tarde es el silencio MÁS la muletilla |
 | `voz.ts` | `GRACIA_MS` | 300 | Era 700; ahora el trabajo lo hace el `abort()` |
 | `vad.ts` | `SOSTENIDO_MS` | 220 | 300 le daba tiempo a acabar la frase |
+| `vad.ts` | `HUECO_MAX_MS` | 80 | **Nueva (2026-11-11).** Cuánto puede bajar del umbral sin reiniciar la cuenta. No existía: el reseteo compartía los 250 ms de `FIN_MS`, así que "sostenido 220 ms" valía un cruce y otro 220 ms después con un hueco de 250 en medio — y un ruido fluctuante lo cumple siempre |
+| `vad.ts` | `SUBIDA_SUELO` | 0.004 | Era 0.0006 (τ≈28 s) y el suelo solo aprende mientras Jarvis calla: unos segundos por turno. Cerraba un 10 % por turno, o sea nada. 0.004 son ~4 s |
+| `vad.ts` | `TECHO_HABLANDO` | 0.10 | **Nueva.** Tope del umbral mientras habla. Hace falta desde que el suelo aprende de verdad: con ruido de coche `suelo × 6.5` da 0,2-0,3 y su voz medida es 0,0365-0,0755, así que sin tope no podría cortarle. **Estimado: el número bueno sale de medir en el coche** |
 | `vad.ts` | `MINIMO_HABLANDO` | 0.038 | **LA perilla del caso altavoces.** Si se autocorta, SUBIRLA. En el MÓVIL puede sobrar: su voz medía 0,0365-0,0755, o sea que una de las dos medidas queda POR DEBAJO del umbral. Sin confirmar |
 
 Para afinar con números y no de oído: `localStorage.setItem("jarvis.voz.debug","1")` y
@@ -1338,6 +1341,27 @@ tocan los umbrales, vale la pena rehacerla: `npx esbuild src/lib/vad.ts --format
 --platform=node --outfile=vad.cjs`. Ojo: en Node, `navigator` y `performance` son globales
 nativos y **asignarlos no toma efecto** — hay que usar `Object.defineProperty`, o el VAD
 ni arranca y los "ok" son falsos.
+
+### El coche (2026-11-11): lo que destapó el pendiente de abajo
+Usándolo a 90-100 km/h con los altavoces del coche por bluetooth, le cortaba sin parar.
+Hugo esperó a que "la media de sonido de fondo subiera" y no sirvió. **Tres defectos
+verificados**, los dos primeros contradiciendo sus propios comentarios:
+1. **El suelo se borraba en cada frase.** `arrancar()` hacía `suelo = MINIMO` y, en modo
+   altavoz, ese micro se abre y se cierra **una vez por frase de Jarvis**. Con τ≈28 s y
+   una ventana de aprendizaje de segundos, el umbral se quedaba **fijo entre 0.038 y
+   0.085** pasara lo que pasara con el ruido. No subía despacio: se borraba. (§14 daba
+   esto por bueno — "en ese hueco aprende la sala" — asumiendo una τ rápida.)
+2. **El disparo no era "sostenido"** (ver `HUECO_MAX_MS` arriba). Medido: la señal de
+   ruido de coche simulada cortaba 1 vez con la lógica vieja y 0 con la nueva.
+3. **En modo CASCOS el nivel no interviene**: cortaba con cualquier `onresult`, incluido
+   un parcial que dos líneas después se tira como `DESCARTADO por corto (ruido?)`. Ahora
+   se pasa por `clasificar()` antes de cortar.
+**Y el instrumento no llegaba**: la traza periódica vivía dentro de `if (hablando && …)`,
+así que no se podía medir el ruido de fondo. Ahora traza siempre, cada 2 s, con el suelo.
+**Queda por medir en el coche** y ajustar `TECHO_HABLANDO` y `MINIMO_HABLANDO` con
+números. Si tras eso sigue cortando: el ruido de coche es GRAVE (30-300 Hz) y el VAD mide
+banda ancha sin filtrar — limitar a 300-3000 Hz se lo llevaría, pero cambia la escala de
+toda esta tabla.
 
 ### Trampas que costaron sangre (no re-descubrirlas)
 - **`\b` de JavaScript no considera letra la `ñ`.** La regex de "frase colgada" abría
