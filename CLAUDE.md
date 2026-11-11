@@ -259,8 +259,13 @@ canal de sincronización, así que:
   geocodificador de Open-Meteo, que solo entiende nombres de sitio. Su política pide
   identificar al cliente por `User-Agent` — va el nombre de la app, **nunca datos de
   nadie**— y máximo una petición por segundo, que sobra para algo que se usa una vez.
-  **Se guarda solo la ciudad y el país**, nunca la calle: para saber si llueve sobra, y
-  así ni la hoja ni el parte acaban con el portal de nadie escrito. No va en el `.env`
+  Se guardan **DOS** nombres: `meteo_direccion` con la dirección entera —Hugo la quiere
+  para otras cosas que no son el tiempo— y `meteo_lugar` con una etiqueta corta (ciudad y
+  país), que es la que se ENSEÑA: si el parte usara la larga, Jarvis diría su calle en
+  cada mensaje. También se puede **cambiar luego, desde el botón ⚙ de la cabecera**
+  (`Ajustes.tsx`), y no solo la primera vez: una ubicación que solo se puede poner el
+  primer día no se puede corregir, y la gente se muda. El aviso de arranque y los ajustes
+  comparten la misma casilla (`Ubicacion.tsx`, `CampoUbicacion`). No va en el `.env`
   a propósito: esto lo contesta quien USA la app, no quien la instala, y así vale desde
   el móvil, el portátil y la VM. Se guarda en la pestaña **`ajustes`** (clave/valor) de
   la hoja. `meteo.frase()` mete una línea en el parte y **devuelve `None` si falla o si

@@ -50,8 +50,13 @@ def buscar_lugar(texto: str) -> dict | None:
     """Dirección, ciudad o código postal -> {nombre, lat, lon}. `None` si no sale nada.
 
     Da igual cómo lo escriba: "Madrid", "28001" y "Calle de Alcalá 1, Madrid" valen las
-    tres. Lo que se GUARDA es siempre la ciudad y el país, nunca la calle: para saber si
-    llueve sobra, y así ni la hoja ni el parte de estado acaban con su portal escrito.
+    tres.
+
+    Devuelve DOS nombres. `nombre` es la etiqueta corta (ciudad y país) y es la que se
+    enseña: el parte de estado diría su calle en cada mensaje si fuera la larga.
+    `direccion` es la dirección completa tal como la resuelve el buscador, que es la que
+    sirve para lo que no es el tiempo (decirle cuánto tarda en llegar a algún sitio, por
+    ejemplo). Las dos se guardan; cada consumidor coge la que necesita.
     """
     try:
         r = requests.get(URL_LUGARES, timeout=TIMEOUT_S, headers=CABECERAS,
@@ -70,7 +75,9 @@ def buscar_lugar(texto: str) -> dict | None:
                                   "state") if d.get(k)), None)
     pais = (d.get("country_code") or "").upper()
     etiqueta = ", ".join(x for x in (ciudad, pais) if x) or texto.strip()
-    return {"nombre": etiqueta, "lat": float(sitio["lat"]), "lon": float(sitio["lon"])}
+    return {"nombre": etiqueta,
+            "direccion": sitio.get("display_name") or texto.strip(),
+            "lat": float(sitio["lat"]), "lon": float(sitio["lon"])}
 
 
 # La última ubicación que se leyó bien. Si la hoja no contesta —la cuota de Google se
@@ -92,6 +99,7 @@ def ubicacion() -> dict | None:
         if not lat or not lon:
             return None
         _ultima_ubicacion = {"nombre": ajustes.leer("meteo_lugar", ""),
+                             "direccion": ajustes.leer("meteo_direccion", ""),
                              "lat": float(lat), "lon": float(lon)}
     except Exception as e:
         log.warning("no pude leer la ubicación (%s: %s)", type(e).__name__, e)
@@ -100,6 +108,7 @@ def ubicacion() -> dict | None:
 
 def guardar_ubicacion(lugar: dict) -> None:
     ajustes.escribir({"meteo_lugar": str(lugar["nombre"]),
+                      "meteo_direccion": str(lugar.get("direccion") or lugar["nombre"]),
                       "meteo_lat": str(lugar["lat"]),
                       "meteo_lon": str(lugar["lon"])})
     global _ultima_ubicacion

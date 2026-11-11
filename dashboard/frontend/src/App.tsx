@@ -13,7 +13,8 @@ import NotasPanel, { NotasExpanded } from "./components/NotasPanel";
 import FormulariosPanel, { FormulariosExpanded } from "./components/FormulariosPanel";
 import Expanded from "./components/Expanded";
 import TrazaVoz from "./components/TrazaVoz";
-import PedirUbicacion from "./components/PedirUbicacion";
+import PedirUbicacion from "./components/Ubicacion";
+import Ajustes from "./components/Ajustes";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
 import { useChat, type Chat } from "./lib/chat";
@@ -236,8 +237,9 @@ export default function App() {
           <span className="font-display text-[10px] uppercase tracking-[0.35em]" style={{ color: theme.muted }}>
             Panel de bienestar
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <RangeSelector value={range} onChange={setRange} />
+            <Ajustes />
           </div>
         </div>
         <div
