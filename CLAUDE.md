@@ -359,7 +359,10 @@ canal de sincronización, así que:
   esbuild y prueba las tres decisiones puras — `sueloSiguiente`, `umbralDe`, `pasoCorte`).
   Los umbrales se afinaban de oído y §13 pedía rehacer la prueba cada vez que se movieran;
   vivía en `scratchpad/` y no entraba al repo. **Al tocar cualquier perilla del VAD, pasar
-  este test.** Lo destapó el coche: ver §13, "El coche (2026-11-11)".
+  este test.** Lo destapó el coche: ver §13, "El coche (2026-11-11)", que deja apuntada
+  la medición pendiente. **La traza (`?vozdebug=1`) queda guardada en el navegador**: se
+  apaga con `?vozdebug=0`, y si no se apaga el cuadro negro se queda también en la VM.
+  Por defecto está apagada.
 - **Alturas de panel en px fijos, nunca en %.** `ResponsiveContainer height="100%"` dentro
   de un `flex-1` sin altura definida provoca un bucle de ResizeObserver.
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.

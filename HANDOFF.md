@@ -1358,10 +1358,32 @@ verificados**, los dos primeros contradiciendo sus propios comentarios:
    se pasa por `clasificar()` antes de cortar.
 **Y el instrumento no llegaba**: la traza periódica vivía dentro de `if (hablando && …)`,
 así que no se podía medir el ruido de fondo. Ahora traza siempre, cada 2 s, con el suelo.
-**Queda por medir en el coche** y ajustar `TECHO_HABLANDO` y `MINIMO_HABLANDO` con
-números. Si tras eso sigue cortando: el ruido de coche es GRAVE (30-300 Hz) y el VAD mide
-banda ancha sin filtrar — limitar a 300-3000 Hz se lo llevaría, pero cambia la escala de
-toda esta tabla.
+#### PENDIENTE: medirlo en el coche (lo tiene que hacer Hugo)
+`TECHO_HABLANDO = 0.10` es una **estimación**, no una medida. Sale de que su voz dio
+0,0365-0,0755 en una habitación tranquila; en un coche no hay ningún número.
+
+Los pasos, que si no es a ojo:
+1. Entrar al dashboard con **`?vozdebug=1`** (queda guardado, basta una vez).
+2. En marcha, pedirle algo largo y **callarse**.
+3. Leer, y sacarlo con el botón "copiar" de la traza (el anillo son 80 líneas y lo
+   anterior se pierde):
+   - `VAD: nivel … / umbral … / suelo …` → **cuánto mide el ruido del coche**. Es el dato
+     que no existía.
+   - `=> CORTADO por tu voz` + `{"rms","umbral","suelo"}` → fue el VAD, y dice por cuánto.
+   - `=> CORTADO por tu voz (cascos)` → es el reconocedor transcribiendo ruido; el nivel
+     no pinta nada y la salida es otra (quitar la Web Speech API, §17).
+   - Se calla **sin ninguna de las dos** → es otro de los once caminos de corte y no hay
+     instrumento: habría que trazarlos.
+4. Después, hablarle encima para ver **cuánto mide su voz** sobre ese ruido. Con esos dos
+   números se fija `TECHO_HABLANDO` (entre uno y otro) y, si su eco por los altavoces del
+   coche sube de 0,038, también `MINIMO_HABLANDO`.
+5. **Apagar la traza con `?vozdebug=0`.** Queda guardada en el `localStorage` del
+   navegador, así que si no se apaga el cuadro negro se queda ahí para siempre — también
+   en la VM. Por defecto está apagada; encenderla es siempre un acto voluntario.
+
+Si tras ajustar los números sigue cortando: el ruido de coche es GRAVE (30-300 Hz) y el
+VAD mide banda ancha sin filtrar — limitar a 300-3000 Hz se lo llevaría, pero **cambia la
+escala de toda esta tabla de perillas** y habría que rehacerla entera.
 
 ### Trampas que costaron sangre (no re-descubrirlas)
 - **`\b` de JavaScript no considera letra la `ñ`.** La regex de "frase colgada" abría
