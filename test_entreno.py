@@ -28,13 +28,13 @@ def una(token, ejercicio='Plancha lateral', ejercicios=None):
 
 
 # --- el plan: qué pestaña es qué etapa ---------------------------------------
-assert ep.route_tab('Build II S2') == (2, 3, '2')      # BLOQUE 3 en el keep de Hugo
+assert ep.route_tab('Build II S2') == (2, 3, '2')      # BLOQUE 3 en el keep del usuario
 assert ep.route_tab('Build S2') == (2, 2, '2')         # y la etapa anterior sigue en su sitio
 assert ep.nombre_etapa(2, 3) == 'Build II'
 assert ep.route_tab('Nutrición') is None
 
 # --- una etapa nueva del entrenador se enruta SOLA ------------------------------
-# El entrenador bautiza la pestaña distinta cada etapa y el bloque es un número de Hugo
+# El entrenador bautiza la pestaña distinta cada etapa y el bloque es un número del usuario
 # que no aparece en ese nombre. Se deduce: etapa nueva = bloque siguiente del plan en
 # curso, que es lo que ha pasado en las cinco etapas del histórico.
 _PLAN = ['Sesión 1', 'Básicos', 'Sentadilla low bar', 'Accesorios', 'Curl femoral']
@@ -63,7 +63,7 @@ hoja = _hoja('Build II S6', 'Peaking final')
 auto, pend = ep.rutas_automaticas(hoja)
 assert auto == {} and pend == ['Peaking final']
 
-# Y cuando Hugo contesta, su respuesta manda Y cuenta como ancla: la siguiente etapa
+# Y cuando el usuario contesta, su respuesta manda Y cuenta como ancla: la siguiente etapa
 # nueva es el bloque 5, no otra vez el 4.
 auto, pend = ep.rutas_automaticas(_hoja('Build II S6', 'Peaking final', 'Build III S1'),
                                   {ep._key('Peaking final'): (2, 4, '3')})
@@ -83,7 +83,7 @@ assert hu._sesiones_sin_plan([_set('')], hoy) == {}
 assert hu._sesiones_sin_plan([_set('2026-09-01')], hoy) == {}   # fuera de ventana
 
 # --- el calentamiento no ocupa slot ------------------------------------------
-# Hugo no lo apunta en el keep. Si se queda, los nombres se corren un puesto. El mismo
+# el usuario no lo apunta en el keep. Si se queda, los nombres se corren un puesto. El mismo
 # ejercicio aparece DOS veces en la hoja: bajo su cabecera y suelto al final de accesorios.
 cols = ['Sesión 1', 'Warm up', 'Tibial raises', 'Básicos', 'Sentadilla',
         'Accesorios', 'Plancha lateral', 'Tibial raises', 'RPE EN LA SESIÓN (0-10)']

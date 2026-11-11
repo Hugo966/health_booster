@@ -11,7 +11,7 @@ Dos criterios de diseño que no son negociables:
      reporta valor + fecha + días, y se marca lo viejo como OBSOLETO.
 
   2. **Los umbrales replican los del frontend.** Si el briefing y el panel no
-     coinciden, Jarvis contradice lo que Hugo ve en pantalla. Los de readiness
+     coinciden, Jarvis contradice lo que el usuario ve en pantalla. Los de readiness
      salen de `readinessBand` en lib/theme.ts (<40 COOKED, 40-65 CAUTION,
      >65 READY) y las bandas de carga son percentiles del histórico propio,
      igual que en LoadPanel.
@@ -36,7 +36,7 @@ OBJETIVO_SUENO_H = 7.5
 VENTANA_CARGA_D = 7
 # A partir de cuántos días un dato deja de valer como "ahora mismo". Es por
 # métrica porque no todas envejecen igual: el HRV es diario y a los 3 días ya no
-# dice nada del presente, pero Hugo se pesa ~una vez por semana, así que un peso
+# dice nada del presente, pero el usuario se pesa ~una vez por semana, así que un peso
 # de hace 4 días es perfectamente normal y marcarlo sería un falso positivo.
 DIAS_OBSOLETO = {"peso": 10, "_defecto": 2}
 
@@ -171,7 +171,7 @@ def generar() -> str:
     if not dd:
         return "No hay datos disponibles ahora mismo."
 
-    partes = [f"Parte de estado de Hugo — {date.today().isoformat()}", ""]
+    partes = [f"Parte de estado del usuario — {date.today().isoformat()}", ""]
 
     # Readiness
     r = _ultimo(dd, "readiness")
@@ -286,7 +286,7 @@ def generar() -> str:
     # Entrenos sin RPE de sesión. Se pregunta a `huecos`, que lee la pestaña ORIGEN
     # (`wellness_pm`), y NO a derived_diario: esa columna solo se rellena cuando corre el
     # pipeline, así que un RPE puesto después de la última pasada se veía como ausente y
-    # Jarvis reclamaba un formulario que Hugo ya había rellenado.
+    # Jarvis reclamaba un formulario que el usuario ya había rellenado.
     try:
         import huecos
         sin_rpe = huecos.estado(dias=VENTANA_CARGA_D)["fuentes"]["rpe"]["faltan"]
@@ -324,7 +324,7 @@ def generar() -> str:
     except Exception:
         pass  # que un fallo leyendo huecos no deje a Jarvis sin parte de estado
 
-    # Una pestaña del plan que no se pudo enrutar. No es un hueco de Hugo —él no tiene
+    # Una pestaña del plan que no se pudo enrutar. No es un hueco del usuario —él no tiene
     # nada que rellenar—, es una pregunta que hay que hacerle: sin la semana, los
     # ejercicios de esas sesiones se quedan sin nombre. Va en el parte y no en el panel
     # porque lo que hace falta es que ALGUIEN se lo pregunte, y ese es Jarvis.
@@ -353,7 +353,7 @@ def generar() -> str:
     if ses:
         u = ses[-1]
         # El nombre de la etapa sale del enrutado del plan, no de aquí: "bloque 2" no
-        # significa nada para Hugo, que la llama Build. Antes esto estaba escrito a mano
+        # significa nada para el usuario, que la llama Build. Antes esto estaba escrito a mano
         # en el prompt y se quedaba viejo — en septiembre Jarvis seguía diciendo que
         # estaba en offseason.
         etapa = entreno_pipeline.nombre_etapa(u.get("plani"), u.get("bloque"))
@@ -371,7 +371,7 @@ def generar() -> str:
         )
         # Cómo FUE la sesión, no solo cuándo. Los agregados (volumen, series) bajan cuando
         # algo se tuerce, pero no dicen por qué, así que Jarvis daba por normal una sesión
-        # en la que Hugo falló series o no pudo ni valorar el esfuerzo. Estas dos marcas
+        # en la que el usuario falló series o no pudo ni valorar el esfuerzo. Estas dos marcas
         # vienen del keep: `peso x0` -> falló la repe, `0x0` o ejercicio sin apuntar ->
         # no lo hizo, `@?`/`RIR?` -> no pudo valorar (dolor, lesión, prisa). Son lo único
         # que distingue una sesión mala de una sesión corta.
@@ -390,13 +390,13 @@ def generar() -> str:
             linea += f"\n- Ejercicios que NO hizo ese día: {nohech}"
         partes.append(linea)
 
-    # Notas de los formularios AM/PM: texto libre de Hugo (cómo se sintió, lesiones,
+    # Notas de los formularios AM/PM: texto libre del usuario (cómo se sintió, lesiones,
     # vida, contexto…). Dan mucha información que los números no capturan, así que se le
     # pasan a Jarvis. Solo las que tienen algo escrito, las más recientes.
     notas = []
     for row in dd:
         f = str(row.get("fecha", ""))
-        # El dolor de la sesión está DUPLICADO a propósito: Hugo lo escribe en el keep al
+        # El dolor de la sesión está DUPLICADO a propósito: el usuario lo escribe en el keep al
         # acabar de entrenar (`dolor_sesion_keep`) y más tarde copia el mismo texto al campo
         # "dolor de entreno" del formulario PM (`dolor_sesion_nota`). Pasarle los dos haría
         # que Jarvis leyera un único episodio como dos, así que el del keep entra solo
@@ -414,7 +414,7 @@ def generar() -> str:
         if trozos:
             notas.append(f"- {f} · " + " · ".join(trozos))
     if notas:
-        partes += ["", "Notas recientes de Hugo (texto libre de sus formularios):"] + notas[-8:]
+        partes += ["", "Notas recientes del usuario (texto libre de sus formularios):"] + notas[-8:]
 
     # Aviso de frescura, para que no opine sobre datos viejos como si fueran de hoy
     viejos = [

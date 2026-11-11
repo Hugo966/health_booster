@@ -66,7 +66,7 @@ export default function Panel({
               // táctil NO HAY hover, así que este botón era invisible para siempre en
               // TODOS los paneles del móvil. Y como la otra forma de ampliar es tocar el
               // fondo de la tarjeta, en el chat —donde casi todo son controles con
-              // `data-no-expand`— no había manera de llegar a la conversación. Hugo,
+              // `data-no-expand`— no había manera de llegar a la conversación. El usuario,
               // 2026-09-12: "no hay ni flecha ni nada". Mismo fallo de fondo que el
               // gesto atado a `wheel`: una interacción que solo existe con ratón.
               className="jarvis-expand rounded-md p-1.5 opacity-0 transition group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"

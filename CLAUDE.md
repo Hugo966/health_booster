@@ -38,6 +38,20 @@ canal de sincronización, así que:
   empresas que trabajan en inglés. El resto de documentación (HANDOFF, roadmap, `docs/`)
   es interna y se queda en español. Al terminar algo grande, contarlo en el README **con
   las cifras medidas** — es lo que de verdad se lee.
+- **En el CÓDIGO se habla de "el usuario", no de Hugo** (barrido el 2026-11-11, 209
+  menciones). Hugo es el AUTOR —firma los commits y el repo cuelga de su cuenta, y eso se
+  queda—, pero la aplicación tiene que poder adoptarla cualquiera: un comentario que dice
+  "Hugo apunta el entreno" se lee como que la app es de una persona. En los docs internos
+  (HANDOFF, este fichero, `docs/`) sí se le nombra: son notas de desarrollo, no producto.
+  Los mensajes de commit van como el código: "the user".
+- **El nombre del usuario sale de `JARVIS_USUARIO` (`.env`), no del prompt.** El prompt y
+  las descripciones de herramientas llevan un hueco `{usuario}` / `{Usuario}` que rellena
+  `personalidad.con_usuario()` al montar el sistema; `chat.py` hace lo mismo con
+  `HERRAMIENTAS` y con los prompts del enrutado y de las muletillas. Sin la variable,
+  Jarvis dice "el usuario" y funciona igual. Dos formas porque el prompt es prosa, y el
+  hueco **nunca va detrás de "de" ni de "a"** ("de el usuario" no existe): esas frases
+  están escritas con "su". **El `.env` NO viaja con `./desplegar.sh`**, así que la VM
+  necesita su propia línea `JARVIS_USUARIO=` o empezará a llamarle "el usuario".
 - Los comentarios explican **por qué**, no qué hace el código.
 
 ## Cosas que cuesta redescubrir

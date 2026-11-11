@@ -5,7 +5,7 @@ Hay DOS familias de herramientas y la diferencia es estructural:
   - **De lectura** (`dia`, `ejercicio`, `recordar`, `estado_formularios`): las ejecuta
     este backend y el resultado vuelve al modelo, que sigue razonando con él.
   - **De escritura** (`guardar_am`, `guardar_pm`, `guardar_peso`): también las ejecuta el
-    backend, pero MODIFICAN la hoja de Hugo. Van en su propia lista para que se vea de un
+    backend, pero MODIFICAN la hoja del usuario. Van en su propia lista para que se vea de un
     vistazo qué puede tocar sus datos.
   - **De actuación** (`abrir_panel`, `cerrar_panel`, `resaltar`, `grafico`): el
     servidor NO puede ejecutarlas — pasan al navegador como una lista de acciones.
@@ -39,7 +39,7 @@ MAX_VUELTAS = 4  # tope de idas y venidas con herramientas, por si el modelo se 
 
 
 class Cancelado(Exception):
-    """Hugo ha cortado a Jarvis a media respuesta.
+    """El usuario ha cortado a Jarvis a media respuesta.
 
     No es un error: es la vía por la que se aborta el turno. Lanzada desde `al_texto`
     sale del `with` del stream de Anthropic (cerrándolo, así que además se deja de pagar
@@ -53,14 +53,14 @@ PANELES = ["readiness", "hrv", "sueno", "carga", "fuerza", "peso", "correlacione
 # El vocabulario sale del ESQUEMA para que no pueda divergir de lo que acepta la hoja.
 ZONAS_DESC = ("Zonas separadas por coma, del vocabulario del formulario: "
               + ", ".join(formularios.ZONAS)
-              + ". Si Hugo lo dice con sus palabras ('me duele el cuello'), mándalo tal "
+              + ". Si {usuario} lo dice con sus palabras ('me duele el cuello'), mándalo tal "
                 "cual: el backend lo traduce al vocabulario.")
 
 HERRAMIENTAS_LECTURA = [
     {
         "nombre": "dia",
         "descripcion": "Consulta los datos de un día concreto: readiness, HRV, sueño, "
-                       "ánimo y qué entrenó. Úsala cuando Hugo pregunte por una fecha.",
+                       "ánimo y qué entrenó. Úsala cuando {usuario} pregunte por una fecha.",
         "params": {"fecha": {"type": "string", "description": "Fecha en formato AAAA-MM-DD"}},
         "requeridos": ["fecha"],
     },
@@ -73,7 +73,7 @@ HERRAMIENTAS_LECTURA = [
     },
     {
         "nombre": "recordar",
-        "descripcion": "Guarda algo de la vida de Hugo para acordarte en futuras "
+        "descripcion": "Guarda algo de la vida de {usuario} para acordarte en futuras "
                        "conversaciones (lo que lee, viajes, gente, cómo se siente, metas). "
                        "NO la uses para números del dashboard: esos ya te llegan solos.",
         "params": {
@@ -89,7 +89,7 @@ HERRAMIENTAS_LECTURA = [
     },
     {
         "nombre": "estado_formularios",
-        "descripcion": "Qué formularios ha rellenado Hugo y cuáles le faltan, con lo que "
+        "descripcion": "Qué formularios ha rellenado {usuario} y cuáles le faltan, con lo que "
                        "ya tiene puesto. Úsala cuando pregunte qué le falta, cuando "
                        "quieras recordárselo, y SIEMPRE antes de corregir algo.",
         "params": {"dias": {"type": "integer", "description": "Días atrás a mirar. Por defecto 14."}},
@@ -101,7 +101,7 @@ HERRAMIENTAS_ESCRITURA = [
     {
         "nombre": "guardar_am",
         "descripcion": (
-            "Guarda o CORRIGE el formulario de la MAÑANA. Manda SOLO los campos que Hugo "
+            "Guarda o CORRIGE el formulario de la MAÑANA. Manda SOLO los campos que {usuario} "
             "haya dicho: lo que no mandes se queda como está, así que sirve igual para "
             "rellenarlo entero que para cambiar un solo número. "
             "ESCALAS: sueno_calidad, sensacion_am y animo van de 1 a 9 (5 = normal, "
@@ -125,7 +125,7 @@ HERRAMIENTAS_ESCRITURA = [
             "notas_am": {"type": "string", "description": "Texto libre, con SUS palabras, no las tuyas"},
             "borrar": {"type": "array", "items": {"type": "string"},
                        "description": "Campos que hay que VACIAR, por su nombre. Solo si "
-                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "{usuario} te dice que ese dato no debería estar (metió "
                                       "el RPE de un día que no entrenó). Vaciar NO es "
                                       "corregir: para cambiar un número, mándalo. Y nunca "
                                       "vacíes nada que no te haya pedido él."},
@@ -158,7 +158,7 @@ HERRAMIENTAS_ESCRITURA = [
             "notas_pm": {"type": "string", "description": "Texto libre, con SUS palabras"},
             "borrar": {"type": "array", "items": {"type": "string"},
                        "description": "Campos que hay que VACIAR, por su nombre. Solo si "
-                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "{usuario} te dice que ese dato no debería estar (metió "
                                       "el RPE de un día que no entrenó). Vaciar NO es "
                                       "corregir: para cambiar un número, mándalo. Y nunca "
                                       "vacíes nada que no te haya pedido él."},
@@ -167,14 +167,14 @@ HERRAMIENTAS_ESCRITURA = [
     },
     {
         "nombre": "guardar_peso",
-        "descripcion": "Apunta una pesada. Hugo se pesa en ayunas, más o menos una vez "
+        "descripcion": "Apunta una pesada. {Usuario} se pesa en ayunas, más o menos una vez "
                        "por semana, así que no se lo persigas a diario.",
         "params": {
             "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
             "peso_kg": {"type": "number", "description": "En kilos, p.ej. 81.8"},
             "borrar": {"type": "array", "items": {"type": "string"},
                        "description": "Campos que hay que VACIAR, por su nombre. Solo si "
-                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "{usuario} te dice que ese dato no debería estar (metió "
                                       "el RPE de un día que no entrenó). Vaciar NO es "
                                       "corregir: para cambiar un número, mándalo. Y nunca "
                                       "vacíes nada que no te haya pedido él."},
@@ -186,7 +186,7 @@ HERRAMIENTAS_ESCRITURA = [
         "descripcion": (
             "Dice a qué semana del plan corresponde una pestaña del Excel del entrenador "
             "que el pipeline no supo colocar. ÚSALA SOLO cuando el parte de estado diga "
-            "que hay una pestaña sin enrutar y Hugo te haya contestado qué semana es. "
+            "que hay una pestaña sin enrutar y {usuario} te haya contestado qué semana es. "
             "NUNCA te inventes los números ni los deduzcas del nombre: si no te los ha "
             "dicho él, pregúntaselos. Un número mal puesto le cuelga los ejercicios de "
             "una sesión a otra y eso no da ningún error."
@@ -225,13 +225,35 @@ HERRAMIENTAS_UI = [
 
 HERRAMIENTAS_BACKEND = HERRAMIENTAS_LECTURA + HERRAMIENTAS_ESCRITURA
 HERRAMIENTAS = HERRAMIENTAS_BACKEND + HERRAMIENTAS_UI
+
+
+def _con_nombre(h: dict) -> dict:
+    """Rellena el hueco del nombre del usuario en lo que lee el modelo.
+
+    Estas descripciones son prompt tanto como `personalidad.PERSONAJE`, así que llevan
+    el mismo `{usuario}` y sale del mismo sitio (el `.env`). Si se quedara el nombre a
+    fuego aquí, el prompt sería configurable y las herramientas no, que es peor que no
+    serlo: diría dos cosas distintas en el mismo turno.
+    """
+    h = dict(h)
+    if "descripcion" in h:
+        h["descripcion"] = personalidad.con_usuario(h["descripcion"])
+    h["params"] = {
+        k: ({**v, "description": personalidad.con_usuario(v["description"])}
+            if "description" in v else v)
+        for k, v in h.get("params", {}).items()
+    }
+    return h
+
+
+HERRAMIENTAS = [_con_nombre(h) for h in HERRAMIENTAS]
 NOMBRES_UI = {h["nombre"] for h in HERRAMIENTAS_UI}
 
 
 # --- herramientas de lectura -------------------------------------------------
 
 def _ultima_fila(data: dict, pestana: str, fecha: str) -> dict:
-    """La ÚLTIMA fila de esa fecha. Hay fechas duplicadas de cuando Hugo corregía a mano,
+    """La ÚLTIMA fila de esa fecha. Hay fechas duplicadas de cuando el usuario corregía a mano,
     y la que vale es la última: es la que gana también al consolidar."""
     filas = [r for r in data.get(pestana, []) if str(r.get("fecha")) == fecha]
     return filas[-1] if filas else {}
@@ -242,7 +264,7 @@ def _tool_dia(fecha: str) -> dict:
     fila = next((r for r in data.get("derived_diario", []) if str(r.get("fecha")) == fecha), None)
 
     # `derived_diario` SOLO lo regenera el pipeline, así que cualquier día posterior a la
-    # última pasada sale vacío aunque Hugo tenga el formulario relleno. Pasó el 2026-09-06:
+    # última pasada sale vacío aunque el usuario tenga el formulario relleno. Pasó el 2026-09-06:
     # `dia` juraba "no hay datos del 5" mientras el PM del 5 estaba guardado, y Jarvis se
     # contradijo a sí mismo delante de él. Por eso se leen también las pestañas ORIGEN,
     # que es donde escriben los formularios — la misma regla que ya seguía `huecos.py`.
@@ -260,7 +282,7 @@ def _tool_dia(fecha: str) -> dict:
                 "energia", "molestias_nivel", "rpd_sesion", "volumen_total", "n_series_total"]
     resumen = {k: fila[k] for k in interesa if fila.get(k) not in ("", None)}
 
-    # El origen manda sobre lo derivado: es lo que Hugo acaba de escribir.
+    # El origen manda sobre lo derivado: es lo que el usuario acaba de escribir.
     del_origen = ["sueno_calidad", "sensacion_am", "animo", "estres", "molestias_nivel",
                   "molestias_zona", "alcohol_ayer", "notas_am",
                   "energia", "sensacion_global", "cafeina_hoy_mg", "cafeina_hoy_hora", "rpd_sesion",
@@ -271,7 +293,7 @@ def _tool_dia(fecha: str) -> dict:
                 resumen[k] = origen[k]
     if peso.get("peso_kg") not in ("", None):
         resumen["peso_kg"] = peso["peso_kg"]
-    # `dolor_sesion_keep` NO se incluye nunca: es el borrador que Hugo escribe en el keep y
+    # `dolor_sesion_keep` NO se incluye nunca: es el borrador que el usuario escribe en el keep y
     # luego copia al formulario. Dárselos los dos le haría leer el mismo dolor como dos
     # episodios distintos.
     resumen["formularios"] = {"am": bool(am), "pm": bool(pm)}
@@ -310,7 +332,7 @@ def _tool_ejercicio(nombre: str) -> dict:
     mejor = max(e1rms, default=None)
 
     # La serie más pesada que SÍ completó, además del e1RM. Son cosas distintas y
-    # confundirlas es un error de bulto: el e1RM de Hugo en banca sale 101,8 kg (estimado
+    # confundirlas es un error de bulto: el e1RM del usuario en banca sale 101,8 kg (estimado
     # desde 80x4 @RPE6) cuando lo más que ha levantado son 90x1, y un 92,5 que falló.
     # El modelo de RPE sobreestima al extrapolar desde repes altas con esfuerzo bajo, así
     # que decirle "tu mejor banca son 101,8" es contarle algo que nunca ha hecho.
@@ -353,12 +375,12 @@ def _aplanar(args: dict) -> dict:
     """Sube los campos si el modelo los ha metido dentro de un objeto.
 
     Pasó el 2026-09-06 rellenando el PM por voz: mandó `guardar_pm({valores: {...}})` y
-    el guardado moría con "'valores' no es un campo del formulario PM". Hugo lo había
+    el guardado moría con "'valores' no es un campo del formulario PM". El usuario lo había
     dictado bien y lo perdió tres veces seguidas.
 
     Se corrige en vez de rechazarse porque el coste es asimétrico: aceptar la forma
     anidada no puede estropear nada (los nombres de campo se validan igual justo
-    después), y rechazarla le cuesta a Hugo repetir el parte entero de viva voz.
+    después), y rechazarla le cuesta al usuario repetir el parte entero de viva voz.
     """
     if not isinstance(args, dict):
         return {}
@@ -390,14 +412,14 @@ def _tool_guardar(tipo: str, args: dict) -> dict:
     try:
         res = formularios.guardar(tipo, fecha, valores, borrar)
     except ValueError as e:
-        # El mensaje va en español y es el que Jarvis le repetirá a Hugo para re-preguntar.
+        # El mensaje va en español y es el que Jarvis le repetirá al usuario para re-preguntar.
         return {"error": str(e), "fecha": fecha}
 
     # A PARTIR DE AQUÍ LA HOJA YA ESTÁ ESCRITA. Pase lo que pase montando el resumen, no
     # se puede devolver un error: Jarvis lo leería como que el guardado ha fallado y le
     # haría dictarlo todo otra vez encima de un dato que ya está bien.
     # Pasó el 2026-09-06: `res["valores"]` no existe (la clave es `guardado`), saltó un
-    # KeyError DESPUÉS de escribir, y Jarvis le dijo a Hugo que no sabía si se había
+    # KeyError DESPUÉS de escribir, y Jarvis le dijo al usuario que no sabía si se había
     # guardado. Estaba guardado, y correcto.
     try:
         etiquetas = {c.nombre: c.etiqueta for c in formularios.ESQUEMA[tipo].campos}
@@ -456,7 +478,7 @@ def _ejecutar_backend(llamada) -> str:
 
 # --- muletilla ----------------------------------------------------------------
 
-# Qué muletilla ("déjame que lo mire…") pega con lo que Hugo acaba de decir. Lo decide
+# Qué muletilla ("déjame que lo mire…") pega con lo que el usuario acaba de decir. Lo decide
 # Haiku, no una regex: las palabras sueltas se equivocaban feo —"hoy me encuentro
 # jodido" caía en 'consulta' por el "hoy" y le soltaba un "voy a mirar tus datos" a
 # alguien que dice que está mal—. Haiku tarda ~1 s, corre EN PARALELO con la respuesta
@@ -465,8 +487,8 @@ _CLASIFICADOR = "claude-haiku-4-5-20251001"
 # Corto a propósito: cada token de entrada y de salida se paga en latencia, y esto tiene
 # que estar listo en ~1 s o no sirve para tapar nada.
 _SIS_RUTA = """\
-Eres Jarvis, colega de Hugo: sarcástico y cercano. Castellano de España (nada de "qué
-onda", "ahorita" ni voseo). Hugo acaba de escribirte. Devuelve UNA línea:
+Eres Jarvis, su colega: sarcástico y cercano. Castellano de España (nada de "qué
+onda", "ahorita" ni voseo). {Usuario} acaba de escribirte. Devuelve UNA línea:
 
 - Si es un saludo, despedida, agradecimiento o reacción corta que NO necesita mirar sus
   datos de salud ni de entreno, contéstale tú, con gracia, en una frase:
@@ -519,7 +541,7 @@ def enrutar(mensaje: str) -> dict:
     Todo vacío = seguir por el camino normal sin coletilla. Es el fallo seguro."""
     try:
         r = _cliente().messages.create(
-            model=_CLASIFICADOR, max_tokens=40, system=_SIS_RUTA,
+            model=_CLASIFICADOR, max_tokens=40, system=personalidad.con_usuario(_SIS_RUTA),
             messages=[{"role": "user", "content": mensaje}],
         )
         t = r.content[0].text.strip()
@@ -554,10 +576,10 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
     que el navegador pueda empezar a leer en alto la primera frase sin esperar al final
     (lo que se tarda en contestar lo marca la longitud de la respuesta).
 
-    `cancelado()` dice si Hugo ha cortado a Jarvis. Se mira antes de EJECUTAR nada y
+    `cancelado()` dice si el usuario ha cortado a Jarvis. Se mira antes de EJECUTAR nada y
     antes de guardar: sin esto, cortarle a media frase mientras te dicta el formulario
     escribía igualmente en la hoja los valores que había entendido mal, y dejaba en la
-    memoria una respuesta que Hugo nunca llegó a oír. El corte fino (dejar de generar) lo
+    memoria una respuesta que el usuario nunca llegó a oír. El corte fino (dejar de generar) lo
     hace `al_texto` lanzando `Cancelado` desde dentro del stream."""
     memoria.init()
     memoria.guardar_mensaje(sesion, "usuario", mensaje)
@@ -574,22 +596,22 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
     acciones, texto = [], ""
     uso = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
 
-    # Copia de lo que de verdad ha SALIDO hacia Hugo, trozo a trozo. Si le corta, es lo
+    # Copia de lo que de verdad ha SALIDO hacia el usuario, trozo a trozo. Si le corta, es lo
     # único que se sabe con certeza que llegó a oír, y es lo que se guarda en la memoria
     # (ver el final de la función).
     emitido: list[str] = []
     guardado_parcial = False
 
     def _guardar_interrumpido():
-        """Guarda lo que Hugo alcanzó a oír antes de cortar.
+        """Guarda lo que el usuario alcanzó a oír antes de cortar.
 
         Antes no se guardaba NADA, con el argumento de que media respuesta es peor que
         ninguna porque el modelo la leería como dicha. Ese argumento da por hecho que si
-        Hugo corta es porque la respuesta iba mal, y el caso normal resultó ser el
+        el usuario corta es porque la respuesta iba mal, y el caso normal resultó ser el
         contrario: **le contesta a media frase**, que es justo lo que busca el modo
         conversación. Al borrarla, la pregunta de Jarvis desaparecía del hilo y el turno
         siguiente se quedaba sin pie. Pasó el 2026-09-12: le preguntó a qué valor le
-        cambiaba la energía, Hugo dijo "a 7", y contestó "7 qué, tío".
+        cambiaba la energía, el usuario dijo "a 7", y contestó "7 qué, tío".
 
         Se guarda lo emitido CON la marca de que se cortó ahí. Es más cierto que las dos
         alternativas: ni se pierde el contexto, ni el modelo cree que lo dijo entero.
@@ -600,7 +622,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
         guardado_parcial = True
         parcial = "".join(emitido).strip()
         if parcial:
-            memoria.guardar_mensaje(sesion, "jarvis", f"{parcial} […Hugo te cortó aquí]")
+            memoria.guardar_mensaje(sesion, "jarvis", f"{parcial} […te cortó aquí]")
 
     def _emitir(trozo: str):
         emitido.append(trozo)
@@ -640,7 +662,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
                 lecturas.append(ll)
 
         # Acción de UI y ni una palabra: el modelo suele emitir `abrir_panel` a secas.
-        # Si cortáramos aquí, Hugo vería abrirse el panel y a Jarvis mudo (ni burbuja ni
+        # Si cortáramos aquí, el usuario vería abrirse el panel y a Jarvis mudo (ni burbuja ni
         # voz). Se le confirma que ya está hecho para que dé UNA vuelta más y lo comente.
         if not lecturas and not texto:
             mensajes.append({"role": "assistant", "content": r.texto or ""})
@@ -656,7 +678,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
         if not lecturas:
             break
 
-        # Última puerta antes de tocar nada de Hugo. Si ya le ha cortado, no hay a quién
+        # Última puerta antes de tocar nada del usuario. Si ya le ha cortado, no hay a quién
         # contestar y aquí dentro hay escrituras en su hoja (`guardar_pm`…).
         if cancelado and cancelado():
             _guardar_interrumpido()
@@ -681,7 +703,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
             unicas.append(a)
 
     # Si le cortó por el camino, se guarda LO QUE LLEGÓ A OÍR, marcado (ver
-    # `_guardar_interrumpido`). No guardar nada dejaba el hilo cojo justo cuando Hugo le
+    # `_guardar_interrumpido`). No guardar nada dejaba el hilo cojo justo cuando el usuario le
     # responde a media frase, que es el uso normal del modo conversación.
     if cancelado and cancelado():
         _guardar_interrumpido()

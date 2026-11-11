@@ -44,7 +44,7 @@ ATHLETE  = os.getenv("INTERVALS_ATHLETE_ID")
 SA_JSON  = os.getenv("GOOGLE_SA_JSON")
 SHEET_ID = os.getenv("SHEET_ID")
 KEEP_TXT = os.getenv("KEEP_TXT")
-DRIVE_EXCEL_ID = os.getenv("DRIVE_EXCEL_ID")   # Hoja de Google "Hugo the GOAT" (plan de entreno)
+DRIVE_EXCEL_ID = os.getenv("DRIVE_EXCEL_ID")   # Hoja de Google "el usuario the GOAT" (plan de entreno)
 INTERVALS = "https://intervals.icu/api/v1"
 
 # ----------------------------------------------------------------------------
@@ -121,7 +121,7 @@ def fetch_objetivo(oldest, newest):
     """Wellness diario: HRV rMSSD, FC reposo, sueño, pasos. Reintenta si Intervals
     aún no ha rellenado el HRV de ayer (ver INTERVALS_REINTENTOS).
 
-    Hugo tiene la sensación de que "siempre hay que ejecutarlo dos veces". Por eso cada
+    El usuario tiene la sensación de que "siempre hay que ejecutarlo dos veces". Por eso cada
     intento imprime hasta dónde llega el HRV y el `updated` más reciente: si en el primer
     intento el `updated` ya es de hace horas pero el HRV no aparece, es que la API nos
     está sirviendo caché (y entonces habría que atacar eso). Si el `updated` va cambiando
@@ -152,7 +152,7 @@ def fetch_objetivo(oldest, newest):
               f"reloj no ha subido la noche todavía. Reejecuta más tarde.)")
     return df.drop(columns=["_updated"], errors="ignore")
 
-# Una actividad de Intervals con tiempo 0 = Hugo olvidó registrarla en Zepp: la sesión
+# Una actividad de Intervals con tiempo 0 = el usuario olvidó registrarla en Zepp: la sesión
 # ocurrió, pero llegó sin duración. Asumimos una sesión media (2 h) en vez de un 0, que
 # se colaría como carga nula y reventaría el sRPE de ese día (y sus correlaciones). El
 # gimnasio no lleva GPS, así que estos ceros son habituales; 2 h es una media razonable.
@@ -189,19 +189,19 @@ def fetch_duraciones(oldest, newest):
 # 2. ENTRENO  (Keep + Excel -> sets -> sesión)
 # ----------------------------------------------------------------------------
 # El plan de todos los bloques vive en un único archivo de Drive (Hoja de Google
-# "Hugo the GOAT"). Se lee la columna A de cada pestaña vía gspread (la exportación
+# "el usuario the GOAT"). Se lee la columna A de cada pestaña vía gspread (la exportación
 # a .xlsx falla por el límite de 10 MB de la API de Drive, y no hace falta el resto).
 # El reparto pestaña -> (bloque, semana) está en ep.TAB_ROUTE.
 
 # Pestaña del hub donde viven las pestañas del plan que no se pudieron enrutar solas.
 # Es una ENTRADA, no una salida: el pipeline solo añade filas a medias (el nombre, sin
-# números) y quien las completa es Hugo contestándole a Jarvis. Por eso se escribe con
+# números) y quien las completa es el usuario contestándole a Jarvis. Por eso se escribe con
 # `append_row` y nunca con `write_tab`, que borra la pestaña entera antes de escribir.
 TAB_RUTAS = "plan_pestanas"
 
 
 def rutas_manuales(sh_hub):
-    """{clave_de_pestaña: (plani, bloque, semana)} con lo que Hugo ya contestó."""
+    """{clave_de_pestaña: (plani, bloque, semana)} con lo que el usuario ya contestó."""
     df = read_tab(sh_hub, TAB_RUTAS)
     out = {}
     for r in (df.to_dict("records") if not df.empty else []):
@@ -280,7 +280,7 @@ def drive_lookups():
         )
     if fallidas:
         print(f"  (aviso) pestañas sin columna A, ignoradas: {', '.join(fallidas)}")
-    # Lo que Hugo haya contestado sobre pestañas raras manda sobre la deducción; lo que
+    # Lo que el usuario haya contestado sobre pestañas raras manda sobre la deducción; lo que
     # sigue sin poder resolverse se apunta para que Jarvis se lo pregunte.
     hub = open_sheet()
     manual = rutas_manuales(hub)
@@ -290,7 +290,7 @@ def drive_lookups():
 
 def build_entreno():
     # El keep sale de Drive si hay KEEP_DOC_ID, y si no del disco. En la VM no hay
-    # fichero local, y entre las dos máquinas de Hugo el fichero se desincronizaba.
+    # fichero local, y entre las dos máquinas del usuario el fichero se desincronizaba.
     keep = ep.leer_keep()
     if not keep.strip():
         print("  (aviso) keep vacío o no encontrado (ni KEEP_DOC_ID ni KEEP_TXT); salto entreno.")
@@ -309,7 +309,7 @@ def build_entreno():
         # Series falladas (0 reps) de la sesión. El frontend las pondera aparte en la
         # carga (un fallo es esfuerzo máximo y fatiga mucho más que una serie normal).
         nfallos = g.loc[g["flag"].astype(str).str.contains("fallo", na=False), "n_series"].sum(min_count=1)
-        # Series con `@?`/`RIR?`: Hugo levantó el peso pero no pudo valorar el esfuerzo
+        # Series con `@?`/`RIR?`: el usuario levantó el peso pero no pudo valorar el esfuerzo
         # (dolor, lesión, ir contra el reloj). Se cuentan aparte de los fallos y de la
         # basura de tecleo (`int_no_parseable`) porque son la señal de que la sesión se
         # torció; sin agregarlas aquí, el flag no sale nunca de `entreno_sets`.
@@ -329,7 +329,7 @@ def build_entreno():
             if not vals.empty: dolor = vals.iloc[0]
         return pd.Series(dict(
             # `plani` se quedó fuera cuando se agregó por sesión, y sin él "bloque 2" es
-            # ambiguo: Hugo reinicia la numeración con cada plan. Hace falta para poder
+            # ambiguo: el usuario reinicia la numeración con cada plan. Hace falta para poder
             # traducir (plan, bloque) al nombre de la etapa — Build, Peaking… — en el
             # parte de estado de Jarvis.
             plani=g["plani"].iloc[0],
@@ -353,7 +353,7 @@ def build_rm1(sets):
     if sets.empty: return pd.DataFrame()
     b = sets[(sets["tipo"] == "básico") & sets["e1rm"].notna()]
     if b.empty: return pd.DataFrame()
-    # `plani` va en la clave: Hugo REINICIA la numeración de bloques con cada plan, así que
+    # `plani` va en la clave: el usuario REINICIA la numeración de bloques con cada plan, así que
     # sin él el bloque 2 de PLANI 2 (Build) se fusionaría con el bloque 2 de PLANI 1 y los
     # e1RM de dos etapas distintas saldrían mezclados. Ya se solapan de verdad desde que
     # entró Build (P1 usa 1/2/3/4, P2 usa 1/2), así que esto dejó de ser hipotético.
@@ -480,7 +480,7 @@ def consolidate(am, pm, peso, objetivo, sesion, duraciones):
     # sRPE por SERIES — la métrica de carga PRINCIPAL (ver CLAUDE.md). Se calcula aquí y en
     # ningún otro sitio: hasta ahora el panel de Carga la recalculaba en TypeScript mientras
     # la hoja guardaba otra fórmula con el mismo nombre (`sRPE` = rpd × duración), así que
-    # Jarvis —que lee la hoja— podía contradecir lo que Hugo veía en pantalla.
+    # Jarvis —que lee la hoja— podía contradecir lo que el usuario veía en pantalla.
     # Un fallo (0 repes) es esfuerzo máximo y fatiga mucho más que una serie normal, así que
     # cuenta como una serie a RPE 10 por este factor. Si algún día dispara demasiado la
     # carga, bajarlo a 2 — y solo aquí.

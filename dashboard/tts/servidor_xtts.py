@@ -13,7 +13,7 @@ de aquel.
 Arrancar (venv aislado de XTTS, modelo en E:):
     E:/jarvis_tts/venv_xtts/Scripts/python.exe -m uvicorn servidor_xtts:app --port 8123
 
-XTTS-v2 es de licencia no comercial (Coqui Public Model License); uso personal de Hugo,
+XTTS-v2 es de licencia no comercial (Coqui Public Model License); uso personal del usuario,
 sin distribución, entra sin problema.
 """
 import io
@@ -42,7 +42,7 @@ TEMPERATURE = float(os.environ.get("JARVIS_TTS_TEMP", "0.65"))
 def _sin_silencios_largos(wav: np.ndarray, sr: int, top_db: float = 30.0, hueco: float = 0.18) -> np.ndarray:
     """Recorta el silencio de principio y fin y ACORTA los silencios interiores a
     `hueco` segundos. XTTS a veces mete pausas de varios segundos dentro de una misma
-    frase (el "inmanejable" que reporta Hugo); esto las elimina sin tocar la voz."""
+    frase (el "inmanejable" que reporta el usuario); esto las elimina sin tocar la voz."""
     intervalos = librosa.effects.split(wav, top_db=top_db)
     if len(intervalos) == 0:
         return wav

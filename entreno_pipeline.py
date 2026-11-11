@@ -15,19 +15,19 @@ import os, re, sys, unicodedata
 import pandas as pd
 import requests
 
-# El plan de TODOS los bloques vive en la misma hoja ("Hugo the GOAT"): las pestañas
-# Pestaña del plan -> (PLAN, bloque). El plan es imprescindible en la clave: Hugo
+# El plan de TODOS los bloques vive en la misma hoja ("el usuario the GOAT"): las pestañas
+# Pestaña del plan -> (PLAN, bloque). El plan es imprescindible en la clave: el usuario
 # REINICIA la numeración de bloques con cada plan, así que "BLOQUE 1" de PLANI 1 y de
 # PLANI 2 son etapas distintas. Indexando solo por bloque se pisaban: las sesiones de
 # PLANI 1 bloque 1 estaban cogiendo los nombres de las pestañas Offseason (PLANI 2), y
 # 21 de 67 ejercicios acababan con una "mejor marca" imposible —plancha copenhague a
 # 101 kg, o una banca de 178 kg cuando la real son 101,8—. Verificado el 2026-09-09.
-# El número de bloque debe cuadrar con el que Hugo escribe en SU keep, no ser correlativo.
+# El número de bloque debe cuadrar con el que el usuario escribe en SU keep, no ser correlativo.
 # Una etapa NUEVA ya no hace falta darla de alta aquí: `rutas_automaticas()` la deduce
-# (bloque siguiente del plan en curso) y el keep de Hugo hace de red si se equivoca.
+# (bloque siguiente del plan en curso) y el keep del usuario hace de red si se equivoca.
 # Esta tabla sigue siendo la ANCLA de la que se cuenta, y lo único que fija su nombre.
 # La 4ª columna es el NOMBRE de la etapa, y no es decoración: sin él, lo único que
-# llega a Jarvis es "bloque 2", que no significa nada para Hugo —él la llama Build—.
+# llega a Jarvis es "bloque 2", que no significa nada para el usuario —él la llama Build—.
 # Va aquí para que al dar de alta una etapa nueva su nombre entre solo.
 PLAN_TAB_RULES = [
     (re.compile(r'^\s*semana\s*0*(\d+)\s*$', re.I),      1, 3, "Volumen"),
@@ -37,11 +37,11 @@ PLAN_TAB_RULES = [
     (re.compile(r'^\s*off[\s\-_]*seasi?on\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 1, "Offseason"),
     # Build (S1-S5): segunda etapa de PLANI 2, la que viene después del Offseason.
     (re.compile(r'^\s*build\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 2, "Build"),
-    # Build II (desde 2026-10): tercera etapa de PLANI 2, y el BLOQUE 3 que Hugo ya
+    # Build II (desde 2026-10): tercera etapa de PLANI 2, y el BLOQUE 3 que el usuario ya
     # escribe en su keep. No choca con la regla de arriba: ahí, tras "build" solo puede
     # venir la "s" de la semana, y aquí viene la "II".
     (re.compile(r'^\s*build\s*(?:ii|2)\s*[\s\-_]*s\s*0*(\d+)\s*$', re.I), 2, 3, "Build II"),
-    # Formato "P2B2S3": el que Hugo quiere usar cuando migre el plan del entrenador a
+    # Formato "P2B2S3": el que el usuario quiere usar cuando migre el plan del entrenador a
     # una hoja suya. Aún no existe ninguna pestaña así; se enruta ya para que ese día
     # no haya que tocar nada, y porque lleva el plan y el bloque dentro del nombre.
     (re.compile(r'^\s*p\s*0*(\d+)\s*b\s*0*(\d+)\s*s\s*0*(\d+)\s*$', re.I), None, None, None),
@@ -71,7 +71,7 @@ def rutas_automaticas(pestanas, manual=None):
     """(rutas, pendientes) para las pestañas que no casan con ninguna regla.
 
     `pestanas`: iterable de (título, columna_A), en el orden en que están en la hoja.
-    `manual`: {clave_normalizada: (plani, bloque, semana)} con lo que Hugo ya contestó
+    `manual`: {clave_normalizada: (plani, bloque, semana)} con lo que el usuario ya contestó
     sobre una pestaña que no se podía resolver sola. Manda sobre la deducción.
 
     `rutas` son las resueltas; `pendientes` son las que SON plan —traen `Sesión N`— pero
@@ -81,13 +81,13 @@ def rutas_automaticas(pestanas, manual=None):
     preguntárselo.
 
     El nombre de la etapa lo pone el entrenador y se lo inventa cada vez; el plan y el
-    bloque son de Hugo y NO están en ese nombre. Pero en todo su histórico una etapa
+    bloque son del usuario y NO están en ese nombre. Pero en todo su histórico una etapa
     nueva ha sido siempre el bloque siguiente del plan en curso (Offseason → 1,
     Build → 2, Build II → 3), así que se asigna eso y se deja de esperar a que alguien
     añada un patrón a mano.
 
     Adivinar aquí sale barato PORQUE el error se ve: el keep lleva el `BLOQUE n` que
-    escribe Hugo, y si no coincide, sus series entran sin nombre de ejercicio y
+    escribe el usuario, y si no coincide, sus series entran sin nombre de ejercicio y
     `huecos.py` lo pinta en ámbar ese mismo día.
 
     Dos frenos para no tragarse lo que no es plan:
@@ -97,7 +97,7 @@ def rutas_automaticas(pestanas, manual=None):
     """
     manual = manual or {}
     conocidas = [route_tab(t) for t, _ in pestanas]
-    # Lo que Hugo ya contestó cuenta como ancla: si dijo que una es el bloque 4, la
+    # Lo que el usuario ya contestó cuenta como ancla: si dijo que una es el bloque 4, la
     # siguiente etapa nueva tiene que ser la 5, no volver a ser la 4.
     out = {t: manual[_key(t)] for (t, _), d in zip(pestanas, conocidas)
            if not d and _key(t) in manual}
@@ -142,7 +142,7 @@ def nombre_etapa(plani, bloque):
     """(plan, bloque) -> 'Build', 'Peaking'… o None si esa etapa no tiene nombre.
 
     Existe para que el parte de estado pueda decir "Build" en vez de "bloque 2": el
-    número es interno del pipeline, el nombre es como lo llama Hugo.
+    número es interno del pipeline, el nombre es como lo llama el usuario.
     """
     try:
         plani, bloque = int(plani), int(bloque)
@@ -155,7 +155,7 @@ def nombre_etapa(plani, bloque):
 
 # Fuente local del plan (solo para el modo __main__ de depuración; el pipeline real
 # lo lee de Drive).
-PLAN_XLSX = "/home/hugo/Desktop/Hugo the GOAT.xlsx"
+PLAN_XLSX = "/home/hugo/Desktop/el usuario the GOAT.xlsx"
 
 # Correcciones puntuales: semanas donde desviaste el plan del Excel.
 # (plani, bloque, semana): {dia_que_entrenaste: dia_del_que_sacaste_los_BÁSICOS}
@@ -291,7 +291,7 @@ ALIAS = {
     'leg extension 2ct arriba':            'Leg extension 2ct',
     # Mismo ejercicio, dos formas de escribirlo en la hoja (encontradas el 2026-10-13 al
     # entrar Build II). Sin unificarlas, el histórico se parte en dos justo al cambiar de
-    # etapa: la sentadilla principal de Hugo pasaba a ser "otro ejercicio" en Build II.
+    # etapa: la sentadilla principal del usuario pasaba a ser "otro ejercicio" en Build II.
     # `_key` ya ignora mayúsculas, tildes y espacios de más, así que aquí solo hace falta
     # lo que cambia de verdad (un espacio dentro de "2 cm", una palabra de menos).
     'sentadilla low bar tacon 2 cm':       'Sentadilla low bar tacón 2cm',
@@ -329,7 +329,7 @@ def _colA_from_xlsx(path):
 # Origen del keep: documento de Drive o fichero local
 # ---------------------------------------------------------------------------
 # El keep vivía solo en disco, y eso ataba el pipeline a una máquina concreta: las dos
-# de Hugo se desincronizaban sin avisar, y en la VM directamente no existe. Con
+# del usuario se desincronizaban sin avisar, y en la VM directamente no existe. Con
 # KEEP_DOC_ID pasa a ser un documento de Google que él edita desde donde quiera (el
 # móvil incluido) y que el pipeline exporta como texto plano.
 
@@ -387,12 +387,12 @@ def leer_keep(sa_json=None, doc_id=None, ruta=None):
 def _sin_calentamiento(ejs):
     """Quita el calentamiento de la lista de una sesión y renumera los slots.
 
-    Hugo NO apunta el calentamiento en el keep, así que si se queda aquí los nombres se
+    El usuario NO apunta el calentamiento en el keep, así que si se queda aquí los nombres se
     corren un puesto y la sentadilla acaba llamándose "Tibial raises".
 
     No basta con saltarse la sección que cuelga de la cabecera `Warm up`: el MISMO
     ejercicio se repite suelto al final de Accesorios (Build II S2, sesiones 1 y 3). Y
-    tampoco vale filtrar por el prefijo "Warm up" del nombre, que hoy está pero Hugo no
+    tampoco vale filtrar por el prefijo "Warm up" del nombre, que hoy está pero el usuario no
     garantiza que siga. Así que se recoge el nombre de lo que cuelga de la cabecera y se
     quita donde vuelva a salir EN ESA MISMA SESIÓN.
     """
@@ -479,7 +479,7 @@ def parse_segment(seg):
         rir=round((a+b)/2,2) if b is not None else a
     if rir is not None and not (0 <= rir <= 10): rir=None   # a prueba de fallos
     # Dos motivos distintos para quedarse sin intensidad, y NO se mezclan:
-    #   `@?` / `RIR?` -> Hugo no PUEDE valorar el esfuerzo (lesión, dolor, contra el
+    #   `@?` / `RIR?` -> el usuario no PUEDE valorar el esfuerzo (lesión, dolor, contra el
     #     reloj). Es información sobre la sesión, no un error: flag `sin_intensidad`,
     #     para poder contar estas series como señal de sesión comprometida.
     #   `RIRmario` y demás -> basura de tecleo: flag `int_no_parseable`. Contarla como
@@ -547,7 +547,7 @@ def parse_segment(seg):
         else: words.append(tok)
     if words: note.append(' '.join(words))
     # Los segundos se perdían enteros: un 3x30" guardaba "3 series" y nada más, así que
-    # ni Hugo ni Jarvis podían saber si la plancha fue de 30" o de un minuto. Van a la
+    # ni el usuario ni Jarvis podían saber si la plancha fue de 30" o de un minuto. Van a la
     # nota —no a una columna— porque de momento se quieren para leerlos, no para graficar.
     if tiempos:
         otros=len([n for n in nums if isinstance(n,float)])
@@ -562,14 +562,14 @@ def parse_segment(seg):
                 metros=(int(metros.group(1)) if metros else None),
                 had_secs=had_secs, tiempos=tiempos, note=' | '.join(n for n in note if n))
 
-# Un segmento con un solo número son repes por convención ("1x12"). Pero cuando Hugo
+# Un segmento con un solo número son repes por convención ("1x12"). Pero cuando el usuario
 # apunta el peso y se deja las repes ("77.5x6@7.5 - 77.5@8"), ese número es un KG, y
 # guardarlo como repes mete basura en la tabla. Se distingue mirando las series hermanas
 # de la MISMA línea: si se parece a su peso, es un peso. Dos condiciones, y hacen falta
 # las dos:
 #   - TOL_KG_HERMANA: a cuánto puede estar del peso de una hermana (sube o baja algún kilo
 #     dentro del mismo ejercicio).
-#   - REPS_MAX_PLAUSIBLE: medido sobre el histórico del keep, las repes reales de Hugo
+#   - REPS_MAX_PLAUSIBLE: medido sobre el histórico del keep, las repes reales del usuario
 #     nunca pasan de 20 (p99 = 16). Sin este tope, en un accesorio de 2 kg la ventana de
 #     ±5 se traga el rango de repeticiones y "6RIR0 - 2x5RIR2" convertiría 6 repes en 6 kg.
 TOL_KG_HERMANA = 5.0
@@ -603,12 +603,12 @@ def interpret(nums, anchor, bw, banda, metros, carga=None, kgs_linea=(), sin_car
         if len(numeric)>=3: return numeric[0],numeric[1],numeric[2],'tempo',''
         if len(numeric)==2: return numeric[0],None,numeric[1],'tempo',''
         return (numeric[0] if numeric else 1),None,None,'isometrico',''
-    # Convención de Hugo: 3 números = series × peso × reps; 2 números = peso × reps
+    # Convención del usuario: 3 números = series × peso × reps; 2 números = peso × reps
     # (1 serie; el peso se escribe siempre, 0 incluido para peso corporal); 1 = solo reps.
     # `anchor`/`bw` ya no hacen falta: la notación es inequívoca.
     if len(numeric)==3: return numeric[0],numeric[1],numeric[2],None,''
     # En un ejercicio sin carga posible el peso no existe, así que los dos números solo
-    # pueden ser series y repes. Con tres (3x0x4) Hugo ya escribe el 0, y ese caso cae
+    # pueden ser series y repes. Con tres (3x0x4) El usuario ya escribe el 0, y ese caso cae
     # arriba sin tocar nada. El "0x0" queda FUERA: no son 0 series de 0 repes, es su marca
     # de serie fallada o no hecha, y leerlo como 0 series la borraría de la carga (un fallo
     # pesa 10 × FACTOR_FALLO en el sRPE).
@@ -627,7 +627,7 @@ def parse_keep(text, lookups):
     rows=[]; plani=None; bloque=None; week=dia=None; slot=0; exs=[]; cur_fecha=''; dolores={}
 
     def flush_no_hechos():
-        # Si en una sesión Hugo registró MENOS ejercicios de los que el plan tenía,
+        # Si en una sesión el usuario registró MENOS ejercicios de los que el plan tenía,
         # es que la cortó por tiempo: se asume que no hizo los ÚLTIMOS que le tocaban.
         # Se anotan como 'no_hecho' (sin datos: no suman carga ni e1RM ni series) para
         # que la sesión incompleta conste. Solo si registró al menos uno (slot>0): una
@@ -645,13 +645,13 @@ def parse_keep(text, lookups):
         line=line.strip()
         if not line: continue
         # Separadores visuales ("-----", "=====") y cabeceras de plan ("PLANI 2"):
-        # Hugo los usa en el keep para dividir un plan de otro. No son ni bloques ni
+        # El usuario los usa en el keep para dividir un plan de otro. No son ni bloques ni
         # ejercicios, pero sin filtrarlos se colaban como series fantasma —y "PLANI 2"
         # llegaba a contar como 1 serie, inflando la sRPE de la última sesión.
         if re.fullmatch(r'[-=_*·—\s]+', line): continue
         mpl=re.match(r'PLANI\s*(\d+)', line, re.I)
         if mpl:
-            # El nº de plan etiqueta el eje de fuerza (P2B1S1). Va en el keep porque Hugo
+            # El nº de plan etiqueta el eje de fuerza (P2B1S1). Va en el keep porque el usuario
             # reinicia bloque/semana con cada plan y sin la P se solaparían microciclos.
             flush_no_hechos()
             plani=int(mpl.group(1)); bloque=None; week=dia=None; slot=0; exs=[]; continue
@@ -723,7 +723,7 @@ def parse_keep(text, lookups):
                 flag=(flag+' fallo').strip(); rpe,rir=10.0,None
             # Serie `@?`/`RIR?`: el peso y las repes son reales, así que suman volumen y
             # fatiga, pero el e1RM NO lo es —depende del esfuerzo, y justo eso es lo que
-            # Hugo no pudo valorar—. Sin e1RM no compite por un PR, que es lo que importa:
+            # el usuario no pudo valorar—. Sin e1RM no compite por un PR, que es lo que importa:
             # un récord no puede salir de una serie que él marcó porque algo iba mal.
             calcula_e1rm = kg is not None and sp is None and not p['sin_int']
             est,met=e1rm(kg,reps,rpe,rir) if calcula_e1rm else (None,None)

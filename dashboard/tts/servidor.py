@@ -45,7 +45,7 @@ REF_TEXT = (
     "completó el análisis. Nuestra descarga ya está completa, señor. Estamos en "
     "línea y listos."
 )
-GRAVE_SEMITONES = -1  # gravedad aprobada por Hugo
+GRAVE_SEMITONES = -1  # gravedad aprobada por el usuario
 
 app = FastAPI(title="Jarvis TTS")
 app.add_middleware(

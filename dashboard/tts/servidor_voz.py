@@ -49,7 +49,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 API_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
 VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "wtCLyr4fALNxeekzlMyQ").strip()
 # v3 en vez de Flash v2.5: Flash prioriza latencia y sale PLANO — la ironía de Jarvis
-# se perdía (Hugo: "la dice muy plana"). v3 es expresivo y además entiende etiquetas
+# se perdía (el usuario: "la dice muy plana"). v3 es expresivo y además entiende etiquetas
 # inline tipo [sarcastic]. Cuesta el doble ($0,10/1k caracteres), que a su volumen son
 # ~5 $/mes más. Si algún día prima la velocidad, aquí se vuelve a eleven_flash_v2_5.
 MODELO_11 = os.environ.get("ELEVENLABS_MODELO", "eleven_v3")
@@ -58,7 +58,7 @@ MODELO_RAPIDO = os.environ.get("ELEVENLABS_MODELO_RAPIDO", "eleven_flash_v2_5")
 # stability: en v3 son presets — 0.0 Creative / 0.5 Natural / 1.0 Robust. Creative es el
 # que responde a la intención y a las etiquetas; Robust suena estable pero monótono.
 ESTABILIDAD = float(os.environ.get("ELEVENLABS_STABILITY", "0.0"))
-# 0.7–1.2. Hugo se quejó de que XTTS hablaba lento; aquí 1.0 ya suena natural.
+# 0.7–1.2. El usuario se quejó de que XTTS hablaba lento; aquí 1.0 ya suena natural.
 VELOCIDAD = float(os.environ.get("ELEVENLABS_SPEED", "1.0"))
 TIMEOUT_S = 20
 
@@ -159,7 +159,7 @@ def _de_xtts(texto: str) -> bytes:
 
 
 # --- muletillas ---------------------------------------------------------------
-# v3 tiene un suelo de ~3,5 s por petición, así que entre que Hugo termina de hablar y
+# v3 tiene un suelo de ~3,5 s por petición, así que entre que el usuario termina de hablar y
 # Jarvis suelta la primera frase real pasan ~9 s de silencio incómodo. Se tapa con una
 # muletilla ("déjame ver…") que suena AL INSTANTE mientras se genera la respuesta de
 # verdad. No hace falta generarlas en vivo: son fijas, así que se generan una vez y se
@@ -169,12 +169,12 @@ MULETILLAS_DIR = Path(os.environ.get("JARVIS_MULETILLAS", r"E:/jarvis_tts/muleti
 # Largas a propósito (~4-5 s de audio): tienen que cubrir hasta que la primera frase
 # real esté generada. Con muletillas de 2 s quedaba un silencio de 7 s detrás.
 #
-# DOS POOLS, porque la muletilla tiene que pegar con lo que Hugo acaba de decir: soltar
+# DOS POOLS, porque la muletilla tiene que pegar con lo que el usuario acaba de decir: soltar
 # "déjame que lo mire" después de un "hola" queda absurdo. `consulta` es para cuando
 # pregunta por sus datos (ahí sí hay algo que mirar) y `neutra` sirve para cualquier
 # otra cosa. A los saludos NO se les pone muletilla: eso lo decide el frontend.
 # Se generan con v3 y CON etiquetas ([sarcastic]…) a propósito: una muletilla plana
-# detrás de una respuesta con retintín desentona muchísimo (Hugo). Como el coste se paga
+# detrás de una respuesta con retintín desentona muchísimo (el usuario). Como el coste se paga
 # una sola vez, aquí sí sale a cuenta el modelo caro. Y hay ~20 por pool para que tarde
 # mucho en repetirse: es lo que compensa que no mencionen lo que acabas de decir.
 MULETILLAS: dict[str, list[str]] = {
@@ -223,7 +223,7 @@ MULETILLAS: dict[str, list[str]] = {
         "Vale, dame un momento para eso.",
     ],
     # Para encadenar cuando la primera se queda corta. Cortas y de CONTINUACIÓN: repetir
-    # otro "déjame que mire eso" sonaba redundante (Hugo). Empiezan con un "mmm" o un
+    # otro "déjame que mire eso" sonaba redundante (el usuario). Empiezan con un "mmm" o un
     # "a ver" para que enganchen con lo anterior en vez de arrancar de cero.
     "segunda": [
         "Mmm… a ver.",

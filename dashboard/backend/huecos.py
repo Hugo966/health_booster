@@ -9,7 +9,7 @@ Se lee de las pestañas ORIGEN (`wellness_am`, `wellness_pm`, `peso`), no de
 y refleja al instante lo que se acaba de guardar desde la app.
 
 Tres estados y no dos: `pendiente` es lo que evita que esto esté en rojo todas las mañanas
-antes de que a Hugo le dé tiempo a rellenar nada.
+antes de que al usuario le dé tiempo a rellenar nada.
 """
 import os
 import re
@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HORA_LIMITE_AM = 12
 
 # Un día que lleva más de una semana sin rellenar se da por PERDIDO y se deja de pedir.
-# Decisión de Hugo: a esas alturas ya no se acuerda de cómo durmió ni de qué RPE fue, así
+# Decisión del usuario: a esas alturas ya no se acuerda de cómo durmió ni de qué RPE fue, así
 # que reclamarlo solo sirve para tener el panel en rojo para siempre por algo que no tiene
 # arreglo. Se sigue sin ese día y punto.
 VENTANA_RECUPERABLE_D = 7
@@ -45,7 +45,7 @@ VENTANA_RPE_D = 7
 # el plan de Drive no tenía nada para ese (semana, día). La causa casi siempre es que la
 # pestaña de esa etapa no está enrutada en `entreno_pipeline.PLAN_TAB_RULES`, y como el
 # entrenador la bautiza distinta cada vez, pasa cada vez que empieza una etapa nueva.
-# Es el único hueco que Hugo NO puede tapar rellenando algo —hay que tocar el código—,
+# Es el único hueco que el usuario NO puede tapar rellenando algo —hay que tocar el código—,
 # así que el semáforo lo pone en ámbar para que se entere y lo diga, no para pedirle nada.
 DIAS_PLAN = 21
 
@@ -62,7 +62,7 @@ _CABECERA_KEEP = re.compile(r"^\s*SEM\s*\d+\s*-\s*D[IÍ]A\s*\d+.*?(\d{4}-\d{2}-\
 def _sesiones_sin_plan(sets, hoy: date, dias: int = DIAS_PLAN) -> dict:
     """{fecha: (plani, bloque, semana)} de las sesiones que entraron sin nombres.
 
-    Las series SIN fecha son del keep antiguo, de antes de que Hugo fechara las
+    Las series SIN fecha son del keep antiguo, de antes de que el usuario fechara las
     cabeceras: se dejan fuera porque ya no tienen arreglo y tendrían el panel en ámbar
     para siempre por algo que no se puede hacer.
     """
@@ -177,7 +177,7 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
                          f"Al día · último {_dm(ultimo)}" if ultimo else "Sin datos")),
         }
 
-    # Un día cuenta como ENTRENADO si tiene `rpd_sesion` puesto en el PM: Hugo lo rellena
+    # Un día cuenta como ENTRENADO si tiene `rpd_sesion` puesto en el PM: el usuario lo rellena
     # cuando ha entrenado y lo deja vacío cuando no. Esa señal es más fiable que el keep,
     # porque no depende de que haya volcado sus notas (ni de en qué máquina estén).
     entrenados = {f for f, r in pm.items() if str(r.get("rpd_sesion", "")).strip() != ""}

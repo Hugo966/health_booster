@@ -52,12 +52,12 @@ const MAX_HIST = 100;
 
 // Id de sesión estable entre recargas: el backend agrupa el hilo por sesión, así
 // que si cambiara en cada arranque se perdería la continuidad de la conversación.
-// Los hechos de la vida de Hugo son globales y sobreviven igual.
+// Los hechos de la vida del usuario son globales y sobreviven igual.
 // Sesión FIJA y compartida, no una por navegador. El hilo de conversación vive en el
-// backend (jarvis.db) y Hugo quiere una sola charla: lo que dice por micro al escuchador
+// backend (jarvis.db) y el usuario quiere una sola charla: lo que dice por micro al escuchador
 // local (dashboard/escucha) y lo que escribe aquí tienen que ser la misma. Con un id
 // aleatorio por navegador se partía en dos y Jarvis no recordaba lo hablado en voz.
-// UNA SESIÓN POR DÍA (`hugo-2026-10-05`). Lo pidió Hugo así: que el historial se limpie
+// UNA SESIÓN POR DÍA (`hugo-2026-10-05`). Lo pidió el usuario así: que el historial se limpie
 // cada día, pero que el día entero quede junto.
 //   - La charla de hoy es una sola, aunque recargue o cierre el móvil.
 //   - Mañana empieza en blanco, sin arrastrar lo de ayer a cada petición.
@@ -142,7 +142,7 @@ export type Chat = {
 
 // Avisa al backend de que ya no hay nadie escuchando. Cerrar el socket NO basta: el
 // turno corre en un hilo aparte que llegaría hasta el final, ejecutando por el camino
-// las herramientas de escritura (`guardar_pm`…) sobre la hoja de Hugo.
+// las herramientas de escritura (`guardar_pm`…) sobre la hoja del usuario.
 // `keepalive` para que salga aunque la pestaña se esté cerrando; los fallos se ignoran a
 // propósito: es un aviso de cortesía, no puede tumbar la petición nueva.
 function cancelarTurno(sesion: string) {
@@ -171,7 +171,7 @@ export function useChat(
   const [error, setError] = useState<string | null>(null);
   const [proveedor, setProveedorState] = useState<string>(proveedorInicial);
 
-  // Petición en vuelo, para poder abortarla cuando Hugo interrumpe.
+  // Petición en vuelo, para poder abortarla cuando el usuario interrumpe.
   const abortRef = useRef<AbortController | null>(null);
   // Nº de envío. Sirve para que el desenlace de una petición abortada (que llega tarde)
   // no toque el estado de la que ya la ha sustituido.
@@ -218,7 +218,7 @@ export function useChat(
   // para no pisar el texto que se está escribiendo en vivo.
   const ultimoIdRef = useRef(0);
   // Tras abortar, el backend tarda un poco en enterarse. Durante ese rato su hilo aún no
-  // refleja la interrupción, y adoptarlo repintaría lo que Hugo acaba de cortar.
+  // refleja la interrupción, y adoptarlo repintaría lo que el usuario acaba de cortar.
   const noSincronizarHastaRef = useRef(0);
   useEffect(() => {
     let vivo = true;
@@ -263,7 +263,7 @@ export function useChat(
       if (!limpio) return;
 
       // Interrumpir: la petición en vuelo se ABORTA en vez de descartar la nueva. Antes
-      // había aquí un `|| enviando` que tiraba en silencio lo que Hugo dijera mientras
+      // había aquí un `|| enviando` que tiraba en silencio lo que el usuario dijera mientras
       // Jarvis respondía: le cortaba la voz pero su aclaración no llegaba a ninguna
       // parte, y desde fuera parecía que a Jarvis no se le podía interrumpir.
       if (abortRef.current) {
@@ -374,7 +374,7 @@ export function useChat(
         if (fin?.texto && fin.texto !== acumulado) pintar(fin.texto);
         if (fin?.acciones.length && vigente()) accionesRef.current?.(fin.acciones);
       } catch (e) {
-        // Abortar es lo que Hugo ha pedido al interrumpir, no un fallo: pintarlo en rojo
+        // Abortar es lo que el usuario ha pedido al interrumpir, no un fallo: pintarlo en rojo
         // sería mentirle.
         if ((e as Error)?.name !== "AbortError" && vigente()) setError(String(e));
       } finally {

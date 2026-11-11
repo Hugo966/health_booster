@@ -45,7 +45,7 @@ function useWidgetEnHash(): [Widget | null, (w: Widget | null) => void] {
     return ES_WIDGET(h) ? h : null;
   };
   // Al ARRANCAR, el chat es la excepción: recargar con #chat te plantaba el orbe a
-  // pantalla completa antes de ver el dashboard, y Hugo quiere entrar por el dashboard.
+  // pantalla completa antes de ver el dashboard, y el usuario quiere entrar por el dashboard.
   // Los demás paneles sí se restauran (el deep-link sigue sirviendo para compartirlos).
   const [w, setW] = useState<Widget | null>(() => {
     const inicial = leer();
@@ -174,7 +174,7 @@ export default function App() {
   }, [data]);
 
   // Las bandas de carga se calculan sobre TODO el histórico; el rango solo recorta
-  // lo que se dibuja. Si no, "alto para Hugo" cambiaría al cambiar de 90D a 30D.
+  // lo que se dibuja. Si no, "alto para el usuario" cambiaría al cambiar de 90D a 30D.
   const sesionesTodas: Sesion[] = useMemo(
     () =>
       (data?.entreno_sesion ?? [])

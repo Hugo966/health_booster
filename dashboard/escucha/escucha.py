@@ -2,7 +2,7 @@
 
 POR QUÉ EXISTE
 La escucha vivía en el navegador (Web Speech API, ver `voz.ts`), y Chrome la suspende
-en cuanto la pestaña deja de estar visible: Hugo minimizaba y Jarvis se quedaba sordo.
+en cuanto la pestaña deja de estar visible: el usuario minimizaba y Jarvis se quedaba sordo.
 No hay parámetro que lo evite, así que la escucha se saca del navegador a este proceso,
 que oye siempre: minimizado, en otra ventana o con el navegador cerrado.
 
@@ -69,7 +69,7 @@ MUESTRAS_MARCO = SR * MS_MARCO // 1000
 # flojas del final de frase.
 VAD_AGRESIVIDAD = 2
 # Silencio que da una frase por terminada. 700 ms: por debajo corta a mitad de frase
-# cuando Hugo respira, por encima se hace lento de responder.
+# cuando el usuario respira, por encima se hace lento de responder.
 SILENCIO_FIN_MS = 700
 # Por debajo de esto es ruido suelto (una tos, un golpe), no una frase.
 MIN_VOZ_MS = 400
@@ -85,7 +85,7 @@ MODELO_STT = os.environ.get("JARVIS_STT", "small")
 WAKE = re.compile(r"\b(?:ll|j|y|h)?ar[vb]i[sz]?\b", re.I)
 # Tras hablar él, se ignora este rato para no oírse a sí mismo por los altavoces.
 GRACIA_S = 0.8
-# Si pasa esto sin que Hugo diga nada, se vuelve a dormir y hay que llamarlo otra vez.
+# Si pasa esto sin que el usuario diga nada, se vuelve a dormir y hay que llamarlo otra vez.
 DORMIRSE_S = 45
 
 FIN_FRASE = re.compile(r"^[\s\S]*[.!?…](?=\s|$)")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Comprobaciones del guardado de formularios.  `./venv/bin/python test_formularios.py`
 
-Se prueba contra una pestaña FALSA, no contra la hoja de Hugo: probar esto con la hoja de
+Se prueba contra una pestaña FALSA, no contra la hoja del usuario: probar esto con la hoja de
 verdad ya le escribió una vez una fila inventada en sus datos de salud (HANDOFF §0).
 
 Lo que se vigila aquí es la diferencia entre "no he contestado" y "quítalo", que por el
@@ -56,7 +56,7 @@ f.guardar("pm", "2026-11-10", {"energia": 6, "sensacion_global": ""})
 assert hoja.escrito == {"B2": 6}, hoja.escrito
 
 # --- `borrar` sí vacía, y solo lo nombrado -----------------------------------
-# El caso de Hugo: metió el RPE de un día que no entrenó. Un 0 no vale, porque un 0 es
+# El caso del usuario: metió el RPE de un día que no entrenó. Un 0 no vale, porque un 0 es
 # un entreno que existió y salió fatal.
 hoja = montar({"energia": 8, "rpd_sesion": 7})
 f.guardar("pm", "2026-11-10", {}, borrar=["rpd_sesion"])

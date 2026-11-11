@@ -1,6 +1,6 @@
-"""Clonación de voz — genera el "Jarvis" de Hugo a partir de un clip de referencia.
+"""Clonación de voz — genera el "Jarvis" del usuario a partir de un clip de referencia.
 
-El catálogo de voces de Qwen no daba el acento español que Hugo quería, así que se
+El catálogo de voces de Qwen no daba el acento español que el usuario quería, así que se
 clona el timbre desde una muestra suya (el Jarvis del doblaje de Iron Man, o el
 audio que consiga más limpio). La clonación la hace el modelo **Base** (no el
 CustomVoice de las 9 voces): `create_voice_clone_prompt` + `generate_voice_clone`.
@@ -30,7 +30,7 @@ from qwen_tts import Qwen3TTSModel
 MODELO = r"E:/jarvis_tts/models/qwen3-base"
 SALIDA = Path(__file__).parent / "muestras"
 
-# --- lo que hay que rellenar con el clip de Hugo -----------------------------
+# --- lo que hay que rellenar con el clip del usuario -----------------------------
 # Ruta al clip de referencia (voz limpia de Jarvis). Ponlo en E:\jarvis_tts\ref\.
 REF_AUDIO = r"E:\jarvis_tts\ref\jarvis_ref.wav"
 # Modo con transcripción (SOLO_TIMBRE=False): además del timbre, condiciona el
@@ -46,12 +46,12 @@ REF_TEXT = (
     "completó el análisis. Nuestra descarga ya está completa, señor. Estamos en "
     "línea y listos."
 )
-# Semitonos a bajar el tono para dar gravedad. Hugo pidió el punto medio entre 0 y
+# Semitonos a bajar el tono para dar gravedad. El usuario pidió el punto medio entre 0 y
 # -2, así que -1. Se aplica a todas las salidas.
 GRAVE_SEMITONES = -1
 
 FRASES = [
-    ("clon_1", "Hola Hugo, ¿qué tal tío? Hoy estás de puta madre, tío, "
+    ("clon_1", "Hola, ¿qué tal tío? Hoy estás de puta madre, tío, "
                "revienta ese entreno, bien clarito, lo tienes hecho."),
     ("clon_2", "Buenas, has dormido seis horas y media, así que hoy vas con el "
                "depósito medio vacío."),

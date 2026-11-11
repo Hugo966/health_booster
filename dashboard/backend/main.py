@@ -40,7 +40,7 @@ def _mantener_datos_calientes():
 app = FastAPI(title="Health Booster — Dashboard API")
 # Antes esto era allow_origins=["*"], que valía cuando la API solo leía. Ahora hay
 # endpoints que escriben en la hoja, así que una web cualquiera abierta en el navegador
-# de Hugo podría hacerles POST. Se limita a orígenes locales y de LAN privada: sigue
+# del usuario podría hacerles POST. Se limita a orígenes locales y de LAN privada: sigue
 # valiendo para el dashboard, para abrirlo desde el móvil por wifi y para el escuchador.
 app.add_middleware(
     CORSMiddleware,
@@ -91,7 +91,7 @@ def formulario_leer(tipo: str, fecha: str):
         raise HTTPException(404, f"No existe el formulario '{tipo}'.")
     # `sugerencias` NO son valores guardados: es dónde arranca la rueda (el último peso,
     # la última cafeína). Van aparte justo para que la UI no pueda confundirlas con un
-    # valor puesto y mandarlas sin que Hugo las toque.
+    # valor puesto y mandarlas sin que el usuario las toque.
     return {"tipo": tipo, "fecha": fecha, "valores": formularios.leer(tipo, fecha),
             "sugerencias": formularios.sugerencias(tipo, fecha)}
 
@@ -125,7 +125,7 @@ def plan_enrutar(datos: dict = Body(...)):
     """Dice a qué semana es una pestaña del plan que el pipeline no supo colocar.
 
     Se contesta con el código de un tirón (`P2B4S3`) en vez de con tres campos: es un
-    dato que Hugo escribe una vez cada varios meses, y teclearlo entero es menos lío que
+    dato que el usuario escribe una vez cada varios meses, y teclearlo entero es menos lío que
     tres ruedas. Lo mismo se puede hacer hablando con Jarvis (`enrutar_pestana`).
     """
     try:
@@ -148,7 +148,7 @@ class Sesion(BaseModel):
 
 # Turno en vuelo por sesión, para poder cortarlo. Que el navegador cierre el socket NO
 # basta: el turno corre en un hilo aparte que seguiría hasta el final, ejecutando por el
-# camino las herramientas que escriben en la hoja de Hugo. Y el generador SSE suele estar
+# camino las herramientas que escriben en la hoja del usuario. Y el generador SSE suele estar
 # bloqueado en `cola.get()`, no en un `yield`, así que tampoco se puede confiar en que le
 # llegue el `GeneratorExit` a tiempo. Por eso el frontend lo pide explícitamente.
 _turnos: dict[str, threading.Event] = {}
@@ -178,7 +178,7 @@ def _cerrar_turno(sesion: str, corte: threading.Event) -> None:
 
 @app.post("/chat/cancelar")
 def chat_cancelar(s: Sesion):
-    """Hugo ha cortado a Jarvis. Lo llama el navegador al abortar la petición."""
+    """El usuario ha cortado a Jarvis. Lo llama el navegador al abortar la petición."""
     with _turnos_lock:
         corte = _turnos.get(s.sesion)
     if corte is None:
@@ -265,7 +265,7 @@ def chat_stream(m: Mensaje):
                 al_texto=al_texto, cancelado=corte.is_set,
             )
         except chat_mod.Cancelado:
-            # Hugo le ha cortado: no es un fallo y no hay nada que contarle. La respuesta
+            # El usuario le ha cortado: no es un fallo y no hay nada que contarle. La respuesta
             # a medias NO se guarda (lo decide `chat.responder`).
             caja["cancelado"] = True
         except Exception as e:  # el error viaja en el evento final, no rompe el flujo

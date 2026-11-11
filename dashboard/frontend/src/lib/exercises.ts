@@ -41,7 +41,7 @@ export function patron(ejercicio: string): string {
 }
 
 // Etiqueta corta del microciclo: "P2B1S1" (plan, bloque, semana). La P desambigua
-// porque Hugo reinicia bloque/semana con cada plan. Sin plani conocido, cae a "B4S2".
+// porque el usuario reinicia bloque/semana con cada plan. Sin plani conocido, cae a "B4S2".
 export function bloqueSemana(bloque: number, semana: number, plani?: number | null): string {
   return `${plani != null ? `P${plani}` : ""}B${bloque}S${semana}`;
 }

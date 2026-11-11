@@ -59,7 +59,7 @@ export async function fetchEstado(dias = 14): Promise<EstadoFormularios> {
 
 /** Lo guardado de ese día + dónde arranca la rueda (el último peso, la última cafeína).
  *  Las sugerencias van APARTE de los valores a propósito: no están guardadas y no se
- *  mandan si Hugo no toca la rueda, o darle a Guardar sin pesarse apuntaría el peso de
+ *  mandan si el usuario no toca la rueda, o darle a Guardar sin pesarse apuntaría el peso de
  *  la semana pasada como el de hoy. */
 export async function fetchValores(
   tipo: TipoFormulario, fecha: string,

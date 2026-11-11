@@ -3,7 +3,7 @@ import Panel from "./Panel";
 import { theme } from "./../lib/theme";
 import { num, type DerivedRow } from "../lib/api";
 
-// Widget de Notas: el texto libre que Hugo escribe en los formularios AM y PM
+// Widget de Notas: el texto libre que el usuario escribe en los formularios AM y PM
 // (`notas_am`, `notas_pm`) y la nota del dolor de sesión (`dolor_sesion_nota`),
 // por fecha. Da contexto que los números no capturan; Jarvis también las lee (van
 // en el briefing). Al clicar una nota se abre un detalle con 3 indicadores de ESE

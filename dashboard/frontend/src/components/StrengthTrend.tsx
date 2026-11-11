@@ -34,7 +34,7 @@ function normalizar(sets: SetRow[]): SetN[] {
     const ej = String(s.ejercicio ?? "").trim();
     const b = num(s.bloque), sem = num(s.semana);
     if (!ej || b === null || sem === null) continue;
-    // El eje X se ordena por FECHA real, no por número de bloque: Hugo reinicia la
+    // El eje X se ordena por FECHA real, no por número de bloque: el usuario reinicia la
     // numeración con cada plan (el offseason de PLANI 2 es "bloque 1"), así que
     // bloque×100+semana pondría lo más reciente a la izquierda. Con la fecha, cada
     // microciclo cae donde toca en el tiempo. Fallback a bsOrden si la sesión no tiene

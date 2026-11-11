@@ -8,7 +8,7 @@ import {
 } from "../lib/formularios";
 
 // Semáforo + editor de los formularios diarios. Hasta ahora estos datos solo entraban
-// por Google Forms: si a Hugo se le olvidaba un día, nadie se lo decía y el dato se
+// por Google Forms: si al usuario se le olvidaba un día, nadie se lo decía y el dato se
 // perdía (y sin `rpd_sesion` la sesión entera se cae de la carga).
 //
 // Los campos y sus rangos los manda el backend, no se declaran aquí: la escala de
@@ -122,7 +122,7 @@ function Semaforo({ estado }: { estado: EstadoFormularios | null }) {
   );
 }
 
-/** Escala 1-9 / 0-9 como fila de botones: replicar la escala en la UI evita que Hugo
+/** Escala 1-9 / 0-9 como fila de botones: replicar la escala en la UI evita que el usuario
  *  tenga que acordarse de que el 5 es "normal" y de que el tope es 9, no 10. */
 function Escala({ campo, valor, onChange }: {
   campo: Campo; valor: string | number | undefined; onChange: (v: string) => void;
@@ -453,7 +453,7 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
   );
 }
 
-// `dias` viene del selector de rango del dashboard: si Hugo mira 7 días, el semáforo y
+// `dias` viene del selector de rango del dashboard: si el usuario mira 7 días, el semáforo y
 // la tira tienen que hablar de esos 7 días, no de otros catorce por su cuenta.
 function usarEstado(dias: number) {
   const [estado, setEstado] = useState<EstadoFormularios | null>(null);

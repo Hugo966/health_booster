@@ -1,6 +1,6 @@
 """Audición de voces de Qwen3-TTS en español — antes de cablear nada.
 
-El objetivo es que Hugo elija el timbre "Jarvis" DE OÍDO y confirmar de paso que
+El objetivo es que el usuario elija el timbre "Jarvis" DE OÍDO y confirmar de paso que
 el modelo instala, cabe en la VRAM del portátil (6 GB) y que el español suena
 bien. Genera la misma frase con cada voz candidata y deja los .wav en muestras/.
 
@@ -23,7 +23,7 @@ SALIDA = Path(__file__).parent / "muestras"
 # Frase con números y coloquialismo, para oír cómo lee cifras y el tono chulesco
 # de Jarvis (que es como va a hablar de verdad).
 FRASE = (
-    "Hola Hugo, ¿qué tal tío? Hoy estás de puta madre, tío, "
+    "Hola, ¿qué tal tío? Hoy estás de puta madre, tío, "
     "revienta ese entreno, bien clarito, lo tienes hecho."
 )
 

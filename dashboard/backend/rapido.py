@@ -2,7 +2,7 @@
 
 Qué problema resuelve
 ---------------------
-Entre que Hugo termina de hablar y Jarvis suelta su primera frase real pasan varios
+Entre que el usuario termina de hablar y Jarvis suelta su primera frase real pasan varios
 segundos (el TTS bueno tiene un suelo de ~3,5 s). Eso se tapa hoy con una muletilla
 PREGRABADA ("déjame que lo mire…"): latencia cero y con retintín, porque se generó una vez
 con el modelo caro. El precio es que es genérica — no menciona lo que él acaba de decir.
@@ -35,6 +35,8 @@ import re
 import time
 
 import requests
+
+import personalidad
 
 log = logging.getLogger(__name__)
 
@@ -71,12 +73,12 @@ MAX_TOKENS = 300
 # gratis), no de peticiones: cada palabra de aquí se paga en cada llamada y recorta cuántas
 # caben. Medido el 2026-09-12: con ~500 tokens por llamada, 14 seguidas agotan el minuto.
 # Los EJEMPLOS son la parte que de verdad hace el trabajo. Están copiados de las
-# muletillas pregrabadas de `dashboard/tts/servidor_voz.py`, que las escribió Hugo a mano
+# muletillas pregrabadas de `dashboard/tts/servidor_voz.py`, que las escribió el usuario a mano
 # y son literalmente el tono que quiere. Describir un tono con adjetivos ("con retintín")
 # no le sirve a un modelo pequeño: se lo inventa. Enseñárselo, sí.
 # Si algún día se retoca el personaje, estos ejemplos hay que retocarlos con él.
 _SISTEMA = """\
-Eres Jarvis, el asistente de Hugo: su colega, con confianza y sarcasmo. Aquí solo haces
+Eres Jarvis, su asistente y su colega, con confianza y sarcasmo. Aquí solo haces
 UNA cosa: soltar la frase que se dice mientras se piensa la respuesta de verdad. Ganas
 tiempo, no contestas.
 
@@ -137,7 +139,7 @@ def _es_copia_de_ejemplo(texto: str) -> bool:
 
 
 def muletilla(mensaje: str) -> str | None:
-    """Escribe la coletilla para lo que Hugo acaba de decir. `None` si no se puede.
+    """Escribe la coletilla para lo que el usuario acaba de decir. `None` si no se puede.
 
     `None` no es un error que haya que tratar: significa "tira de las pregrabadas", que es
     el comportamiento de siempre y suena bien. Por eso aquí no se propaga nada.
@@ -155,7 +157,7 @@ def muletilla(mensaje: str) -> str | None:
         # frases pregrabadas, que encima tiene mejor voz.
         "temperature": 1.0,
         "messages": [
-            {"role": "system", "content": _SISTEMA},
+            {"role": "system", "content": personalidad.con_usuario(_SISTEMA)},
             {"role": "user", "content": mensaje},
         ],
     }
@@ -177,7 +179,7 @@ def muletilla(mensaje: str) -> str | None:
             # semanas las muletillas a medida estuvieron apagadas sin que se notara, porque
             # degradar a las pregrabadas no rompe nada. Por eso este caso es ERROR y no
             # warning, y dice qué hacer: no es un problema de red, es que hay que elegir
-            # otro modelo (`scratchpad/elegir_modelo.py` los mide con la clave de Hugo).
+            # otro modelo (`scratchpad/elegir_modelo.py` los mide con la clave del usuario).
             log.error(
                 "GROQ_MODELO=%r ya no existe en el proveedor. Las muletillas a medida "
                 "están APAGADAS (se usan las pregrabadas). Elige otro modelo en el .env. "

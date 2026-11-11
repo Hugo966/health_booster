@@ -1,7 +1,7 @@
 """Arnés de comparación de proveedores — la MISMA conversación contra cada uno.
 
 El objetivo de la Fase 2 es poder decidir el proveedor con datos, no de memoria:
-se lanza un guion fijo de mensajes (sacado de una conversación real de Hugo, con
+se lanza un guion fijo de mensajes (sacado de una conversación real del usuario, con
 los puntos donde el 3B flojea: inventarse cosas en un "hola", saber qué día es,
 comentar el sueño, resumir sin soltar un informe, recordar un libro entre turnos)
 contra cada modelo, y se imprime cada respuesta turno a turno con su latencia. Al
@@ -49,7 +49,7 @@ PRECIOS = {
     "claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0},
 }
 
-# El guion. Cada línea es un mensaje de Hugo; se envían en orden y el hilo se
+# El guion. Cada línea es un mensaje del usuario; se envían en orden y el hilo se
 # acumula, así que los turnos posteriores ven los anteriores (memoria dentro de
 # la sesión). Editable a gusto: es lo que se está midiendo.
 GUION = [
@@ -95,7 +95,7 @@ def _correr(forzar: str, guion: list[str]) -> tuple[list[dict], float, dict]:
 
 
 def _imprimir(resultados: dict, guion: list[str]):
-    """Turno a turno, cada modelo debajo del mensaje de Hugo, y resumen final."""
+    """Turno a turno, cada modelo debajo del mensaje del usuario, y resumen final."""
     for i, mensaje in enumerate(guion):
         print(f"\n{'=' * 72}\n[{i + 1}] HUGO: {mensaje}\n{'=' * 72}")
         for alias, res in resultados.items():

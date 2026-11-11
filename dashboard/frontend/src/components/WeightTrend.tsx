@@ -93,7 +93,7 @@ function Chart({ rows, objetivo, height }: { rows: Row[]; objetivo: Objetivo; he
   const vals = rows.map((r) => r.peso);
   const lo = Math.min(...vals, objetivo.meta ?? Infinity);
   const hi = Math.max(...vals, objetivo.meta ?? -Infinity);
-  // Dominio con holgura (±1 kg): a Hugo le lee mejor la tendencia con aire; apretarlo
+  // Dominio con holgura (±1 kg): al usuario le lee mejor la tendencia con aire; apretarlo
   // a los datos exageraba los vaivenes semanales y hacía la subida parecer más brusca.
   const dLo = Math.floor(lo - 1);
   const dHi = Math.ceil(hi + 1);

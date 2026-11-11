@@ -1,4 +1,4 @@
-"""Las pestañas del plan que el pipeline no supo enrutar, y la respuesta de Hugo.
+"""Las pestañas del plan que el pipeline no supo enrutar, y la respuesta del usuario.
 
 El entrenador bautiza la pestaña como le sale. Cuando el nombre acaba en el número de la
 semana, `entreno_pipeline.rutas_automaticas` la resuelve sola. Cuando NO acaba en número
@@ -6,7 +6,7 @@ semana, `entreno_pipeline.rutas_automaticas` la resuelve sola. Cuando NO acaba e
 de los ejercicios, y equivocarse ahí le pone a las series el nombre de otro día.
 
 Así que el pipeline apunta la pestaña aquí a medias —el nombre, sin números— y Jarvis se
-lo pregunta a Hugo. Lo que conteste lo lee el pipeline a la hora siguiente: ni código, ni
+lo pregunta al usuario. Lo que conteste lo lee el pipeline a la hora siguiente: ni código, ni
 despliegue, ni esperar a una sesión de Claude.
 """
 import os
@@ -39,7 +39,7 @@ CAMPOS = [
 def sugerencia() -> dict:
     """Dónde arrancan las ruedas: la semana SIGUIENTE a la que acaba de entrenar.
 
-    Sale de `entreno_sesion` —o sea, de los números que escribe Hugo en su keep—, no del
+    Sale de `entreno_sesion` —o sea, de los números que escribe el usuario en su keep—, no del
     nombre de la pestaña, que es precisamente lo que no se ha podido leer. Una pestaña
     nueva suele ser la semana que viene del bloque en curso, así que casi siempre es
     entrar, mirar que cuadra y darle a Guardar.
@@ -70,7 +70,7 @@ def pendientes() -> list[str]:
 
 
 def resolver(pestana: str, plani: int, bloque: int, semana: int) -> str:
-    """Guarda lo que ha contestado Hugo. Devuelve la frase de confirmación.
+    """Guarda lo que ha contestado el usuario. Devuelve la frase de confirmación.
 
     Solo completa filas que el pipeline haya apuntado: si Jarvis se inventara el nombre
     de una pestaña, la fila nueva no casaría con ninguna de Drive y el plan de esa semana
@@ -97,7 +97,7 @@ def resolver(pestana: str, plani: int, bloque: int, semana: int) -> str:
 
 
 def resolver_codigo(pestana: str, codigo: str) -> str:
-    """Igual que `resolver`, pero con el código que Hugo escribe de un tirón: `P2B4S3`.
+    """Igual que `resolver`, pero con el código que el usuario escribe de un tirón: `P2B4S3`.
 
     Lo parsea `entreno_pipeline.route_tab`, que ya entiende ese formato —se enrutó en su
     día pensando justo en esto—, así que el panel no inventa su propia sintaxis. De

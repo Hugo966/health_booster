@@ -7,7 +7,7 @@ y el histórico quede unificado con lo que ya escriben los Forms.
 
 Dos decisiones que conviene entender antes de tocar nada:
 
-**Upsert por fecha, no append.** Hugo quiere poder corregir lo que ya metió ("puse RPE 6
+**Upsert por fecha, no append.** el usuario quiere poder corregir lo que ya metió ("puse RPE 6
 y en verdad era 7"). Si añadiéramos una fila nueva por corrección, el valor vigente sería
 ambiguo al releer para precargar el editor. Así que si ya hay fila para esa fecha se
 actualiza en su sitio, y solo las celdas de los campos recibidos: una corrección parcial
@@ -80,7 +80,7 @@ class Formulario:
 # Escalas de la pestaña "Léeme" de la hoja:
 #   bipolares (centro=normal) 1-9, 5=normal, 9=mejor  -> sueño, ánimo, energía, sensación
 #   unipolares (0=nada)       0-9, 9=máximo           -> estrés, molestias
-#   alcohol 0-27 (escala personal de Hugo), rpd_sesion 0-10
+#   alcohol 0-27 (escala personal del usuario), rpd_sesion 0-10
 _BIP = dict(tipo="entero", minimo=1, maximo=9, ayuda="1 a 9 · 5 = normal, 9 = mejor")
 _UNI = dict(tipo="entero", minimo=0, maximo=9, ayuda="0 a 9 · 0 = nada, 9 = máximo")
 
@@ -136,7 +136,7 @@ def esquema_publico() -> dict:
 def normalizar_zonas(texto: str) -> str:
     """Texto libre -> vocabulario controlado, separado por ', ' como en la hoja.
 
-    Sirve sobre todo para la voz: Hugo dice "me duele el cuello y la lumbar" y hay que
+    Sirve sobre todo para la voz: el usuario dice "me duele el cuello y la lumbar" y hay que
     dejarlo escrito exactamente como lo escribiría el desplegable del formulario, o el
     dato no casaría con los 63 registros que ya hay.
     """
@@ -159,7 +159,7 @@ def validar(tipo: str, valores: dict) -> tuple[dict, list[str], list[str]]:
 
     La diferencia entre error y aviso: el error tumba el guardado entero, el aviso deja
     pasar el resto. Una zona que no está en el vocabulario no puede tirar abajo la
-    energía y el RPE que Hugo ha dictado en la misma frase.
+    energía y el RPE que el usuario ha dictado en la misma frase.
     """
     form = ESQUEMA.get(tipo)
     if form is None:
@@ -263,7 +263,7 @@ def leer(tipo: str, fecha: str) -> dict:
 def sugerencias(tipo: str, fecha: str) -> dict:
     """El último valor conocido de cada campo numérico ANTES de esa fecha.
 
-    Es donde arranca la rueda: Hugo pesa 79,8 y a la semana siguiente 79,9, así que
+    Es donde arranca la rueda: el usuario pesa 79,8 y a la semana siguiente 79,9, así que
     empezar en su último peso le ahorra casi todo el giro.
 
     NO es un valor guardado ni se guarda solo: la UI lo usa como punto de partida y solo

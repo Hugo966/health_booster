@@ -5,7 +5,7 @@ Son DOS memorias con propósitos distintos:
   - `conversaciones`: el hilo. Lo que dijimos hace cinco minutos, para que la
     charla tenga continuidad dentro de una sesión.
   - `hechos`: lo que hace que parezca un amigo y no un chatbot. Cosas de la vida
-    de Hugo que debe recordar meses después ("está leyendo Shogun"), no números
+    del usuario que debe recordar meses después ("está leyendo Shogun"), no números
     del dashboard — esos ya vienen del briefing y cambian solos.
 
 El fichero .db NO va al repo (ver .gitignore): son conversaciones personales.
@@ -103,7 +103,7 @@ def conversacion_caliente(sesion: str, minutos: int = 10) -> bool:
     return (datetime.now() - ultimo).total_seconds() < minutos * 60
 
 
-# Rellenar un formulario hablando son ~6 idas y venidas, y Hugo encadena varios días
+# Rellenar un formulario hablando son ~6 idas y venidas, y el usuario encadena varios días
 # seguidos. Con 20 se le caían del contexto los datos del principio y volvía a preguntar
 # lo mismo ("le cuesta guardar las cosas", 2026-10-05). Con una sesión por día (ver
 # `idSesion` en chat.ts) el hilo está acotado, así que 60 no crece sin freno.
@@ -131,7 +131,7 @@ def hilo_con_id(sesion: str, n: int = 40) -> list[dict]:
     return [dict(f) for f in reversed(filas)]
 
 
-# --- lo que sabe de Hugo -----------------------------------------------------
+# --- lo que sabe del usuario -----------------------------------------------------
 
 def recordar(tema: str, texto: str) -> int:
     """Guarda un hecho. Si ya existe idéntico en el mismo tema, lo refresca.
@@ -173,7 +173,7 @@ def hechos_relevantes(limite: int = 30) -> list[dict]:
     Mientras quepan todos, van todos. Cuando no quepan, se mezclan los más
     recientes con los que llevan más tiempo sin mencionarse: los primeros dan
     contexto de lo que pasa ahora, los segundos son los que permiten que Jarvis
-    saque un tema que Hugo daba por olvidado, que es justo la gracia.
+    saque un tema que el usuario daba por olvidado, que es justo la gracia.
 
     EXCEPCIÓN: la gente (`persona:*`) va SIEMPRE, y no cuenta contra `limite`.
     Esa rotación es buena para "está leyendo Shogun" y pésima para "Marta es su

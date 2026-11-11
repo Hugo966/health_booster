@@ -3,10 +3,10 @@
 
 Es lo ÚNICO del proyecto sin copia en ningún sitio: los datos de salud viven en la hoja,
 el keep en un documento de Drive, el código en git y las claves están en las dos máquinas
-de Hugo. Esto son sus conversaciones y los hechos que Jarvis ha ido aprendiendo — si la VM
+del usuario. Esto son sus conversaciones y los hechos que Jarvis ha ido aprendiendo — si la VM
 desaparece, olvida quién es su entrenador.
 
-Lo ejecuta la VM, no las máquinas de Hugo, y eso es a propósito: la VM está siempre
+Lo ejecuta la VM, no las máquinas del usuario, y eso es a propósito: la VM está siempre
 encendida, así que no depende de que él encienda un equipo ni de montar un programador
 distinto en Linux y en Windows. Antes esto tiraba desde el PC con un timer de systemd, que
 no existe en el portátil.

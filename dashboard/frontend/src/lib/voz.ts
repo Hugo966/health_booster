@@ -9,9 +9,9 @@ import { crearVad, type Vad } from "./vad";
 // sustituibles: v1 con Web Speech del navegador (gratis, sin deps, Chrome). La voz
 // "Jarvis" de verdad (XTTS/nube) se enchufa después cambiando solo `decir`.
 //
-// Máquina de estados (rediseñada a petición de Hugo — comportamiento tipo Jarvis):
+// Máquina de estados (rediseñada a petición del usuario — comportamiento tipo Jarvis):
 //   off      -> voz apagada, micro cerrado. Solo el estado inicial; el orbe no vuelve aquí.
-//   reposo   -> el micro sigue vivo pero SOLO reacciona a "Jarvis" (Hugo lo llama
+//   reposo   -> el micro sigue vivo pero SOLO reacciona a "Jarvis" (el usuario lo llama
 //               "desactivado": no capta tu charla normal, pero te oye si lo llamas).
 //   activo   -> conversación: capta TODO lo que dices sin decir "Jarvis", y tras
 //               contestar SE QUEDA aquí (sigue escuchando).
@@ -26,13 +26,13 @@ export type EstadoVoz = "off" | "reposo" | "activo" | "hablando";
 const WAKE = /\b(?:ll|j|y|h)?ar[vb]i[sz]?\b/gi;
 // Tras terminar de hablar, ignora lo que llegue este rato: descarta la cola de
 // reconocimiento que pudiera traer la propia voz de Jarvis (evita auto-disparo).
-// OJO: no se aplica cuando la interrupción la provoca Hugo (ver `parar`), porque
+// OJO: no se aplica cuando la interrupción la provoca el usuario (ver `parar`), porque
 // entonces él está hablando YA y esta ventana se comería justo su aclaración.
 // Baja (antes 700) porque el trabajo de verdad lo hace ahora el `abort()` de `finHabla`:
-// esto es solo una segunda red, y cada ms de más es un ms que Hugo no puede contestar.
+// esto es solo una segunda red, y cada ms de más es un ms que el usuario no puede contestar.
 const GRACIA_MS = 300;
 
-// --- cuándo se da por terminado lo que dice Hugo ----------------------------------
+// --- cuándo se da por terminado lo que dice el usuario ----------------------------------
 // Chrome decide por su cuenta cuándo una frase es "final", y corta pronto: por eso
 // Jarvis contestaba a media idea. Ya no se despacha con el primer final, sino tras un
 // rato de silencio, acumulando todo lo que vaya llegando mientras tanto.
@@ -41,7 +41,7 @@ const GRACIA_MS = 300;
 // Si se hace lento de arrancar: BAJARLO. El botón del orbe es el escape manual, así que
 // merece la pena pecar de paciente: esperar de más solo cuesta un segundo, cortar de
 // menos cuesta repetir la frase entera.
-// Historia de este número, que se ha movido dos veces con Hugo delante:
+// Historia de este número, que se ha movido dos veces con el usuario delante:
 //   1100 -> cortaba a media idea. Pero parte de la culpa no era la espera: eran los
 //           fragmentos de ruido colándose en el turno y un fallo de la regex de abajo.
 //   1800 -> ya no cortaba, pero se hacía incómodo esperar tras terminar de hablar.
@@ -50,7 +50,7 @@ const GRACIA_MS = 300;
 //           intermedio a propósito: 1800 ya se probó y se le hizo incómodo. No subirlo
 //           más sin que lo pida él; para pensar en voz alta está `DUDA`, aquí abajo.
 const FIN_TURNO_MS = 1500;
-// Frase colgada ("...y", "...o sea"): Hugo está pensando en voz alta, no ha terminado.
+// Frase colgada ("...y", "...o sea"): el usuario está pensando en voz alta, no ha terminado.
 const FIN_TURNO_COLGADO_MS = 2800;
 // Por debajo de esto, un "final" de Chrome no es una frase: es un golpe, una respiración
 // o un carraspeo que el reconocedor ha intentado convertir en palabra. Entra en el turno
@@ -58,7 +58,7 @@ const FIN_TURNO_COLGADO_MS = 2800;
 const MIN_CARACTERES = 3;
 // ...PERO hay respuestas de verdad más cortas que eso, y son justo las que Jarvis pide al
 // rellenar un formulario. **Android convierte los números dictados en dígitos**: a la
-// pregunta "¿qué RPE?" Hugo dice "cinco" y llega `"5"`, UN carácter, que el filtro de
+// pregunta "¿qué RPE?" el usuario dice "cinco" y llega `"5"`, UN carácter, que el filtro de
 // ruido se tragaba en silencio (2026-09-12: "no se activa el micro cuando el mensaje es
 // corto"). Lo mismo con "sí" y "no". El filtro tiene que seguir existiendo, pero no puede
 // comerse un dato correcto.
@@ -68,12 +68,12 @@ const CORTA_VALIDA = /^(?:\d+(?:[.,]\d+)?|s[ií]|no|ya|ok|vale)$/i;
 // Solo se suma en ese caso, así que no penaliza el camino normal.
 const ESPERA_FINAL_MS = 600;
 // Red de seguridad por si algo se atasca (el reconocedor se queda mudo, un interino que
-// no cierra): el comando sale igual en vez de perderse para siempre sin que Hugo sepa por
+// no cierra): el comando sale igual en vez de perderse para siempre sin que el usuario sepa por
 // qué.
 //
 // Cuenta desde LO ÚLTIMO QUE SE OYÓ, no desde que abre la boca. Antes eran 12 s desde el
 // principio del turno y se disparaba **en mitad de la frase**: hablando seguido, a los 12 s
-// mandaba lo que llevara y a Jarvis le llegaba media idea. Hugo, 2026-09-12: "me corta si
+// mandaba lo que llevara y a Jarvis le llegaba media idea. El usuario, 2026-09-12: "me corta si
 // la frase es muy larga, a los x segundos corta sí o sí; yo quiero enviar un minuto de
 // mensaje sin problema". Ahora puede hablar lo que quiera: mientras siga oyéndosele, el
 // reloj se reinicia.
@@ -88,19 +88,19 @@ const MAX_SILENCIO_MUERTO_MS = 15000;
 //
 // Delante va `(?:^|\s)` y NO `\b`: para JavaScript la "ñ" no es letra, así que `\b`
 // abría frontera dentro de la palabra y "muéstrame el sueño" terminaba contando como la
-// conjunción "o". Con "sueño" en medio de casi todo lo que dicta Hugo, eso habría hecho
+// conjunción "o". Con "sueño" en medio de casi todo lo que dicta el usuario, eso habría hecho
 // esperar de más justo en las frases más comunes.
 const COLGADA =
   /(?:^|\s)(?:y|o|u|ni|pero|que|porque|pues|aunque|entonces|además|o\s+sea|osea|es\s+que|si|cuando|para|con|de|del|a|al|en|por|sin|hasta|desde|sobre|como|un|una|el|la|los|las|mi|su|lo)\s*$/i;
 
-// Vacilaciones: Hugo pensando en voz alta. Van APARTE de `COLGADA` porque no se tratan
+// Vacilaciones: el usuario pensando en voz alta. Van APARTE de `COLGADA` porque no se tratan
 // igual — una duda suelta ni siquiera entra en el turno (no vamos a mandarle "eh" a
 // Jarvis), solo alarga la espera.
 //
 // Antes se dejaron fuera a propósito, con el argumento de que el reconocedor español de
 // Chrome se las come y serían código muerto. Eso era cierto en el Chrome de ESCRITORIO;
 // el motor de Android es otro y sí las transcribe, así que ya no lo es. Petición literal
-// de Hugo el 2026-09-12: "si digo 'eeee...' como pensando, que no se ponga a pensar".
+// del usuario el 2026-09-12: "si digo 'eeee...' como pensando, que no se ponga a pensar".
 // Las vocales piden DOS letras o una "h" detrás ("ee", "eh", "mm", "hmm") y no valen
 // sueltas: una "a" o una "e" de un solo carácter es casi siempre un golpe o una
 // respiración que el reconocedor ha intentado convertir en palabra, y tomarla por duda
@@ -117,7 +117,7 @@ const PALABRA_DUDA = "este+|esto|pues|bueno";
 // porque el reconocedor a veces la puntúa ("¿eh?", "Mmm...").
 const DUDA = new RegExp(`^[¿¡\\s]*(?:${SONIDO_DUDA}|${PALABRA_DUDA})[?!.,…\\s]*$`, "i");
 // Y la duda al FINAL de lo que lleva dicho. Hace falta aparte porque en Android cada
-// resultado trae la frase ENTERA, así que en cuanto Hugo ha dicho algo antes el caso de
+// resultado trae la frase ENTERA, así que en cuanto el usuario ha dicho algo antes el caso de
 // arriba deja de aplicar: "pues no sé, eeee" llega como un único final y `DUDA` no casa.
 // Pasó el 2026-09-12 — decía "eeeee" y Jarvis se ponía a contestar igual.
 const DUDA_FINAL = new RegExp(`(?:^|\\s)(?:${SONIDO_DUDA})[?!.,…\\s]*$`, "i");
@@ -323,7 +323,7 @@ function partir(texto: string): string[] {
 
 // Habla "en directo": el chat va empujando frases según el modelo las escribe y aquí
 // se generan y encadenan en orden. Cerrar avisa de que ya no vienen más.
-// Qué muletilla pega con lo que acaba de decir Hugo; lo decide Haiku en el backend.
+// Qué muletilla pega con lo que acaba de decir el usuario; lo decide Haiku en el backend.
 // "nada" = ninguna (saludos y frases sueltas: un "déjame que lo mire" ahí es ridículo).
 export type TipoMuletilla = "consulta" | "neutra" | "nada" | "segunda";
 
@@ -333,7 +333,7 @@ export type TipoMuletilla = "consulta" | "neutra" | "nada" | "segunda";
 const PAUSA_MULETILLA_MS = 2500;
 
 // Cuánto se calla Jarvis ANTES de soltar la primera muletilla. El enrutado llega en ~1 s,
-// y decir "déjame que lo mire" tan pronto sonaba atropellado: Hugo aún no había soltado el
+// y decir "déjame que lo mire" tan pronto sonaba atropellado: el usuario aún no había soltado el
 // aire. Petición suya el 2026-09-12: que el orbe se quede en "pensando" 4-5 s, porque la
 // respuesta de verdad casi siempre tarda más que eso.
 // Tiene un segundo efecto que es el que de verdad quería: si la respuesta real llega
@@ -369,7 +369,7 @@ export type Habla = {
 //     no se pierde ni una palabra, y que llegue transcripción mientras habla ES la señal
 //     de que le estás cortando.
 //
-// No se puede adivinar por software qué salida está usando, y Hugo dijo que depende del
+// No se puede adivinar por software qué salida está usando, y el usuario dijo que depende del
 // día, así que lo dice él. Se recuerda entre sesiones.
 const KEY_CASCOS = "jarvis.voz.cascos";
 
@@ -426,7 +426,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const activaRef = useRef(false);
   const estadoRef = useRef<EstadoVoz>("off");
   const ignorarHastaRef = useRef(0);
-  // Lo que Hugo lleva dicho en este turno, aún sin mandar. Se acumula en vez de
+  // Lo que el usuario lleva dicho en este turno, aún sin mandar. Se acumula en vez de
   // despacharse con cada `isFinal` de Chrome, que llegan a mitad de idea.
   const bufferRef = useRef("");
   const temporRef = useRef(0);       // reloj de silencio: vence -> se manda
@@ -445,7 +445,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   const interinoRef = useRef("");
   // Lo ya dicho en sesiones ANTERIORES del reconocedor, dentro de este mismo turno. Hace
   // falta porque `ev.results` se vacía cada vez que el reconocedor se cierra y vuelve a
-  // arrancar —en Android, cada pocos segundos—, y el turno de Hugo sobrevive a eso.
+  // arrancar —en Android, cada pocos segundos—, y el turno del usuario sobrevive a eso.
   const arrastreRef = useRef("");
   const comandoRef = useRef(onComando);
   useEffect(() => {
@@ -473,7 +473,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // reconocimiento lo sirve el sistema y quiere el micro en exclusiva: con el detector
   // abierto, al reconocedor le llegaba SILENCIO. Se pasaba la vida en
   // arrancado -> capturando -> (nada) -> cerrada, cada 5 s, sin dar un solo error, mientras
-  // el VAD medía la voz de Hugo perfectamente. Diagnosticado con la traza el 2026-09-12.
+  // el VAD medía la voz del usuario perfectamente. Diagnosticado con la traza el 2026-09-12.
   // Además no se pierde nada: `alHablar` ya se desentiende salvo que esté sonando su voz.
   const asegurarVad = useCallback(() => {
     if (vadRef.current) return vadRef.current;
@@ -495,7 +495,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // UN ÚNICO elemento de audio para toda la sesión, "desbloqueado" en el clic que
   // enciende la voz. Antes se creaba un `new Audio()` por frase y Chrome bloqueaba la
   // reproducción cuando no había un gesto del usuario reciente: dentro de un panel la
-  // respuesta se generaba (el servicio devolvía 200) pero no sonaba hasta que Hugo
+  // respuesta se generaba (el servicio devolvía 200) pero no sonaba hasta que el usuario
   // pulsaba para salir, y entonces soltaba lo pendiente de golpe. Reutilizar el elemento
   // que ya tiene permiso lo evita.
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -558,7 +558,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     return () => document.removeEventListener("visibilitychange", alVolver);
   }, [pedirCerrojo]);
 
-  // --- buffer del turno de Hugo ---------------------------------------------------
+  // --- buffer del turno del usuario ---------------------------------------------------
   const pararRelojes = useCallback(() => {
     if (temporRef.current) window.clearTimeout(temporRef.current);
     if (limiteRef.current) window.clearTimeout(limiteRef.current);
@@ -567,7 +567,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   }, []);
 
   // Tirar lo dicho a medias. Hace falta al cambiar de estado: si no, una frase suelta de
-  // hace un rato se dispararía luego, fuera de contexto y sin que Hugo lo espere.
+  // hace un rato se dispararía luego, fuera de contexto y sin que el usuario lo espere.
   const olvidar = useCallback(() => {
     pararRelojes();
     bufferRef.current = "";
@@ -590,7 +590,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     irA("activo");
     // Con cascos la sesión de escucha NO se corta entre turnos, así que `ev.results` se
     // va acumulando y el turno siguiente arrastraría lo ya mandado. Aquí es el punto
-    // seguro para vaciarla: Hugo acaba de terminar de hablar, no hay nada que perder.
+    // seguro para vaciarla: el usuario acaba de terminar de hablar, no hay nada que perder.
     // (Con altavoz ya se aborta en `empezarAHablar`, así que no hace falta.)
     if (cascosRef.current) {
       try {
@@ -605,7 +605,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // Rearma el reloj de silencio. Cada trozo que llega (final o interino) lo reinicia:
   // una pausa para respirar no debe contar como final de turno.
   // `forzada`: espera explícita en ms. La usa el caso de la duda ("eeee…"), donde lo que
-  // manda no es cómo termina el buffer sino que se acaba de oír a Hugo vacilar.
+  // manda no es cómo termina el buffer sino que se acaba de oír al usuario vacilar.
   const armar = useCallback((forzada?: number) => {
     if (temporRef.current) window.clearTimeout(temporRef.current);
     // Se juzga cómo termina lo ÚLTIMO que se ha oído, sea final o parcial.
@@ -621,7 +621,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   // Retrasa el reloj de silencio por un rato en el que NO SE PUDO OÍR.
   //
   // Android cierra la sesión de escucha él solo tras ~1 s de pausa y hay que reabrirla;
-  // entre medias el micro no está capturando. Ese hueco se contaba como silencio de Hugo,
+  // entre medias el micro no está capturando. Ese hueco se contaba como silencio del usuario,
   // así que respirando un segundo se le despachaba la frase a medias — "a veces me corta
   // porque paso 0,5 o 1 s callado" (2026-09-12). El tiempo sordo no es silencio suyo: es
   // tiempo del que no sabemos nada, y no puede contar para dar su turno por terminado.
@@ -676,7 +676,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
         // Con ALTAVOZ se ignora todo mientras habla: sería su propio eco.
         if (!cascosRef.current) return;
         // Con CASCOS es al revés: su voz no llega al micro, así que si aquí llega algo
-        // solo puede ser Hugo hablándole encima. Eso ES la señal de corte — y como el
+        // solo puede ser el usuario hablándole encima. Eso ES la señal de corte — y como el
         // reconocedor nunca soltó el micro, lo que ha dicho está entero. No se hace
         // `return`: se sigue y se procesa.
         traza("=> CORTADO por tu voz (cascos)");
@@ -722,7 +722,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       // activo y se queda ahí: la conversación sigue abierta.
       const { comando, despertar } = extraer(dicho, estadoRef.current === "activo");
       // Despertar es lo ÚNICO que sigue siendo instantáneo: meter el segundo de espera
-      // entre decir "Jarvis" y que se encienda haría que Hugo hablase encima.
+      // entre decir "Jarvis" y que se encienda haría que el usuario hablase encima.
       if (despertar && estadoRef.current !== "activo") irA("activo");
       if (comando) {
         irA("activo");
@@ -742,7 +742,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     };
     r.onaudiostart = () => {
       traza("rec: micro capturando");
-      // Vuelve a oír: el rato que ha estado sordo no cuenta como silencio de Hugo.
+      // Vuelve a oír: el rato que ha estado sordo no cuenta como silencio del usuario.
       const desde = sordoDesdeRef.current;
       sordoDesdeRef.current = 0;
       if (desde) aplazarRef.current(Date.now() - desde);
@@ -766,12 +766,12 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       // automático de Android perdería su primera mitad.
       arrastreRef.current = bufferRef.current;
       // Reanuda la escucha continua salvo que estemos hablando o apagados. **Con cascos se
-      // reanuda también mientras habla**: ahí el reconocedor es quien detecta que Hugo le
+      // reanuda también mientras habla**: ahí el reconocedor es quien detecta que el usuario le
       // está cortando, así que no puede quedarse parado.
       if (activaRef.current && (cascosRef.current || estadoRef.current !== "hablando")) {
         // Reabrir CUANTO ANTES. Android cierra su reconocedor cada pocos segundos por su
         // cuenta (§17), y en cada hueco no se oye nada: ahí es donde se pierde la primera
-        // palabra cuando Hugo empieza a hablar con el orbe ya escuchando. Los 250 ms que
+        // palabra cuando el usuario empieza a hablar con el orbe ya escuchando. Los 250 ms que
         // había aquí eran nuestros, no suyos, y se sumaban al hueco en cada ciclo.
         //
         // El respiro sigue existiendo pero solo como FRENO: si la sesión se cierra otra
@@ -798,7 +798,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     return r;
   }, [soportado, irA, relanzar, armar, fijar]);
 
-  // Encender = entrar directo en "activo": Hugo quiere que al activar el orbe le
+  // Encender = entrar directo en "activo": el usuario quiere que al activar el orbe le
   // escuche ya, sin tener que decir "Jarvis".
   const encender = useCallback(() => {
     if (!soportado) return;
@@ -862,7 +862,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     apagarRef.current = apagar;
   }, [apagar]);
 
-  // El orbe alterna: off -> activo (encender), activo -> reposo (Hugo lo "desactiva":
+  // El orbe alterna: off -> activo (encender), activo -> reposo (el usuario lo "desactiva":
   // deja de captar su charla pero sigue oyendo "Jarvis"), reposo -> activo. No vuelve a
   // "off": el reposo mantiene el micro vivo para el wake word, así "Jarvis" siempre le
   // despierta. Si algún día se quiere un mute duro, iría aquí (p.ej. pulsación larga).
@@ -880,14 +880,14 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
   }, [soportado, encender, irA, relanzar, olvidar]);
 
   // `conGracia`: tras terminar de hablar por su cuenta, sí (hay que descartar la cola de
-  // su propia voz). Cuando le corta Hugo, NO: él ya está hablando, y esos 700 ms se
+  // su propia voz). Cuando le corta el usuario, NO: él ya está hablando, y esos 700 ms se
   // comerían justo la aclaración por la que le ha interrumpido.
   const finHabla = useCallback((conGracia = true) => {
     setSonando(false); // fin del turno: ahora sí deja de salir voz (ver `reproducir`)
     if (cascosRef.current) {
       // Con cascos no hay nada que hacer con el micro: el reconocedor no se ha parado y no
       // ha podido oír a Jarvis, así que no hay eco que descartar. **Abortar aquí sería el
-      // error**: se llevaría por delante justo lo que Hugo está diciendo para cortarle.
+      // error**: se llevaría por delante justo lo que el usuario está diciendo para cortarle.
       ignorarHastaRef.current = 0;
       if (activaRef.current) {
         irA("activo");
@@ -899,16 +899,16 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     }
     // Soltar el micro del detector ANTES de reabrir el reconocedor. En Android los dos se
     // excluyen, y a partir de aquí el que importa es el reconocedor: lo siguiente que pasa
-    // es que habla Hugo. Ya no hay nada que cortar, así que el detector no hace falta.
+    // es que habla el usuario. Ya no hay nada que cortar, así que el detector no hace falta.
     // Se ESPERA a que esté suelto de verdad (`close()` del contexto es asíncrono): si se
     // reabre el reconocedor con el micro aún cogido, arranca sordo y se come el principio
-    // de la frase — "no pilla el principio cuando le interrumpo" (Hugo, 2026-09-12).
+    // de la frase — "no pilla el principio cuando le interrumpo" (el usuario, 2026-09-12).
     const micLibre = vadRef.current?.parar() ?? Promise.resolve();
     // Tirar TODO lo que el reconocedor haya oído durante el turno. La ventana de gracia
     // por tiempo no bastaba: bloquea lo que LLEGA en ese rato, pero Chrome tarda más de
     // un segundo en dar una frase por final, así que la cola de la propia voz de Jarvis
-    // aterrizaba después y entraba como si la hubiera dicho Hugo. Pasó el 2026-09-06: su
-    // "…rellena el keep, anda" volvió como mensaje de Hugo ("rellena el Panda") y se
+    // aterrizaba después y entraba como si la hubiera dicho el usuario. Pasó el 2026-09-06: su
+    // "…rellena el keep, anda" volvió como mensaje del usuario ("rellena el Panda") y se
     // contestó a sí mismo. `abort()` descarta ese audio sin emitirlo; `stop()` lo
     // finalizaría, que es justo lo contrario.
     try {
@@ -918,7 +918,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     }
     ignorarHastaRef.current = conGracia ? Date.now() + GRACIA_MS : 0;
     if (activaRef.current) {
-      irA("activo"); // tras contestar se queda escuchando (Hugo)
+      irA("activo"); // tras contestar se queda escuchando (el usuario)
       void micLibre.then(() => {
         traza("micro libre: reabro el reconocedor");
         relanzar();
@@ -1219,7 +1219,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
           await new Promise((r) => setTimeout(r, ESPERA_MULETILLA_MS));
           if (primeraLista || turnoRef.current !== turno) return;
           // Dos caminos:
-          //  - `escrita`: el modelo rápido la ha redactado para lo que Hugo acaba de
+          //  - `escrita`: el modelo rápido la ha redactado para lo que el usuario acaba de
           //    decir. Se sintetiza AQUÍ, en modo rápido (`rapido: true`), porque el modo
           //    bueno tiene un suelo de ~3,5 s y llegaría tarde a lo único que sirve.
           //    Suena algo más plana, y ese es el precio de que mencione lo que él dijo.
@@ -1237,7 +1237,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
           }
           if (b && turnoRef.current === turno) await reproducir(b, turno);
           // Si al acabar aún no hay audio real, se encadena otra: el silencio es lo que
-          // le hace creer a Hugo que ya ha terminado y ponerse a hablar encima. Pero va
+          // le hace creer al usuario que ya ha terminado y ponerse a hablar encima. Pero va
           // del pool "segunda" (cortas, de continuación: "mmm… a ver") y tras una PAUSA
           // — pegadas y repitiendo el mismo "déjame que mire" sonaban redundantes.
           if (!primeraLista && turnoRef.current === turno) {
@@ -1292,7 +1292,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     };
   }, [soportado, empezarAHablar, pararAudio, finHabla, generar, reproducir, decirNavegadorTrozo]);
 
-  // Barge-in: Hugo le corta. Siempre es un gesto suyo (orbe, botón o teclado), así que
+  // Barge-in: el usuario le corta. Siempre es un gesto suyo (orbe, botón o teclado), así que
   // lo que viene detrás es él hablando y hay que estar listo para oírlo YA.
   const parar = useCallback(() => {
     turnoRef.current++; // invalida la tubería de frases en curso
@@ -1305,7 +1305,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
     // Con ALTAVOZ el reconocedor tiene audio de la voz de Jarvis a medio digerir:
     // `abort()` lo TIRA sin emitirlo (`stop()` lo finalizaría y nos llegaría transcrito lo
     // que él acababa de decir). Con CASCOS no hay eco que tirar y abortar se llevaría por
-    // delante lo que Hugo está diciendo AHORA para cortarle, que es lo único que importa.
+    // delante lo que el usuario está diciendo AHORA para cortarle, que es lo único que importa.
     if (!cascosRef.current) {
       try {
         recRef.current?.abort();
@@ -1314,7 +1314,7 @@ export function useVoz({ onComando }: { onComando: (texto: string) => void }): V
       }
       olvidar(); // lo que hubiera a medias es de antes de la interrupción
     }
-    finHabla(false); // sin gracia: Hugo está hablando ahora mismo
+    finHabla(false); // sin gracia: el usuario está hablando ahora mismo
   }, [finHabla, pararAudio, olvidar]);
 
   // El VAD corre fuera de React y necesita la versión actual de `parar`.

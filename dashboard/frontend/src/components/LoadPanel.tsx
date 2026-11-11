@@ -11,7 +11,7 @@ import { num, type SetRow } from "../lib/api";
 // Widget 3.4 — Carga de entreno.
 //
 // Métrica PRINCIPAL: sRPE = RPE de sesión (form PM, 0-10) × nº de series. Es la
-// medida de carga validada en ciencia del deporte y usa el RPE que Hugo puntúa,
+// medida de carga validada en ciencia del deporte y usa el RPE que el usuario puntúa,
 // que ya pondera intensidad y singles pesados como el tonelaje nunca podría (un
 // 170×1 @9.5 hace que la sesión sepa a RPE alto aunque el tonelaje sea bajo).
 //

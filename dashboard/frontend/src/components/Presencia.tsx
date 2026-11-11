@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 // La "presencia" de Jarvis: un orbe en canvas que cambia de FORMA según el estado y
 // morfea suave entre una y otra (fundido + escala + destello). Es la interfaz de voz
 // —sustituye al botón de micro—: un clic enciende/apaga la escucha. El look se validó
-// en maqueta con Hugo (2026-07-29): esfera / radar / giroscopio / barras.
+// en maqueta con el usuario (2026-07-29): esfera / radar / giroscopio / barras.
 //
 // Estados (la FORMA y el COLOR los marca el estado, consistentes):
 //   off        -> voz apagada (esfera gris tenue; clic para activar)
@@ -15,7 +15,7 @@ import { useEffect, useRef } from "react";
 // La POTENCIA (modelo activo: 0 Estándar / 1 Turbo / 2 Máxima) NO cambia el color: se
 // expresa como energía (más rápido, más glow, más partículas), un aro-medidor tenue en
 // el color del nivel, y un glow de fondo que brilla más con la potencia. Decidido así
-// con Hugo para no perder la consistencia de color por estado.
+// con el usuario para no perder la consistencia de color por estado.
 export type EstadoPresencia = "off" | "dormido" | "escuchando" | "pensando" | "hablando";
 
 const COL: Record<EstadoPresencia, [number, number, number]> = {

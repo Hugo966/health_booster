@@ -1,4 +1,4 @@
-// Detector de voz (VAD) por energía del micro. Existe para UNA cosa: saber que Hugo ha
+// Detector de voz (VAD) por energía del micro. Existe para UNA cosa: saber que el usuario ha
 // empezado a hablar MIENTRAS Jarvis habla, para poder callarle.
 //
 // Por qué no basta con el reconocedor de Chrome: tarda entre 300 ms y 1 s en soltar
@@ -10,7 +10,7 @@
 //   1. `echoCancellation` del navegador, que resta de la señal del micro lo que Chrome
 //      está sacando por el altavoz. Con cascos el problema ni existe.
 //   2. Mientras Jarvis habla se exige MUCHA más energía (`MULT_HABLANDO`): lo que le
-//      queda al eco tras la cancelación es flojo; la voz de Hugo, de cerca, no.
+//      queda al eco tras la cancelación es flojo; la voz del usuario, de cerca, no.
 //   3. Hay que superar el umbral de forma SOSTENIDA. Un golpe o una tos son un pico
 //      corto; hablar, no. Fue decisión suya: prefiere que solo le calle la voz de verdad.
 
@@ -57,7 +57,7 @@ export type Vad = {
 };
 
 export function crearVad(opciones: {
-  /** Se llama cuando Hugo lleva `SOSTENIDO_MS` hablando. */
+  /** Se llama cuando el usuario lleva `SOSTENIDO_MS` hablando. */
   alHablar: () => void;
   /** Se llama al acabar el tramo de voz. */
   alCallar?: () => void;

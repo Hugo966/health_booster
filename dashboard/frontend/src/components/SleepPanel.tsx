@@ -30,7 +30,7 @@ const fmtDate = (f: string) => f.slice(8, 10) + "/" + f.slice(5, 7);
 
 const COLOR_DORMIDO = theme.accent;
 const COLOR_DESPIERTO = "#24506b";
-// Dos medidas de LO MISMO desde fuentes distintas: cómo dijo Hugo que durmió y qué dijo
+// Dos medidas de LO MISMO desde fuentes distintas: cómo dijo el usuario que durmió y qué dijo
 // el reloj. Se pintan en una escala común (0-100) porque lo que interesa es justo cuándo
 // discrepan; con dos ejes distintos esa comparación se pierde.
 const COLOR_CALIDAD = theme.amber;
@@ -93,7 +93,7 @@ function Chart({ rows, height, legend = false }: { rows: Row[]; height: number |
             if (name === "En dormirte") return [`${Math.round(n * 60)} min`, "En dormirte"];
             if (name === "En cama (sin medir)") return [`${n.toFixed(2)} h`, "En cama, sueño sin medir"];
             // La percibida se dibuja escalada a 0-100; en el tooltip se devuelve a su
-            // escala real, que es la que Hugo rellena en el formulario.
+            // escala real, que es la que el usuario rellena en el formulario.
             if (name === "Calidad (tú)") return [`${(n * 9 / 100).toFixed(1)} / 9`, "Calidad (tú)"];
             if (name === "Score (reloj)") return [`${Math.round(n)} / 100`, "Score (reloj)"];
             return [n, name];

@@ -18,7 +18,7 @@ const SALUDO = "Pregúntame cómo te ve hoy, pídele que te abra un panel, o cu�
 // Jarvis marca la intención con etiquetas tipo [sarcastic] para que el TTS (ElevenLabs
 // v3) no lea la ironía en plano. Son instrucciones para la voz, no texto: se mandan al
 // servicio de voz tal cual, pero aquí se quitan al pintar. Solo minúsculas ASCII entre
-// corchetes, para no cargarse nada que Hugo o Jarvis escriban entre corchetes de verdad.
+// corchetes, para no cargarse nada que el usuario o Jarvis escriban entre corchetes de verdad.
 const ETIQUETAS_VOZ = /\[[a-z][a-z ]{1,20}\]\s*/g;
 const sinEtiquetas = (t: string) => t.replace(ETIQUETAS_VOZ, "").trim();
 
@@ -72,7 +72,7 @@ function Mensajes({
 }) {
   const finRef = useRef<HTMLDivElement>(null);
   // Pegado abajo al llegar mensajes nuevos o mientras "piensa". En el ampliado se
-  // desactiva: ahí el scroll lo manda Hugo (arriba está el estado, abajo el chat) y
+  // desactiva: ahí el scroll lo manda el usuario (arriba está el estado, abajo el chat) y
   // saltar al final solo le arrancaría la vista del orbe.
   useLayoutEffect(() => {
     if (autoScroll) finRef.current?.scrollIntoView({ block: "end" });
@@ -210,7 +210,7 @@ function MicroTachado() {
   );
 }
 
-// Qué significa tocar el orbe AHORA. Antes solo alternaba escuchar/reposo, y Hugo pedía
+// Qué significa tocar el orbe AHORA. Antes solo alternaba escuchar/reposo, y el usuario pedía
 // justo lo contrario: con el orbe escuchando, pulsar es "ya he terminado, contéstame",
 // no "apágate". El botón repite la acción de forma visible, porque un canvas no anuncia
 // que se pueda pulsar.
@@ -517,7 +517,7 @@ export function ChatExpanded({ chat, voz }: { chat: Chat; voz?: Voz }) {
           error={chat.error}
           vacio={SALUDO}
           // Solo se baja solo cuando el hilo ya está desplegado. Con el orbe presidiendo
-          // no se toca el scroll (arrancaría la vista), pero si Hugo está mirando el
+          // no se toca el scroll (arrancaría la vista), pero si el usuario está mirando el
           // chat, un mensaje nuevo tiene que entrar en pantalla: si no, escribe o habla
           // y parece que su burbuja no ha llegado.
           autoScroll={p > 0.9}
