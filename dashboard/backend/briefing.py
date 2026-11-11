@@ -324,6 +324,25 @@ def generar() -> str:
     except Exception:
         pass  # que un fallo leyendo huecos no deje a Jarvis sin parte de estado
 
+    # Una pestaña del plan que no se pudo enrutar. No es un hueco de Hugo —él no tiene
+    # nada que rellenar—, es una pregunta que hay que hacerle: sin la semana, los
+    # ejercicios de esas sesiones se quedan sin nombre. Va en el parte y no en el panel
+    # porque lo que hace falta es que ALGUIEN se lo pregunte, y ese es Jarvis.
+    try:
+        import plan_pestanas
+        sin_enrutar = plan_pestanas.pendientes()
+    except Exception:
+        sin_enrutar = []   # que esto no deje a Jarvis sin parte
+    if sin_enrutar:
+        partes.append("")
+        partes.append("HAY QUE PREGUNTARLE POR EL PLAN:")
+        for t in sin_enrutar:
+            partes.append(f"- La pestaña '{t}' del Excel del entrenador no dice de qué "
+                          "semana es, así que sus sesiones entran sin nombre de ejercicio.")
+        partes.append("  Pregúntale de qué PLAN, BLOQUE y SEMANA es (los números que "
+                      "escribe él en su keep) y guárdalo con `enrutar_pestana`. Una vez, "
+                      "cuando venga a cuento. No te inventes los números.")
+
     mol = _ultimo(dd, "molestias_nivel")
     partes.append(_linea("Molestias (0-9: 0 nada, 9 máximo)", mol))
     ene = _ultimo(dd, "energia")

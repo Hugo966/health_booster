@@ -23,7 +23,9 @@ import requests
 # 21 de 67 ejercicios acababan con una "mejor marca" imposible —plancha copenhague a
 # 101 kg, o una banca de 178 kg cuando la real son 101,8—. Verificado el 2026-09-09.
 # El número de bloque debe cuadrar con el que Hugo escribe en SU keep, no ser correlativo.
-# Al empezar una etapa nueva basta con añadir aquí su patrón de pestaña.
+# Una etapa NUEVA ya no hace falta darla de alta aquí: `rutas_automaticas()` la deduce
+# (bloque siguiente del plan en curso) y el keep de Hugo hace de red si se equivoca.
+# Esta tabla sigue siendo la ANCLA de la que se cuenta, y lo único que fija su nombre.
 # La 4ª columna es el NOMBRE de la etapa, y no es decoración: sin él, lo único que
 # llega a Jarvis es "bloque 2", que no significa nada para Hugo —él la llama Build—.
 # Va aquí para que al dar de alta una etapa nueva su nombre entre solo.
@@ -44,6 +46,85 @@ PLAN_TAB_RULES = [
     # no haya que tocar nada, y porque lleva el plan y el bloque dentro del nombre.
     (re.compile(r'^\s*p\s*0*(\d+)\s*b\s*0*(\d+)\s*s\s*0*(\d+)\s*$', re.I), None, None, None),
 ]
+
+def _etapa(titulo):
+    """'Build II S6' -> 'build ii s': la parte del nombre que identifica la ETAPA.
+
+    Se quita el número final (la semana) y se normaliza con la misma clave que los alias
+    de ejercicio, para que una errata tonta del entrenador —una tilde, una mayúscula, un
+    espacio de más— no cuente como etapa nueva.
+    """
+    return _key(re.sub(r'\d+\s*$', '', titulo))
+
+
+def _es_plan(colA):
+    """¿Esta pestaña es una semana de plan? Lo dice su CONTENIDO, no su nombre.
+
+    Una cabecera `Sesión N` en la columna A es la única señal que no depende de cómo la
+    haya bautizado el entrenador. Nutrición, los gráficos y las tablas de movilidad no la
+    tienen, aunque se llamen "Movilidad 2".
+    """
+    return any(isinstance(c, str) and SES_RE.match(c.strip()) for c in colA)
+
+
+def rutas_automaticas(pestanas, manual=None):
+    """(rutas, pendientes) para las pestañas que no casan con ninguna regla.
+
+    `pestanas`: iterable de (título, columna_A), en el orden en que están en la hoja.
+    `manual`: {clave_normalizada: (plani, bloque, semana)} con lo que Hugo ya contestó
+    sobre una pestaña que no se podía resolver sola. Manda sobre la deducción.
+
+    `rutas` son las resueltas; `pendientes` son las que SON plan —traen `Sesión N`— pero
+    no se pueden resolver porque el nombre no acaba en número y nadie ha dicho aún qué
+    semana son. Esas no se adivinan: la semana decide a qué sesión van los ejercicios, y
+    equivocarse ahí le pone a las series el nombre de otro día. Se devuelven para
+    preguntárselo.
+
+    El nombre de la etapa lo pone el entrenador y se lo inventa cada vez; el plan y el
+    bloque son de Hugo y NO están en ese nombre. Pero en todo su histórico una etapa
+    nueva ha sido siempre el bloque siguiente del plan en curso (Offseason → 1,
+    Build → 2, Build II → 3), así que se asigna eso y se deja de esperar a que alguien
+    añada un patrón a mano.
+
+    Adivinar aquí sale barato PORQUE el error se ve: el keep lleva el `BLOQUE n` que
+    escribe Hugo, y si no coincide, sus series entran sin nombre de ejercicio y
+    `huecos.py` lo pinta en ámbar ese mismo día.
+
+    Dos frenos para no tragarse lo que no es plan:
+    - la pestaña tiene que acabar en número (la semana), y
+    - su columna A tiene que traer alguna cabecera `Sesión N`. Una pestaña de
+      movilidad o de gráficos no la tiene, aunque se llame "Movilidad 2".
+    """
+    manual = manual or {}
+    conocidas = [route_tab(t) for t, _ in pestanas]
+    # Lo que Hugo ya contestó cuenta como ancla: si dijo que una es el bloque 4, la
+    # siguiente etapa nueva tiene que ser la 5, no volver a ser la 4.
+    out = {t: manual[_key(t)] for (t, _), d in zip(pestanas, conocidas)
+           if not d and _key(t) in manual}
+    anclas = [d for d in conocidas if d] + list(out.values())
+    pendientes = [t for (t, colA), d in zip(pestanas, conocidas)
+                  if not d and _key(t) not in manual
+                  and not re.search(r'\d\s*$', t) and _es_plan(colA)]
+    if not anclas:
+        # Sin una sola pestaña conocida no hay de dónde contar: no se inventa nada, pero
+        # las que son plan se siguen preguntando.
+        return out, pendientes + [t for (t, colA), d in zip(pestanas, conocidas)
+                                  if not d and _key(t) not in manual and _es_plan(colA)
+                                  and re.search(r'\d\s*$', t)]
+    plani = max(p for p, _, _ in anclas)
+    siguiente = max(b for p, b, _ in anclas if p == plani) + 1
+
+    vistas = {}
+    for (titulo, colA), dest in zip(pestanas, conocidas):
+        if dest or titulo in out or not re.search(r'\d\s*$', titulo) or not _es_plan(colA):
+            continue
+        etapa = _etapa(titulo)
+        if etapa not in vistas:
+            vistas[etapa] = siguiente
+            siguiente += 1
+        out[titulo] = (plani, vistas[etapa], re.search(r'(\d+)\s*$', titulo).group(1))
+    return out, pendientes
+
 
 def route_tab(title):
     """Título de pestaña -> (plani, bloque, semana), o None si no es una semana de plan."""
@@ -321,17 +402,20 @@ def _sin_calentamiento(ejs):
             for i, e in enumerate(limpios, 1)]
 
 
-def extract_exercises(source, verbose=False):
+def extract_exercises(source, verbose=False, manual=None):
     """Lee el plan y devuelve {(plani, bloque): {(semana, dia): [ejercicios]}}.
 
     `source`: ruta a .xlsx local ó iterable de (titulo, columna_A) (p.ej. leído de
     Google Drive vía gspread). Solo se usa la columna A. Las pestañas que no sean
     una semana de plan se ignoran (nutrición, gráficos, movilidad…).
     """
-    sheets = _colA_from_xlsx(source) if isinstance(source, str) else source
+    # Hay que recorrerlas dos veces (una para contar los bloques conocidos y otra para
+    # leer), así que no vale un generador.
+    sheets = list(_colA_from_xlsx(source) if isinstance(source, str) else source)
+    auto, _ = rutas_automaticas(sheets, manual)
     out={}; mapping=[]; skipped=[]
     for sh, colA in sheets:
-        dest = route_tab(sh)
+        dest = route_tab(sh) or auto.get(sh)
         if dest is None:
             skipped.append(sh); continue
         plani, bloque, wk = dest
@@ -363,6 +447,11 @@ def extract_exercises(source, verbose=False):
         src = source.split('/')[-1] if isinstance(source,str) else 'drive'
         print(f"  [Plan {src}] pestaña -> (plani, bloque, semana): {mapping}")
         print(f"  [Plan] pestañas ignoradas: {skipped}")
+        if auto:
+            print(f"  [Plan] ⚠ ETAPA NUEVA, enrutada SOLA (no hay patrón para ella): "
+                  f"{ {t: auto[t] for t in auto} }")
+            print(f"  [Plan]   el bloque es una deducción: si no cuadra con el que "
+                  f"escribes en el keep, el semáforo se pondrá en ámbar.")
     return out
 
 def parse_segment(seg):

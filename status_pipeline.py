@@ -193,6 +193,44 @@ def fetch_duraciones(oldest, newest):
 # a .xlsx falla por el límite de 10 MB de la API de Drive, y no hace falta el resto).
 # El reparto pestaña -> (bloque, semana) está en ep.TAB_ROUTE.
 
+# Pestaña del hub donde viven las pestañas del plan que no se pudieron enrutar solas.
+# Es una ENTRADA, no una salida: el pipeline solo añade filas a medias (el nombre, sin
+# números) y quien las completa es Hugo contestándole a Jarvis. Por eso se escribe con
+# `append_row` y nunca con `write_tab`, que borra la pestaña entera antes de escribir.
+TAB_RUTAS = "plan_pestanas"
+
+
+def rutas_manuales(sh_hub):
+    """{clave_de_pestaña: (plani, bloque, semana)} con lo que Hugo ya contestó."""
+    df = read_tab(sh_hub, TAB_RUTAS)
+    out = {}
+    for r in (df.to_dict("records") if not df.empty else []):
+        titulo = str(r.get("pestana", "")).strip()
+        if not titulo:
+            continue
+        try:
+            out[ep._key(titulo)] = (int(r["plani"]), int(r["bloque"]), str(int(r["semana"])))
+        except (KeyError, TypeError, ValueError):
+            continue   # fila a medias: es justo la que está esperando respuesta
+    return out
+
+
+def anotar_pendientes(sh_hub, pendientes):
+    """Deja apuntada la pestaña que no se puede enrutar, para que Jarvis pregunte."""
+    if not pendientes:
+        return
+    try:
+        ws = sh_hub.worksheet(TAB_RUTAS)
+    except gspread.WorksheetNotFound:
+        ws = sh_hub.add_worksheet(title=TAB_RUTAS, rows=200, cols=4)
+        ws.update([["pestana", "plani", "bloque", "semana"]], value_input_option="USER_ENTERED")
+    ya = {str(v).strip() for v in ws.col_values(1)[1:]}
+    for titulo in pendientes:
+        if titulo not in ya:
+            ws.append_row([titulo, "", "", ""], value_input_option="USER_ENTERED")
+            print(f"  [Plan] pestaña sin enrutar anotada para preguntar: '{titulo}'")
+
+
 def drive_lookups():
     """Lee el plan de entreno desde Drive -> {(plani, bloque): lookup_de_ejercicios}."""
     if not DRIVE_EXCEL_ID:
@@ -229,7 +267,11 @@ def drive_lookups():
 
     # Si lo que se perdió era una pestaña de PLAN, los datos saldrían degradados sin que
     # nadie se entere. Mejor reventar aquí que escribir una hoja a medias.
-    plan_perdidas = [t for t in fallidas if ep.route_tab(t)]
+    # Una pestaña que acaba en número puede ser una etapa nueva (`ep.rutas_automaticas`),
+    # y eso no se puede comprobar aquí porque justo lo que falló fue leer su columna A.
+    # Ante la duda cuenta como plan: perder una semana entera en silencio es peor que
+    # abortar de más.
+    plan_perdidas = [t for t in fallidas if ep.route_tab(t) or re.search(r'\d\s*$', t)]
     if plan_perdidas:
         raise RuntimeError(
             "Drive no ha devuelto pestañas del plan tras 5 intentos: "
@@ -238,7 +280,13 @@ def drive_lookups():
         )
     if fallidas:
         print(f"  (aviso) pestañas sin columna A, ignoradas: {', '.join(fallidas)}")
-    return ep.extract_exercises(sheets, verbose=True)
+    # Lo que Hugo haya contestado sobre pestañas raras manda sobre la deducción; lo que
+    # sigue sin poder resolverse se apunta para que Jarvis se lo pregunte.
+    hub = open_sheet()
+    manual = rutas_manuales(hub)
+    _, pendientes = ep.rutas_automaticas(sheets, manual)
+    anotar_pendientes(hub, pendientes)
+    return ep.extract_exercises(sheets, verbose=True, manual=manual)
 
 def build_entreno():
     # El keep sale de Drive si hay KEEP_DOC_ID, y si no del disco. En la VM no hay

@@ -70,6 +70,35 @@ export async function fetchValores(
   return { valores: c.valores ?? {}, sugerencias: c.sugerencias ?? {} };
 }
 
+export type PlanPendientes = {
+  pendientes: string[];
+  /** Dónde arrancan las ruedas: la semana siguiente a la que acaba de entrenar. */
+  sugerencia: { plani: number; bloque: number; semana: number };
+  /** Los rangos de P/B/S los manda el backend, como los de los formularios. */
+  campos: Campo[];
+};
+
+export async function fetchPlanPendientes(): Promise<PlanPendientes> {
+  const r = await fetch(`${API_BASE}/plan/pendientes`);
+  if (!r.ok) throw new Error("no pude leer las pestañas del plan");
+  return r.json();
+}
+
+/** Dice qué semana es una pestaña del plan que el pipeline no supo colocar.
+ *  `codigo` va de un tirón, P2B4S3, porque lo parsea el mismo `route_tab` del pipeline
+ *  y así el panel no se inventa una sintaxis propia. Devuelve la confirmación en
+ *  castellano para pintarla tal cual. */
+export async function enrutarPestana(pestana: string, codigo: string): Promise<string> {
+  const r = await fetch(`${API_BASE}/plan/enrutar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pestana, codigo }),
+  });
+  const c = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(c.detail ?? "no pude guardar esa pestaña");
+  return c.ok ?? "Guardado.";
+}
+
 /** Guarda o corrige. Solo se mandan los campos con valor: lo demás no se toca. */
 export async function guardar(
   tipo: TipoFormulario,

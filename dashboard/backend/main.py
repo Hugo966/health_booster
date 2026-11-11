@@ -16,6 +16,7 @@ import chat as chat_mod
 import formularios
 import huecos
 import memoria
+import plan_pestanas
 import proveedor
 import rapido
 import sheets
@@ -106,6 +107,29 @@ def formulario_guardar(tipo: str, datos: dict = Body(...)):
         raise HTTPException(422, str(e))
     res["valores"] = formularios.leer(tipo, fecha)
     return res
+
+
+@app.get("/plan/pendientes")
+def plan_pendientes():
+    """Qué pestañas del plan están sin colocar, y dónde arrancan las ruedas."""
+    return {"pendientes": plan_pestanas.pendientes(),
+            "sugerencia": plan_pestanas.sugerencia(),
+            "campos": [vars(c) for c in plan_pestanas.CAMPOS]}
+
+
+@app.post("/plan/enrutar")
+def plan_enrutar(datos: dict = Body(...)):
+    """Dice a qué semana es una pestaña del plan que el pipeline no supo colocar.
+
+    Se contesta con el código de un tirón (`P2B4S3`) en vez de con tres campos: es un
+    dato que Hugo escribe una vez cada varios meses, y teclearlo entero es menos lío que
+    tres ruedas. Lo mismo se puede hacer hablando con Jarvis (`enrutar_pestana`).
+    """
+    try:
+        return {"ok": plan_pestanas.resolver_codigo(str(datos.get("pestana", "")),
+                                                    str(datos.get("codigo", "")))}
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 class Mensaje(BaseModel):

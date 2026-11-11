@@ -56,13 +56,48 @@ canal de sincronización, así que:
   adivinar es caro en las dos direcciones.
 - **El plan de entreno de Drive mezcla todas las etapas en una hoja**, distinguidas solo
   por el nombre de la pestaña. `entreno_pipeline.PLAN_TAB_RULES` enruta pestaña →
-  **(plani, bloque)**, y el número capturado es la semana. Al empezar una etapa nueva hay
-  que añadir ahí su patrón, o sus sesiones entran sin nombre de ejercicio. Hugo
-  **reinicia la numeración de bloques con cada plan**, así que el número debe cuadrar con
-  el que él escribe en el keep, no ser correlativo. Hoy: `Semana N`→(1,3) y
-  `Peaking SN`→(1,4); `Offseason SN`→(2,1), `Build SN`→(2,2) y `Build II SN`→(2,3).
-  También se enruta ya el formato **`PxBySz`** que Hugo quiere usar cuando migre el plan
-  a una hoja propia, aunque todavía no exista ninguna pestaña así.
+  **(plani, bloque)**, y el número capturado es la semana. Hugo **reinicia la numeración
+  de bloques con cada plan**, así que el número debe cuadrar con el que él escribe en el
+  keep, no ser correlativo. Hoy: `Semana N`→(1,3) y `Peaking SN`→(1,4);
+  `Offseason SN`→(2,1), `Build SN`→(2,2) y `Build II SN`→(2,3). También se enruta ya el
+  formato **`PxBySz`**, aunque todavía no exista ninguna pestaña así.
+- **Una etapa NUEVA ya no hace falta darla de alta a mano** (2026-11-11). El entrenador
+  bautiza la pestaña como le sale, y el plan y el bloque son números de Hugo que no están
+  en ese nombre, así que `rutas_automaticas()` los **deduce**: etapa desconocida = bloque
+  siguiente del plan en curso, que es lo que ha pasado en las cinco etapas del histórico
+  (Offseason→1, Build→2, Build II→3). La semana es el número final del título, y las
+  pestañas de una misma etapa comparten bloque porque la clave pasa por `_etapa()`, que
+  normaliza como `_key` (una tilde o un espacio de más no fundan una etapa nueva).
+  **Dos frenos**: tiene que acabar en número Y su columna A tiene que traer una cabecera
+  `Sesión N`, o "Movilidad 2" entraría como semana de plan. **Y la red**: el bloque es una
+  deducción, así que si no cuadra con el `BLOQUE n` del keep el lookup no casa, las series
+  entran con `sin_excel` y la luz "Plan (nombres de ejercicio)" de `huecos.py` se pone en
+  ámbar ese mismo día. Adivinar sale barato PORQUE el error se ve. Lo que sigue
+  necesitando una línea a mano es el NOMBRE de la etapa (`nombre_etapa`): `P2B4S1` enruta
+  solo, pero el parte de estado no sabe que eso se llama "Build III".
+- **Si el nombre NO acaba en número, no se adivina: lo pregunta Jarvis** (2026-11-11). Sin
+  número no hay semana, y la semana decide a qué sesión van los nombres, así que un fallo
+  ahí le pone a las series el nombre de otro día sin dar error. Una pestaña que trae
+  cabeceras `Sesión N` pero no se puede enrutar se apunta a medias en la pestaña
+  **`plan_pestanas`** del hub (`pestana | plani | bloque | semana`), `briefing.py` la mete
+  en el parte, Jarvis le pregunta y la completa con la herramienta `enrutar_pestana`
+  (`dashboard/backend/plan_pestanas.py`). También se contesta **desde el panel de
+  Formularios ampliado**, con las letras P/B/S fijas y **tres ruedas** (las mismas del
+  resto del panel), en un bloque que solo aparece si hay alguna pendiente. Existe porque
+  dictarle tres números sueltos al reconocedor de voz es justo donde más se equivoca.
+  Las ruedas **arrancan ya puestas** en la semana siguiente a la última entrenada
+  (`plan_pestanas.sugerencia()`, que lo saca de `entreno_sesion`, o sea de los números
+  del keep), así que lo normal es mirar que cuadra y darle a Guardar. **Ojo, aquí la
+  sugerencia SÍ se manda sin tocarla**, al revés que el peso: no existe el "no
+  contesto", la fila está esperando respuesta y se guarda lo que se ve en pantalla. La
+  UI manda el código `P2B4S3` y lo parsea el MISMO `route_tab` del pipeline
+  (`POST /plan/enrutar`), para no inventar una sintaxis aparte; los rangos de las ruedas
+  los declara el backend (`plan_pestanas.CAMPOS`), como los de los formularios. El
+  pipeline lo lee a la hora siguiente: **no hace falta tocar código ni desplegar.** Dos cosas que importan de esa pestaña: es la
+  ÚNICA de entrada que lee el backend (va en `sheets.TABS`), y el pipeline solo le hace
+  `append_row` — pasarle `write_tab` borraría las respuestas de Hugo, porque esa función
+  limpia la pestaña antes de escribir. La respuesta cuenta además como ancla: si dice que
+  una es el bloque 4, la siguiente etapa deducida será la 5.
 - **El calentamiento del plan NO va al keep, así que no puede ocupar un slot.** Desde
   Build II cada día del Excel empieza con una cabecera `Warm up`, y Hugo no apunta esos
   ejercicios. Si se quedaran en la lista, los nombres se correrían un puesto y la

@@ -22,8 +22,11 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # los Google Forms y ahora también la app). Se leen para el editor y el semáforo de
 # huecos: `derived_diario` no sirve para eso porque solo lo regenera el pipeline y no
 # tiene fila para los días vacíos, que son justo los que hay que detectar.
+# `plan_pestanas` es la única pestaña de ENTRADA que lee el backend: la escribe a medias
+# el pipeline (una pestaña del plan que no supo enrutar) y la completa Hugo contestándole
+# a Jarvis. Ver `plan_pestanas.py`.
 TABS = ["derived_diario", "entreno_sesion", "rm1", "peso", "entreno_sets",
-        "wellness_am", "wellness_pm"]
+        "wellness_am", "wellness_pm", "plan_pestanas"]
 
 log = logging.getLogger(__name__)
 

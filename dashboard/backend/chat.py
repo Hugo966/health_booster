@@ -29,6 +29,7 @@ import formularios
 import huecos
 import memoria
 import personalidad
+import plan_pestanas
 import proveedor
 from sheets import fetch_all
 
@@ -161,6 +162,25 @@ HERRAMIENTAS_ESCRITURA = [
             "peso_kg": {"type": "number", "description": "En kilos, p.ej. 81.8"},
         },
         "requeridos": ["peso_kg"],
+    },
+    {
+        "nombre": "enrutar_pestana",
+        "descripcion": (
+            "Dice a qué semana del plan corresponde una pestaña del Excel del entrenador "
+            "que el pipeline no supo colocar. ÚSALA SOLO cuando el parte de estado diga "
+            "que hay una pestaña sin enrutar y Hugo te haya contestado qué semana es. "
+            "NUNCA te inventes los números ni los deduzcas del nombre: si no te los ha "
+            "dicho él, pregúntaselos. Un número mal puesto le cuelga los ejercicios de "
+            "una sesión a otra y eso no da ningún error."
+        ),
+        "params": {
+            "pestana": {"type": "string", "description": "El nombre EXACTO de la pestaña, "
+                                                         "tal cual lo dice el parte"},
+            "plani": {"type": "integer", "description": "Número de plan (el PLANI de su keep)"},
+            "bloque": {"type": "integer", "description": "Número de bloque dentro de ese plan"},
+            "semana": {"type": "integer", "description": "Número de semana dentro del bloque"},
+        },
+        "requeridos": ["pestana", "plani", "bloque", "semana"],
     },
 ]
 
@@ -386,6 +406,11 @@ def _ejecutar_backend(llamada) -> str:
             res = huecos.estado(dias=int(llamada.args.get("dias") or 14))
         elif llamada.nombre in ("guardar_am", "guardar_pm", "guardar_peso"):
             res = _tool_guardar(llamada.nombre.removeprefix("guardar_"), llamada.args)
+        elif llamada.nombre == "enrutar_pestana":
+            res = {"ok": plan_pestanas.resolver(
+                str(llamada.args.get("pestana", "")),
+                int(llamada.args["plani"]), int(llamada.args["bloque"]),
+                int(llamada.args["semana"]))}
         elif llamada.nombre == "recordar":
             tema = str(llamada.args.get("tema", "general"))
             texto = str(llamada.args.get("texto", "")).strip()

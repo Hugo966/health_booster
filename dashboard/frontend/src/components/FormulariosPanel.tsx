@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Panel from "./Panel";
 import { theme } from "../lib/theme";
 import {
-  fetchEsquema, fetchEstado, fetchValores, guardar, hoyISO,
-  type Campo, type EstadoFormularios, type Esquema, type Fuente,
+  enrutarPestana, fetchEsquema, fetchEstado, fetchPlanPendientes, fetchValores, guardar, hoyISO,
+  type Campo, type EstadoFormularios, type Esquema, type Fuente, type PlanPendientes,
   type TipoFormulario, type Valores,
 } from "../lib/formularios";
 
@@ -461,6 +461,81 @@ function usarEstado(dias: number) {
   return { estado, recargar };
 }
 
+/** Contestar, sin pasar por el chat, qué semana es una pestaña del plan que el pipeline
+ *  no supo colocar (el entrenador la ha bautizado de una forma nueva y sin número).
+ *
+ *  Las letras P/B/S van FIJAS y los tres números se eligen con la misma rueda que el
+ *  resto del panel: no hay nada que teclear ni formato que recordar. Y arrancan ya
+ *  puestas en la semana siguiente a la que acaba de entrenar (`/plan/pendientes`), que
+ *  es casi siempre la buena, así que lo normal es mirar que cuadra y darle a Guardar.
+ *
+ *  OJO, esto va al revés que el peso: allí la sugerencia NO se manda si no se toca la
+ *  rueda, porque un Guardar de más apuntaría una pesada que nadie se hizo. Aquí sí se
+ *  manda tal cual, porque no existe el "no contesto": la pestaña está esperando
+ *  respuesta y lo que se guarda es justo lo que se está viendo en pantalla.
+ *
+ *  Lo mismo se puede decir hablando con Jarvis; esto existe porque dictarle tres números
+ *  sueltos a un reconocedor de voz es donde más se equivoca. */
+function PestanasSinEnrutar({ estado, onGuardado }: {
+  estado: EstadoFormularios | null; onGuardado: () => void;
+}) {
+  const pendientes = estado?.fuentes?.plan?.faltan ?? [];
+  const clave = pendientes.join("|");
+  const [info, setInfo] = useState<PlanPendientes | null>(null);
+  const [tocados, setTocados] = useState<Record<string, Record<string, number>>>({});
+  const [aviso, setAviso] = useState("");
+
+  useEffect(() => {
+    if (!clave) return;
+    fetchPlanPendientes().then(setInfo).catch(() => {});
+  }, [clave]);
+
+  if (!clave || !info) return null;
+
+  const valor = (p: string, campo: string) =>
+    tocados[p]?.[campo] ?? (info.sugerencia as Record<string, number>)[campo];
+
+  const mandar = async (p: string) => {
+    const codigo = `P${valor(p, "plani")}B${valor(p, "bloque")}S${valor(p, "semana")}`;
+    try {
+      setAviso(await enrutarPestana(p, codigo));
+      onGuardado();
+    } catch (e) {
+      setAviso((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg p-3"
+         style={{ background: "rgba(255,165,2,0.08)" }} data-no-expand>
+      <div className="text-[11px]" style={{ color: theme.text }}>
+        Pestañas del plan sin colocar · dime qué semana son
+      </div>
+      {pendientes.map((p) => (
+        <div key={p} className="flex flex-wrap items-end gap-2">
+          <span className="w-full text-[11px] sm:w-auto" style={{ color: theme.muted }}>{p}</span>
+          {info.campos.map((c) => (
+            <div key={c.nombre} className="flex items-center gap-1">
+              <span className="text-[11px]" style={{ color: theme.accent }}>{c.etiqueta}</span>
+              <Rueda
+                campo={c}
+                valor={valor(p, c.nombre)}
+                sugerencia={(info.sugerencia as Record<string, number>)[c.nombre]}
+                onChange={(v) => setTocados((t) => ({
+                  ...t, [p]: { ...(t[p] ?? {}), [c.nombre]: Number(v) },
+                }))}
+              />
+            </div>
+          ))}
+          <button type="button" className="jarvis-chip px-3 py-1 text-[11px]"
+                  onClick={() => mandar(p)}>Guardar</button>
+        </div>
+      ))}
+      {aviso && <div className="text-[10px]" style={{ color: theme.muted }}>{aviso}</div>}
+    </div>
+  );
+}
+
 export default function FormulariosPanel({ dias, onExpand }: {
   dias: number; onExpand?: (origin?: DOMRect) => void;
 }) {
@@ -495,6 +570,7 @@ export function FormulariosExpanded({ dias }: { dias: number }) {
     <div className="mx-auto flex h-[72vh] min-h-0 w-full max-w-3xl flex-col">
       <div className="mb-3 flex shrink-0 flex-col gap-3">
         <Semaforo estado={estado} />
+        <PestanasSinEnrutar estado={estado} onGuardado={recargar} />
         {estado && (
           <div className="flex flex-col gap-2">
             <Tira estado={estado} />

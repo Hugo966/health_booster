@@ -41,6 +41,14 @@ DIAS_PESO = 10
 DIAS_KEEP = 4
 VENTANA_RPE_D = 7
 
+# Una serie marcada `sin_excel` es una serie cuyo ejercicio no se sabe cómo se llama:
+# el plan de Drive no tenía nada para ese (semana, día). La causa casi siempre es que la
+# pestaña de esa etapa no está enrutada en `entreno_pipeline.PLAN_TAB_RULES`, y como el
+# entrenador la bautiza distinta cada vez, pasa cada vez que empieza una etapa nueva.
+# Es el único hueco que Hugo NO puede tapar rellenando algo —hay que tocar el código—,
+# así que el semáforo lo pone en ámbar para que se entere y lo diga, no para pedirle nada.
+DIAS_PLAN = 21
+
 # Un formulario cuenta como puesto si tiene SUS campos núcleo. Hay filas reales con la
 # fecha y las notas rellenas pero sin ningún número, así que "hay fila" no basta.
 NUCLEO = {
@@ -49,6 +57,24 @@ NUCLEO = {
 }
 
 _CABECERA_KEEP = re.compile(r"^\s*SEM\s*\d+\s*-\s*D[IÍ]A\s*\d+.*?(\d{4}-\d{2}-\d{2})", re.I)
+
+
+def _sesiones_sin_plan(sets, hoy: date, dias: int = DIAS_PLAN) -> dict:
+    """{fecha: (plani, bloque, semana)} de las sesiones que entraron sin nombres.
+
+    Las series SIN fecha son del keep antiguo, de antes de que Hugo fechara las
+    cabeceras: se dejan fuera porque ya no tienen arreglo y tendrían el panel en ámbar
+    para siempre por algo que no se puede hacer.
+    """
+    limite = (hoy - timedelta(days=dias)).isoformat()
+    out: dict[str, tuple] = {}
+    for r in sets:
+        if "sin_excel" not in str(r.get("flag", "")):
+            continue
+        f = str(r.get("fecha", ""))[:10]
+        if f and f >= limite:
+            out.setdefault(f, (r.get("plani"), r.get("bloque"), r.get("semana")))
+    return out
 
 
 def _dm(iso: str | None) -> str:
@@ -237,6 +263,44 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
                 "ultima": ultima,
                 "detalle": f"Al día · última sesión {_dm(ultima)} (hace {dias_keep} días)",
             }
+
+    # --- el plan: sesiones que entraron sin nombre de ejercicio --------------
+    sin_plan = _sesiones_sin_plan(sheets.fetch_all().get("entreno_sets", []), hoy)
+    try:
+        import plan_pestanas
+        sin_enrutar = plan_pestanas.pendientes()
+    except Exception:
+        sin_enrutar = []
+    if sin_enrutar:
+        # Esta va primero: es la causa, y además tiene arreglo HOY (contestándole a
+        # Jarvis). Las series sin nombre de abajo suelen ser su consecuencia.
+        fuentes["plan"] = {
+            "etiqueta": "Plan (nombres de ejercicio)",
+            "estado": "aviso",
+            # Los nombres van en `faltan` porque el panel pinta un campo por pestaña
+            # para contestarlo ahí mismo, sin pasar por el chat.
+            "faltan": sin_enrutar,
+            "detalle": (f"{', '.join(sin_enrutar)}: el entrenador la ha llamado de una "
+                        "forma nueva y no se sabe qué semana es"),
+        }
+    elif sin_plan:
+        ult = max(sin_plan)
+        plani, bloque, semana = sin_plan[ult]
+        fuentes["plan"] = {
+            "etiqueta": "Plan (nombres de ejercicio)",
+            "estado": "aviso",
+            "faltan": sorted(sin_plan),
+            "ultima": ult,
+            "detalle": (f"{', '.join(_dm(f) for f in sorted(sin_plan))} sin nombre de "
+                        f"ejercicio (plan {plani}, bloque {bloque}, semana {semana}): "
+                        "falta enrutar su pestaña del Drive en PLAN_TAB_RULES"),
+        }
+    else:
+        fuentes["plan"] = {
+            "etiqueta": "Plan (nombres de ejercicio)",
+            "estado": "ok",
+            "detalle": "Las sesiones recientes traen su ejercicio del plan",
+        }
 
     estados = [v["estado"] for v in fuentes.values() if v["estado"] != "no_disponible"]
     color = _color(estados)
