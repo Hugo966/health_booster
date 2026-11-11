@@ -590,7 +590,7 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
     memoria.init()
     memoria.guardar_mensaje(sesion, "usuario", mensaje)
 
-    sistema = personalidad.sistema(briefing.generar(), memoria.hechos_relevantes())
+    sistema = personalidad.sistema(briefing.generar(sesion), memoria.hechos_relevantes())
     prov = proveedor.obtener(forzar_proveedor)
 
     # El hilo ya incluye el mensaje recién guardado. Cada cosa que dijo él va con la hora

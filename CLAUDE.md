@@ -244,6 +244,16 @@ canal de sincronización, así que:
   sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
   entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
   entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
+- **Jarvis sabe cuánto hace que no hablas con él** (`memoria.ultima_visita`), y el parte
+  lo dice: *"Última vez que hablasteis: viernes, 11 de septiembre (hace 61 días)"*. El
+  registro existía desde siempre —cada mensaje se guarda con su `ts`—, solo que nadie
+  preguntaba, y como **el hilo es diario**, al día siguiente está vacío igual que tras un
+  mes: desde dentro, volver después de comer y volver tras una semana eran idénticos.
+  Se miran solo los mensajes DEL USUARIO (que hablara Jarvis no es que pasara él) y se
+  excluye la sesión de hoy (eso ya está en el hilo). **Ojo: `jarvis.db` es de cada
+  máquina**, así que cada una cuenta sus propias visitas; la que importa es la de la VM,
+  que es donde habla de verdad. **Lo que NO se guarda es el canal**: voz y texto entran
+  por el mismo sitio, así que no se puede decir "llevas una semana sin hablarme por voz".
 - **Jarvis sabe la HORA, no solo el día, y el hilo va fechado.** Las dos cosas faltaban y
   juntas le hacían ordenar mal la vida del usuario: a las 7:10 de la mañana le despidió
   con un "corre que llegas tarde al alemán" cuando el alemán era por la tarde y a esa

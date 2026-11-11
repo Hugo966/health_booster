@@ -107,6 +107,36 @@ def conversacion_caliente(sesion: str, minutos: int = 10) -> bool:
 # seguidos. Con 20 se le caían del contexto los datos del principio y volvía a preguntar
 # lo mismo ("le cuesta guardar las cosas", 2026-10-05). Con una sesión por día (ver
 # `idSesion` en chat.ts) el hilo está acotado, así que 60 no crece sin freno.
+def ultima_visita(sesion_actual: str) -> dict | None:
+    """Cuándo fue la última vez que habló con Jarvis ANTES de ahora. `None` si es la
+    primera.
+
+    Se miran solo los mensajes SUYOS: que Jarvis dijera algo no significa que él pasara
+    por aquí. Y se excluye la sesión de ahora porque la sesión es diaria, así que lo que
+    queda es de otro día; lo de hoy ya lo tiene delante en el hilo.
+
+    El registro existía desde el principio —cada mensaje se guarda con su `ts`—, solo
+    que nadie preguntaba. Sin esto, volver después de una semana y volver tras comer se
+    parecen exactamente igual desde dentro.
+    """
+    with _conn() as con:
+        fila = con.execute(
+            "SELECT ts FROM conversaciones WHERE sesion != ? AND rol = 'usuario' "
+            "ORDER BY id DESC LIMIT 1",
+            (sesion_actual,),
+        ).fetchone()
+    if not fila:
+        return None
+    try:
+        cuando = datetime.fromisoformat(fila["ts"])
+    except (TypeError, ValueError):
+        return None
+    ahora = datetime.now()
+    return {"ts": fila["ts"], "fecha": cuando.date(),
+            "dias": (ahora.date() - cuando.date()).days,
+            "horas": round((ahora - cuando).total_seconds() / 3600)}
+
+
 def hilo_reciente(sesion: str, n: int = 60) -> list[dict]:
     """Últimos n mensajes de la sesión, en orden cronológico, CON su hora.
 

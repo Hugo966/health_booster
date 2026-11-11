@@ -20,6 +20,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+import memoria
 from sheets import fetch_all
 
 # La raíz del proyecto en el path: el backend arranca con cwd en dashboard/backend, así
@@ -165,8 +166,28 @@ def _linea(nombre, dato, unidad="", extra="", clave="_defecto"):
     return f"- {nombre}: {val} ({cuando}){extra}{marca}"
 
 
-def generar() -> str:
-    """El parte que se inyecta en cada conversación."""
+def _linea_ultima_visita(sesion: str | None) -> str | None:
+    """Cuánto hace que no habla con Jarvis. `None` si es hoy mismo o es la primera vez.
+
+    Va en el parte y no en el prompt porque caduca cada día, que es la regla de la casa.
+    Sin esto, desde dentro no hay diferencia entre volver después de comer y volver
+    después de una semana: el hilo es diario, así que al día siguiente está vacío igual.
+    """
+    if not sesion:
+        return None
+    v = memoria.ultima_visita(sesion)
+    if not v or v["dias"] < 1:
+        return None
+    cuando = personalidad.fecha_larga(v["fecha"])
+    cuanto = "ayer" if v["dias"] == 1 else f"hace {v['dias']} días"
+    return f"- Última vez que hablasteis: {cuando} ({cuanto})."
+
+
+def generar(sesion: str | None = None) -> str:
+    """El parte que se inyecta en cada conversación.
+
+    `sesion` es la de AHORA: hace falta para saber cuándo fue la vez anterior.
+    """
     data = fetch_all()
     dd = data.get("derived_diario", [])
     if not dd:
@@ -182,6 +203,11 @@ def generar() -> str:
     if r:
         extra = f" — {_banda_readiness(r[0])}{_flecha(_tendencia(dd, 'readiness'), 1.0)}"
     partes.append(_linea("Readiness", r, "", extra))
+
+    # Lo primero que hay que saber de una conversación es cuánto hace de la anterior.
+    visita = _linea_ultima_visita(sesion)
+    if visita:
+        partes.insert(2, visita)
 
     # HRV, con su rango habitual para que "68" signifique algo
     hrv = _ultimo(dd, "hrv_rmssd")
