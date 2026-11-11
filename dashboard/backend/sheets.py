@@ -26,7 +26,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 # el pipeline (una pestaña del plan que no supo enrutar) y la completa el usuario contestándole
 # a Jarvis. Ver `plan_pestanas.py`.
 TABS = ["derived_diario", "entreno_sesion", "rm1", "peso", "entreno_sets",
-        "wellness_am", "wellness_pm", "plan_pestanas"]
+        "wellness_am", "wellness_pm", "plan_pestanas", "ajustes"]
 
 log = logging.getLogger(__name__)
 

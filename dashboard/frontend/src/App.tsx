@@ -13,6 +13,7 @@ import NotasPanel, { NotasExpanded } from "./components/NotasPanel";
 import FormulariosPanel, { FormulariosExpanded } from "./components/FormulariosPanel";
 import Expanded from "./components/Expanded";
 import TrazaVoz from "./components/TrazaVoz";
+import PedirUbicacion from "./components/PedirUbicacion";
 import RangeSelector, { inRange, rangeStart, type Range } from "./components/RangeSelector";
 import { useObjetivoPeso } from "./lib/goal";
 import { useChat, type Chat } from "./lib/chat";
@@ -250,6 +251,8 @@ export default function App() {
 
       {revelado && data && (
         <div className="jarvis-rise mx-auto flex max-w-6xl flex-col gap-6">
+          {/* Solo aparece la primera vez, mientras no se sepa dónde está. */}
+          <PedirUbicacion />
           <div className="flex justify-center">
             <Readiness
               value={hoy?.v ?? null}

@@ -88,6 +88,19 @@ gc compute ssh "$VM" --command="
   echo \"  commit desplegado: \$(sudo -u hugo -H git -C $RUTA log --oneline -1)\"
 "
 
+# El `.env` NO viaja en el despliegue (ni por git ni por el tar), así que una variable
+# nueva se queda sin poner en la VM y no da error: simplemente el backend arranca con su
+# valor por defecto. Aquí se avisa de la única que cambia lo que Jarvis DICE.
+echo "▸ Comprobando la configuración de la VM…"
+gc compute ssh "$VM" --command="
+  if sudo grep -qE '^JARVIS_USUARIO=.' $RUTA/.env 2>/dev/null; then
+    echo '   ✓ JARVIS_USUARIO puesto'
+  else
+    echo '   ⚠ FALTA JARVIS_USUARIO en $RUTA/.env — Jarvis llamará \"el usuario\" a quien le hable.'
+    echo '     Arréglalo con:  echo JARVIS_USUARIO=TuNombre | sudo tee -a $RUTA/.env && sudo systemctl restart jarvis'
+  fi
+"
+
 echo "▸ Comprobando desde fuera…"
 gc compute ssh "$VM" --command="
   for p in '/' '/data' '/formularios/estado' '/tts/salud'; do

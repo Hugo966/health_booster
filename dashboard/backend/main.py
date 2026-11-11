@@ -16,6 +16,7 @@ import chat as chat_mod
 import formularios
 import huecos
 import memoria
+import meteo
 import plan_pestanas
 import proveedor
 import rapido
@@ -110,6 +111,31 @@ def formulario_guardar(tipo: str, datos: dict = Body(...)):
         raise HTTPException(422, str(e))
     res["valores"] = formularios.leer(tipo, fecha)
     return res
+
+
+@app.get("/ubicacion")
+def ubicacion_leer():
+    """Dónde está el usuario, para el tiempo. `null` si todavía no lo ha dicho:
+    es lo que hace que la app se lo pregunte la primera vez que la abre."""
+    return {"ubicacion": meteo.ubicacion(), "tiempo": meteo.ahora()}
+
+
+@app.post("/ubicacion")
+def ubicacion_guardar(datos: dict = Body(...)):
+    ciudad = str(datos.get("ciudad", "")).strip()
+    if not ciudad:
+        raise HTTPException(422, "Dime una ciudad.")
+    lugar = meteo.buscar_ciudad(ciudad)
+    if not lugar:
+        raise HTTPException(422, f"No encuentro '{ciudad}'. Prueba con el nombre a secas.")
+    try:
+        meteo.guardar_ubicacion(lugar)
+    except Exception as e:
+        # Lo típico es un 429 de cuota de Google, que se pasa solo. Decirlo en castellano
+        # importa: esto lo lee Hugo en la pantalla, no en un log.
+        raise HTTPException(503, f"No he podido guardarlo ahora mismo ({type(e).__name__}). "
+                                 "Suele ser la cuota de Google: inténtalo en un minuto.")
+    return {"ubicacion": lugar, "tiempo": meteo.ahora()}
 
 
 @app.get("/plan/pendientes")

@@ -29,6 +29,7 @@ _RAIZ = str(Path(__file__).resolve().parents[2])
 if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 import entreno_pipeline  # noqa: E402
+import personalidad  # noqa: E402
 
 OBJETIVO_SUENO_H = 7.5
 # Días de la ventana de carga. Es el mismo 7 que usan `sRPE_series_7d` en el pipeline y
@@ -171,7 +172,9 @@ def generar() -> str:
     if not dd:
         return "No hay datos disponibles ahora mismo."
 
-    partes = [f"Parte de estado del usuario — {date.today().isoformat()}", ""]
+    # Esto lo LEE el modelo, así que lleva el nombre de verdad (ver personalidad.USUARIO)
+    # y no "el usuario": es la cabecera de todo lo que sabe de él hoy.
+    partes = [f"Parte de estado — {personalidad.USUARIO}, {date.today().isoformat()}", ""]
 
     # Readiness
     r = _ultimo(dd, "readiness")
@@ -343,6 +346,17 @@ def generar() -> str:
                       "escribe él en su keep) y guárdalo con `enrutar_pestana`. Una vez, "
                       "cuando venga a cuento. No te inventes los números.")
 
+    # El tiempo. Va con los datos del día y no al final porque es contexto de AHORA, no
+    # una métrica suya: sirve para que no le diga de salir a andar con la que está
+    # cayendo. Si falla el servicio o no hay ubicación puesta, no se pinta la línea.
+    try:
+        import meteo
+        linea_tiempo = meteo.frase()
+    except Exception:
+        linea_tiempo = None
+    if linea_tiempo:
+        partes.append(linea_tiempo)
+
     mol = _ultimo(dd, "molestias_nivel")
     partes.append(_linea("Molestias (0-9: 0 nada, 9 máximo)", mol))
     ene = _ultimo(dd, "energia")
@@ -414,7 +428,7 @@ def generar() -> str:
         if trozos:
             notas.append(f"- {f} · " + " · ".join(trozos))
     if notas:
-        partes += ["", "Notas recientes del usuario (texto libre de sus formularios):"] + notas[-8:]
+        partes += ["", "Sus notas recientes (texto libre de sus formularios):"] + notas[-8:]
 
     # Aviso de frescura, para que no opine sobre datos viejos como si fueran de hoy
     viejos = [

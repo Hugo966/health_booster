@@ -108,10 +108,16 @@ def conversacion_caliente(sesion: str, minutos: int = 10) -> bool:
 # lo mismo ("le cuesta guardar las cosas", 2026-10-05). Con una sesión por día (ver
 # `idSesion` en chat.ts) el hilo está acotado, así que 60 no crece sin freno.
 def hilo_reciente(sesion: str, n: int = 60) -> list[dict]:
-    """Últimos n mensajes de la sesión, en orden cronológico."""
+    """Últimos n mensajes de la sesión, en orden cronológico, CON su hora.
+
+    El `ts` se guardaba y luego se tiraba aquí, así que el modelo veía la conversación
+    como una lista plana sin tiempo: no podía saber si "ahora tengo curro" se dijo hace
+    cinco minutos o ayer. Con eso despidió a Hugo un día a las 7 de la mañana con un
+    "corre que llegas tarde al alemán", que era por la tarde.
+    """
     with _conn() as con:
         filas = con.execute(
-            "SELECT rol, texto FROM conversaciones WHERE sesion = ? "
+            "SELECT rol, texto, ts FROM conversaciones WHERE sesion = ? "
             "ORDER BY id DESC LIMIT ?",
             (sesion, n),
         ).fetchall()

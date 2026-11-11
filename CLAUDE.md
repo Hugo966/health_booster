@@ -244,6 +244,27 @@ canal de sincronización, así que:
   sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
   entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
   entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
+- **Jarvis sabe la HORA, no solo el día, y el hilo va fechado.** Las dos cosas faltaban y
+  juntas le hacían ordenar mal la vida del usuario: a las 7:10 de la mañana le despidió
+  con un "corre que llegas tarde al alemán" cuando el alemán era por la tarde y a esa
+  hora iba al trabajo. El bloque `HOY` lleva ahora la hora (`_ahora_es()`), y
+  `memoria.hilo_reciente` deja de tirar el `ts`: `chat.py` le pone `[HH:MM]` delante a
+  **sus** mensajes, no a los de Jarvis (marcándolos todos, acaba copiando el formato en
+  lo que responde). La regla de que los planes van en orden está en `OPERACION`, sección
+  "LA HORA, Y EN QUÉ ORDEN PASAN SUS COSAS".
+- **El tiempo sale de Open-Meteo, sin clave, y la ubicación la pregunta la APP** la
+  primera vez que se abre (`PedirUbicacion.tsx` → `POST /ubicacion`). No va en el `.env`
+  a propósito: esto lo contesta quien USA la app, no quien la instala, y así vale desde
+  el móvil, el portátil y la VM. Se guarda en la pestaña **`ajustes`** (clave/valor) de
+  la hoja. `meteo.frase()` mete una línea en el parte y **devuelve `None` si falla o si
+  no hay ubicación**: un Jarvis sin saber si llueve sirve, uno mudo no. Caché de 20 min
+  porque el parte se monta en CADA mensaje. Hacia fuera solo salen unas coordenadas.
+- **Escribir en la hoja gasta cuota de LECTURA.** Cada `ajustes.escribir` son metadatos +
+  leer la columna + escribir, así que guardar la ubicación de una en una eran nueve
+  peticiones y saltaba el 429. Se escriben todas las claves de una pasada. Y el `except`
+  de "la pestaña no existe" tiene que ser **solo** `gspread.WorksheetNotFound`: siendo
+  ancho, el 429 se disfrazaba de "no existe" e intentaba crear una pestaña que ya estaba,
+  con lo que el log enseñaba el segundo error y no el de verdad (2026-11-11).
 - **El prompt de Jarvis son DOS constantes** (`personalidad.py`): `PERSONAJE` (quién es:
   tono, voz, cuándo deja de bromear) y `OPERACION` (el manual: herramientas, vocabulario,
   formularios). Se separaron el 2026-09-11 porque el bloque único había crecido a nueve

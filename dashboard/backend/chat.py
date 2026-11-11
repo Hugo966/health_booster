@@ -259,6 +259,12 @@ def _ultima_fila(data: dict, pestana: str, fecha: str) -> dict:
     return filas[-1] if filas else {}
 
 
+def _hhmm(ts) -> str:
+    """'2026-11-11T07:12:30' -> '07:12'. Cadena vacía si no hay hora que sacar."""
+    t = str(ts or "")
+    return t[11:16] if len(t) >= 16 and t[10] == "T" else ""
+
+
 def _tool_dia(fecha: str) -> dict:
     data = fetch_all()
     fila = next((r for r in data.get("derived_diario", []) if str(r.get("fecha")) == fecha), None)
@@ -587,9 +593,14 @@ def responder(sesion: str, mensaje: str, forzar_proveedor: str | None = None,
     sistema = personalidad.sistema(briefing.generar(), memoria.hechos_relevantes())
     prov = proveedor.obtener(forzar_proveedor)
 
-    # El hilo ya incluye el mensaje recién guardado.
+    # El hilo ya incluye el mensaje recién guardado. Cada cosa que dijo él va con la hora
+    # delante: sin eso el modelo ve una lista plana y no puede ordenar los planes que le
+    # cuenta ("ahora curro y luego alemán"). Solo en los suyos, no en los de Jarvis: si
+    # se los marcáramos también, acabaría copiando el formato en lo que responde.
     mensajes = [
-        {"role": "user" if m["rol"] == "usuario" else "assistant", "content": m["texto"]}
+        {"role": "user" if m["rol"] == "usuario" else "assistant",
+         "content": f"[{_hhmm(m.get('ts'))}] {m['texto']}" if m["rol"] == "usuario"
+                    and _hhmm(m.get("ts")) else m["texto"]}
         for m in memoria.hilo_reciente(sesion)
     ]
 

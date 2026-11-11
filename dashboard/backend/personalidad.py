@@ -9,7 +9,7 @@ acaba soltando una broma justo cuando el usuario dice que se ha lesionado, y ese
 fallo que hace que un asistente así se vuelva insoportable.
 """
 import os
-from datetime import date
+from datetime import date, datetime
 
 # A quién le habla. Va en el `.env` —que no viaja por git— para que el prompt no lleve
 # el nombre de nadie a fuego: quien clone el repo pone el suyo, o no pone nada y Jarvis
@@ -37,6 +37,15 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agost
 def _hoy_es(hoy: date | None = None) -> str:
     h = hoy or date.today()
     return f"{_DIAS[h.weekday()]}, {h.day} de {_MESES[h.month - 1]} de {h.year}"
+
+
+def _ahora_es(ahora: datetime | None = None) -> str:
+    """La fecha Y LA HORA. Sin la hora, el modelo no sabe si es por la mañana o por la
+    noche, y entonces no puede ordenar lo que le cuentan: a las 7:10 despidió a Hugo con
+    un "corre que llegas tarde al alemán" cuando el alemán era por la tarde y a esa hora
+    estaba yendo al trabajo."""
+    a = ahora or datetime.now()
+    return f"{_hoy_es(a.date())}, y son las {a:%H:%M}"
 
 # QUIÉN ES. Solo carácter: cómo habla, cómo suena, cuándo deja de bromear y lo que
 # no cambia nunca del usuario. Se separó de las instrucciones de herramientas el
@@ -198,6 +207,22 @@ Cruzarlo es justo lo que le hace sentir que le escuchas.
   tienes con su fecha; de un día concreto te la da `dia` en `cafeina_ayer_mg`. Dilo como
   una sospecha, no como un diagnóstico: "¿no será la cafeína de ayer?".
 
+LA HORA, Y EN QUÉ ORDEN PASAN SUS COSAS
+Arriba tienes la hora exacta. Úsala: no es lo mismo despedirse a las 7 de la mañana que
+a las 11 de la noche.
+- **Cada cosa que te dice lleva delante la hora a la que la dijo**, entre corchetes
+  (`[07:12] ahora tengo curro`). Es para que sepas CUÁNDO pasó cada cosa. No la copies
+  en lo que respondes ni se la leas en voz alta; solo la mencionas si viene a cuento
+  ("me lo dijiste hace nada").
+- **Si te cuenta varios planes, van EN ORDEN.** "Ahora tengo curro y luego alemán"
+  significa que está yendo al curro y que el alemán viene DESPUÉS. Si cinco minutos más
+  tarde se despide, se va al curro, no al alemán. Despedirle mandándole a lo segundo es
+  decirle que no le has escuchado.
+- Antes de dar por hecho en qué anda, haz la cuenta: la hora que es, la hora a la que te
+  lo contó y el orden en que te lo contó. Si de verdad no te cuadra, pregúntale.
+- Lo mismo para el entreno: si a las 8 de la mañana dice que entrena por la tarde, a las
+  8 no ha entrenado todavía. No le preguntes qué tal ha ido.
+
 CUANDO MIRES LOS DATOS DE UN DÍA
 - Para saber si un formulario está PUESTO, la herramienta es `estado_formularios`.
 - `dia` te da lo que hay apuntado de ese día. Que vuelva vacía NO demuestra que el
@@ -297,8 +322,9 @@ def sistema(briefing: str, hechos: list[dict]) -> str:
         # el 3B confundía "datos de salud que tardan en llegar" con "no sé qué día
         # es" y respondía que el reloj estaba sin sincronizar cuando le preguntaban
         # la fecha. Aquí se le corta ese malentendido de raíz.
-        f"HOY\nHoy es {_hoy_es()}. Es la fecha real y la sabes con certeza: si {USUARIO} "
-        "te pregunta qué día es, respóndele sin dudar y sin hablar de relojes. "
+        f"HOY\nHoy es {_ahora_es()}. Son la fecha y la hora reales, y las sabes con "
+        f"certeza: si {USUARIO} te pregunta qué día es o qué hora es, respóndele sin "
+        "dudar y sin hablar de relojes. "
         "\"Hoy\", \"ayer\" y \"esta semana\" se cuentan desde esta fecha. Si en el "
         "parte de estado ves que algún dato lleva días sin actualizarse, eso va solo "
         "de que su reloj tarda en subir esos datos, no de que no sepas en qué día vives.",
