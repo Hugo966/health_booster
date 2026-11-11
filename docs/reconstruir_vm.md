@@ -211,4 +211,4 @@ free -m                                                           # ~510 MB de 9
 ```
 
 Y la prueba que de verdad cierra el asunto: preguntarle a Jarvis algo que solo sepa por su
-memoria (`¿quién es Daniel?`). Si contesta, `jarvis.db` se restauró bien.
+memoria (preguntarle por alguien que tenga guardado). Si contesta, `jarvis.db` se restauró bien.

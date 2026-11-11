@@ -51,10 +51,22 @@ En el otro equipo solo==>En el otro equipo solo
 a qué corresponde cada una==>a qué corresponde cada una
 no, y basta con "el otro equipo". En el árbol==>no, y basta con "el otro equipo". En el árbol
 "<términos que identifiquen las máquinas>"==>"<términos que identifiquen las máquinas>"
+Daniel==>Marta
+daniel==>marta
+el primo de Soria==>la del coro
 ```
 
-Las dos últimas líneas existen porque este mismo fichero llegó a contener esas frases en
-los commits del 2026-08-24, antes de reescribirlo.
+**Los nombres de personas.** El árbol de trabajo ya no tiene ninguno (barrido el
+2026-11-11: el entrenador pasó a ser "el entrenador" y los ejemplos del prompt usan un
+nombre inventado), pero el histórico conserva el nombre real de un tercero, su parentesco
+y su ciudad. De ahí las tres líneas de arriba. **El nombre del propio Hugo se queda a
+propósito**: es el autor, firma cada commit y el repo cuelga de su cuenta; lo que no debe
+leerse como suyo es la APLICACIÓN, y eso se arregla hablando de "el usuario" en el código
+y los mensajes de commit, no borrándole la autoría.
+
+Las dos líneas del bloque que empiezan por `que una de ellas` y por `"<términos>` existen
+porque este mismo fichero llegó a contener esas frases en los commits del 2026-08-24,
+antes de reescribirlo.
 
 ```bash
 git clone https://github.com/Hugo966/health_booster.git limpio && cd limpio

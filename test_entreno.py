@@ -33,7 +33,7 @@ assert ep.route_tab('Build S2') == (2, 2, '2')         # y la etapa anterior sig
 assert ep.nombre_etapa(2, 3) == 'Build II'
 assert ep.route_tab('Nutrición') is None
 
-# --- una etapa nueva de Daniel se enruta SOLA ------------------------------
+# --- una etapa nueva del entrenador se enruta SOLA ------------------------------
 # El entrenador bautiza la pestaña distinta cada etapa y el bloque es un número de Hugo
 # que no aparece en ese nombre. Se deduce: etapa nueva = bloque siguiente del plan en
 # curso, que es lo que ha pasado en las cinco etapas del histórico.

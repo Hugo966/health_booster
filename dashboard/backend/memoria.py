@@ -176,8 +176,8 @@ def hechos_relevantes(limite: int = 30) -> list[dict]:
     saque un tema que Hugo daba por olvidado, que es justo la gracia.
 
     EXCEPCIÓN: la gente (`persona:*`) va SIEMPRE, y no cuenta contra `limite`.
-    Esa rotación es buena para "está leyendo Shogun" y pésima para "Daniel es su
-    primo": si un día no le toca, Jarvis no sabe quién es Daniel y **vuelve a
+    Esa rotación es buena para "está leyendo Shogun" y pésima para "Marta es su
+    prima": si un día no le toca, Jarvis no sabe quién es Marta y **vuelve a
     preguntarlo**, que es justo la pesadez que la función pretende evitar. Son
     pocas y valen mucho por carácter, así que se pagan aparte.
     """

@@ -610,7 +610,7 @@ Tocado: `entreno_pipeline.py`, `status_pipeline.py`, `briefing.py`, `chat.py`,
 `lib/formularios.ts`, `test_entreno.py` (nuevo), `CLAUDE.md`.
 Pipeline pasado: el histórico ya está recalculado.
 
-### Sesión 2026-09-12 (que la voz funcione desde el móvil, y que pregunte quién es Daniel)
+### Sesión 2026-09-12 (que la voz funcione desde el móvil, y que pregunte por quien no conoce)
 Primera sesión usando el dashboard **desde el teléfono** de verdad, y ahí se cayó todo lo
 que en el portátil iba bien: Jarvis hablaba pero no oía, el chat no se podía ni abrir, y
 las respuestas cortas se perdían. **Ninguno de esos fallos daba error**; es la moraleja de
@@ -621,7 +621,7 @@ dígitos. **Detalle en §14.**
 
 Aparte, Jarvis ya **pregunta por la gente que no conoce** y distingue dos personas con el
 mismo nombre; lo que no era obvio es que la mitad del trabajo estaba en la memoria, no en
-el prompt: rotando los hechos, acababa repreguntando quién es Daniel. **§15.**
+el prompt: rotando los hechos, acababa repreguntando quién es la misma persona. **§15.**
 
 Tocado: `voz.ts` (mucho), `TrazaVoz.tsx` (nuevo), `ChatPanel.tsx`, `App.tsx`,
 `memoria.py`, `personalidad.py`, `chat.py`, `desplegar.sh`, `.gitignore`.
@@ -1616,9 +1616,9 @@ números en vez de a ojo**: sale `VAD mientras habla: nivel X / umbral 0.0380`. 
 ## 15. Que Jarvis pregunte por la gente que no conoce (2026-09-12)
 
 Lo pidió Hugo con un ejemplo y pidiendo que se generalizara: escribe en la nota del PM
-"ayer me lo pasé muy bien con Daniel" y Jarvis asiente como si supiera quién es. Que
-pregunte. Y que si aparece otro Daniel que no encaja, pregunte si es otro, **porque puede
-haber dos Danieles en su vida**.
+"ayer me lo pasé muy bien con Marta" y Jarvis asiente como si supiera quién es. Que
+pregunte. Y que si aparece otra Marta que no encaja, pregunte si es otra, **porque puede
+haber dos personas con el mismo nombre en su vida**.
 
 ### Lo que ya estaba (no reconstruirlo)
 Las notas libres de los formularios **ya llegan al prompt** (`briefing.py`, "Notas
@@ -1628,8 +1628,8 @@ recientes de Hugo", las 8 últimas), y `recordar(tema, texto)` ya escribe en la 
 ### La parte que NO es prompt, y es la que importa
 `hechos_relevantes(limite=30)` rota en cuanto hay más de 30 hechos: mezcla los más
 recientes con los que llevan más sin mencionarse. Eso está muy bien para "está leyendo
-Shogun" y es **pésimo para "Daniel es su primo"**: el día que no le toque, Jarvis no sabe
-quién es Daniel y **vuelve a preguntarlo**. Que te interroguen cada semana por lo mismo
+Shogun" y es **pésimo para "Marta es su prima"**: el día que no le toque, Jarvis no sabe
+quién es Marta y **vuelve a preguntarlo**. Que te interroguen cada semana por lo mismo
 es exactamente lo que haría que Hugo apagara esto.
 
 Convenio: la gente va con tema **`persona:<nombre en minúsculas>`**, y esos hechos
@@ -1650,9 +1650,9 @@ herramientas; esto es manejo de herramientas. Lo que dice, resumido:
 
 ### Comprobado con el modelo real (14 turnos), no solo con la regex
 Contra una base **temporal** — su `jarvis.db` son conversaciones privadas y no se ensucia
-con Danieles inventados. Lo que salió:
-- *"¿Ese Daniel es el del gimnasio o hay otro Daniel soriano que no me habías
-  presentado?"* → y luego guardó los dos por separado, sin pisar al del gimnasio.
+con personas inventadas. Lo que salió:
+- *"¿Esa Marta es la del gimnasio o hay otra Marta que no me habías
+  presentado?"* → y luego guardó las dos por separado, sin pisar a la del gimnasio.
 - Ignorándole la pregunta sobre alguien nuevo: apuntó *"Mencionada el 2026-09-12… Aún no
   sé quién es"* y **no volvió a preguntar** en los turnos siguientes.
 - Con una lesión de por medio, ni mencionó al nombre nuevo.

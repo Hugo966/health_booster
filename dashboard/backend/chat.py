@@ -80,7 +80,7 @@ HERRAMIENTAS_LECTURA = [
             "tema": {"type": "string", "description": "Etiqueta corta, p.ej. 'lectura'. "
                                                       "Para una persona, un sitio o algo "
                                                       "recurrente usa 'persona:<nombre en "
-                                                      "minúsculas>' (p.ej. 'persona:daniel'): "
+                                                      "minúsculas>' (p.ej. 'persona:marta'): "
                                                       "esos los tendrás siempre delante en "
                                                       "vez de ir rotando."},
             "texto": {"type": "string", "description": "El hecho, en una frase"},
