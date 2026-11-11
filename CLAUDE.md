@@ -187,6 +187,19 @@ canal de sincronización, así que:
   no hay PM del día anterior, que es todo el histórico. Si se borrara sin reponerla, el
   par "Cafeína ayer × sueño" del panel de Correlaciones se iría degradando a "n insuf"
   sin avisar.
+- **"Vacío" y "bórralo" son cosas DISTINTAS, y viajan por separado** (2026-11-11). En
+  estos formularios un campo sin rellenar significa "no lo he contestado, deja lo que
+  hubiera" —es lo que permite corregir un solo número sin reenviar el día—, así que no
+  se puede usar el vacío para borrar: abrir el formulario y guardar vaciaría todo lo no
+  rellenado. Por eso `formularios.guardar` lleva un argumento `borrar` con los NOMBRES
+  de los campos a vaciar, y la herramienta de Jarvis un `borrar: [...]`. El editor del
+  panel lo deduce de `tocados`: tocado y con valor → se guarda; tocado y dejado en blanco
+  → se borra; sin tocar → ni se manda. **Si no hay fila de ese día, un borrado no la
+  crea**: sería inventarse justo el día que se quiere quitar. Hace falta porque Hugo
+  mete a veces el RPE de un día que no entrenó, y un 0 no sirve: un 0 es un entreno que
+  existió y salió fatal. Dos cosas sin cubrir: **las ruedas no se pueden vaciar** (peso,
+  cafeína) porque siempre tienen un valor, y esto NO toca el keep — `entreno_sesion`
+  sale de ahí, así que una sesión fantasma apuntada en el keep hay que borrarla a mano.
 - **Los campos con `paso` se pintan como RUEDA** (peso 0,1 kg, cafeína 50 mg), y las
   horas usan `<input type="time">`, que en el móvil abre el reloj nativo. La rueda
   ARRANCA en el último valor registrado (`formularios.sugerencias`), pero esa sugerencia

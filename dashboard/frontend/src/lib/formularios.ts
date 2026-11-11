@@ -99,16 +99,20 @@ export async function enrutarPestana(pestana: string, codigo: string): Promise<s
   return c.ok ?? "Guardado.";
 }
 
-/** Guarda o corrige. Solo se mandan los campos con valor: lo demás no se toca. */
+/** Guarda, corrige o VACÍA. Solo se mandan los campos con valor, y `borrar` nombra los
+ *  que hay que dejar en blanco. Van por separado porque un campo vacío significa "no lo
+ *  he contestado, déjalo como estaba": si las dos cosas viajaran igual, abrir el
+ *  formulario y guardar borraría todo lo que no hubieras rellenado. */
 export async function guardar(
   tipo: TipoFormulario,
   fecha: string,
   valores: Valores,
+  borrar: string[] = [],
 ): Promise<{ valores: Valores; avisos: string[] }> {
   const r = await fetch(`${API_BASE}/formulario/${tipo}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fecha, ...valores }),
+    body: JSON.stringify({ fecha, ...valores, borrar }),
   });
   const cuerpo = await r.json().catch(() => ({}));
   if (!r.ok) {

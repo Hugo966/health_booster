@@ -285,8 +285,15 @@ def sugerencias(tipo: str, fecha: str) -> dict:
     return ultimos
 
 
-def guardar(tipo: str, fecha: str, valores: dict) -> dict:
-    """Upsert por fecha. Devuelve lo guardado y qué campos siguen sin contestar."""
+def guardar(tipo: str, fecha: str, valores: dict, borrar=()) -> dict:
+    """Upsert por fecha. Devuelve lo guardado y qué campos siguen sin contestar.
+
+    `borrar` son los campos que hay que VACIAR, por su nombre. Van aparte de `valores` y
+    NO como un valor vacío, a propósito: en estos formularios un campo vacío significa
+    "no lo he contestado, deja lo que hubiera" —es lo que permite corregir un solo número
+    sin reenviar el día entero—, así que si las dos cosas viajaran igual, mandar un campo
+    sin rellenar borraría lo que ya había. Quien borra tiene que decir qué borra.
+    """
     if tipo not in ESQUEMA:
         raise ValueError(f"No existe el formulario '{tipo}'. Son: {', '.join(ESQUEMA)}.")
     if not _fecha_valida(fecha):
@@ -295,7 +302,13 @@ def guardar(tipo: str, fecha: str, valores: dict) -> dict:
     limpios, errores, avisos_val = validar(tipo, valores)
     if errores:
         raise ValueError(" ".join(errores))
-    if not limpios:
+
+    conocidos = {c.nombre for c in ESQUEMA[tipo].campos}
+    a_vaciar = [n for n in dict.fromkeys(borrar or ()) if n != "fecha"]
+    if [n for n in a_vaciar if n not in conocidos]:
+        malos = ", ".join(n for n in a_vaciar if n not in conocidos)
+        raise ValueError(f"No puedo borrar {malos}: no son campos del formulario {tipo.upper()}.")
+    if not limpios and not a_vaciar:
         # Si lo ÚNICO que mandó era una zona que no se entiende, decir "no has mandado
         # ningún campo" despistaría: lo mandó, no se reconoció. Que se vea el motivo.
         raise ValueError(" ".join(avisos_val) if avisos_val
@@ -316,7 +329,7 @@ def guardar(tipo: str, fecha: str, valores: dict) -> dict:
                             if str(v).strip()[:10] == fecha]
         fila_idx = coincidencias[-1] if coincidencias else None
 
-        desconocidos = [c for c in limpios if c not in cabeceras]
+        desconocidos = [c for c in list(limpios) + a_vaciar if c not in cabeceras]
         if desconocidos:
             raise RuntimeError(
                 f"La pestaña '{ESQUEMA[tipo].pestana}' no tiene columna(s): {', '.join(desconocidos)}."
@@ -331,11 +344,22 @@ def guardar(tipo: str, fecha: str, valores: dict) -> dict:
         es_texto = {c.nombre for c in ESQUEMA[tipo].campos if c.tipo in ("texto", "zonas")}
         crudos = {n: v for n, v in limpios.items() if n in es_texto}
         calculados = {n: v for n, v in limpios.items() if n not in es_texto}
+        # Vaciar es escribir la celda en blanco, y eso va con RAW sea del tipo que sea.
+        # Si no hay fila de ese día no hay nada que borrar: se ignora en vez de crear una
+        # fila vacía, que es justo el "día que no existe" que se quiere quitar de en medio.
+        if fila_idx is not None:
+            crudos = crudos | {n: "" for n in a_vaciar}
+            calculados = {n: v for n, v in calculados.items() if n not in a_vaciar}
 
         def _celda(fila: int, nombre: str) -> str:
             return gspread.utils.rowcol_to_a1(fila, cabeceras.index(nombre) + 1)
 
-        if fila_idx is None:
+        if fila_idx is None and not limpios:
+            # Solo había borrados y ese día no tiene fila: no hay nada que vaciar, y
+            # crear una fila en blanco sería inventarse justo el día que se quiere
+            # quitar de en medio.
+            creada = False
+        elif fila_idx is None:
             nueva = [""] * len(cabeceras)
             nueva[col_fecha - 1] = fecha
             for nombre, val in calculados.items():

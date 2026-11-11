@@ -401,13 +401,16 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
   const enviar = async () => {
     setGuardando(true); setError(null);
     try {
-      // Solo lo que ha tocado y tiene valor: un campo vacío significa "no lo toques",
-      // no "bórralo", y uno sin tocar ya está como estaba.
-      const utiles = Object.fromEntries(
-        Object.entries(valores).filter(([k, v]) =>
-          k !== "fecha" && tocados.current.has(k) && String(v).trim() !== ""),
-      );
-      const res = await guardar(tipo, fecha, utiles);
+      // Un campo SIN TOCAR ya está como estaba y no se reenvía. Uno TOCADO viaja: con
+      // valor va a `utiles` y, si lo ha dejado en blanco, a `borrar` — es la única forma
+      // de quitar un dato mal metido (un RPE de un día que no entrenó), y el editor es
+      // el único que sabe distinguir "lo he vaciado" de "no lo he contestado", porque
+      // por el cable las dos cosas son una cadena vacía.
+      const tocado = Object.entries(valores).filter(
+        ([k]) => k !== "fecha" && tocados.current.has(k));
+      const utiles = Object.fromEntries(tocado.filter(([, v]) => String(v).trim() !== ""));
+      const borrar = tocado.filter(([, v]) => String(v).trim() === "").map(([k]) => k);
+      const res = await guardar(tipo, fecha, utiles, borrar);
       tocados.current = new Set();
       setValores(res.valores ?? {});
       setOk(true);

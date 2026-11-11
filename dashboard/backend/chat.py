@@ -123,6 +123,12 @@ HERRAMIENTAS_ESCRITURA = [
                                                                "anterior). 0-27, su escala "
                                                                "personal"},
             "notas_am": {"type": "string", "description": "Texto libre, con SUS palabras, no las tuyas"},
+            "borrar": {"type": "array", "items": {"type": "string"},
+                       "description": "Campos que hay que VACIAR, por su nombre. Solo si "
+                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "el RPE de un día que no entrenó). Vaciar NO es "
+                                      "corregir: para cambiar un número, mándalo. Y nunca "
+                                      "vacíes nada que no te haya pedido él."},
         },
         "requeridos": [],
     },
@@ -150,6 +156,12 @@ HERRAMIENTAS_ESCRITURA = [
             "dolor_sesion_zona": {"type": "string", "description": ZONAS_DESC},
             "dolor_sesion_nota": {"type": "string", "description": "El dolor del entreno, con SUS palabras"},
             "notas_pm": {"type": "string", "description": "Texto libre, con SUS palabras"},
+            "borrar": {"type": "array", "items": {"type": "string"},
+                       "description": "Campos que hay que VACIAR, por su nombre. Solo si "
+                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "el RPE de un día que no entrenó). Vaciar NO es "
+                                      "corregir: para cambiar un número, mándalo. Y nunca "
+                                      "vacíes nada que no te haya pedido él."},
         },
         "requeridos": [],
     },
@@ -160,6 +172,12 @@ HERRAMIENTAS_ESCRITURA = [
         "params": {
             "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
             "peso_kg": {"type": "number", "description": "En kilos, p.ej. 81.8"},
+            "borrar": {"type": "array", "items": {"type": "string"},
+                       "description": "Campos que hay que VACIAR, por su nombre. Solo si "
+                                      "Hugo te dice que ese dato no debería estar (metió "
+                                      "el RPE de un día que no entrenó). Vaciar NO es "
+                                      "corregir: para cambiar un número, mándalo. Y nunca "
+                                      "vacíes nada que no te haya pedido él."},
         },
         "requeridos": ["peso_kg"],
     },
@@ -363,11 +381,14 @@ def _tool_guardar(tipo: str, args: dict) -> dict:
     """
     args = _aplanar(args)
     fecha = str(args.get("fecha") or "").strip() or _hoy()
-    valores = {k: v for k, v in args.items() if k != "fecha"}
-    if not valores:
+    borrar = args.get("borrar") or []
+    if isinstance(borrar, str):           # a veces llega "rpd_sesion" en vez de la lista
+        borrar = [borrar]
+    valores = {k: v for k, v in args.items() if k not in ("fecha", "borrar")}
+    if not valores and not borrar:
         return {"error": "no me has pasado ningún campo con valor"}
     try:
-        res = formularios.guardar(tipo, fecha, valores)
+        res = formularios.guardar(tipo, fecha, valores, borrar)
     except ValueError as e:
         # El mensaje va en español y es el que Jarvis le repetirá a Hugo para re-preguntar.
         return {"error": str(e), "fecha": fecha}

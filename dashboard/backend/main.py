@@ -99,9 +99,12 @@ def formulario_leer(tipo: str, fecha: str):
 @app.post("/formulario/{tipo}")
 def formulario_guardar(tipo: str, datos: dict = Body(...)):
     fecha = str(datos.get("fecha", "")).strip()
-    valores = {k: v for k, v in datos.items() if k != "fecha"}
+    # `borrar` viaja aparte de los valores: un campo vacío sigue significando "no lo he
+    # contestado", que es lo que permite corregir un solo número sin reenviar el día.
+    borrar = datos.get("borrar") or []
+    valores = {k: v for k, v in datos.items() if k not in ("fecha", "borrar")}
     try:
-        res = formularios.guardar(tipo, fecha, valores)
+        res = formularios.guardar(tipo, fecha, valores, borrar)
     except ValueError as e:
         # 422 con el mensaje en español: se lo va a leer Jarvis para volver a preguntar.
         raise HTTPException(422, str(e))
