@@ -344,6 +344,28 @@ def tiempo_en_cama(acostarse, despertar):
     h = (d - a) / 60.0
     return round(h, 2) if 0 < h <= 16 else None   # fuera de rango = dato mal metido
 
+def cafeina_de_ayer(df):
+    """La cafeína que explica el sueño de una noche es la del día ANTERIOR.
+
+    Desde el 2026-11-11 solo se apunta el día que se la toma (formulario PM), así que la
+    columna que el panel de Correlaciones cruza con el sueño se calcula aquí en vez de
+    preguntarse. Se desplaza por FECHA NATURAL y no con `shift(1)` como `hrv_ayer`:
+    `derived_diario` solo tiene los días con datos, y un hueco de dos días le colgaría el
+    café del martes a la noche del jueves. Donde no hay PM del día anterior manda el
+    histórico del formulario AM, que es donde se preguntaba hasta esa fecha.
+    """
+    if "cafeina_hoy_mg" not in df:
+        return df["cafeina_ayer_mg"] if "cafeina_ayer_mg" in df else None
+    f = pd.to_datetime(df["fecha"], errors="coerce")
+    tomada = pd.Series(df["cafeina_hoy_mg"].values, index=f)
+    # Fechas ilegibles o repetidas romperían el map; en `consolidate` no las hay (se
+    # deduplica antes), pero la función se usa suelta desde el test.
+    tomada = tomada[~tomada.index.isna()]
+    tomada = tomada[~tomada.index.duplicated(keep="last")]
+    ayer = pd.Series((f - pd.Timedelta(days=1)).map(tomada).values, index=df.index)
+    return ayer.fillna(df["cafeina_ayer_mg"]) if "cafeina_ayer_mg" in df else ayer
+
+
 def consolidate(am, pm, peso, objetivo, sesion, duraciones):
     # normaliza claves de fecha
     for d in (am, pm, peso, objetivo, sesion, duraciones):
@@ -371,7 +393,7 @@ def consolidate(am, pm, peso, objetivo, sesion, duraciones):
     am_cols = ["fecha","sueno_calidad","sensacion_am","animo","estres","molestias_nivel",
                "cafeina_ayer_mg","alcohol_ayer","hora_acostarse","hora_despertar","latencia_min",
                "notas_am"]
-    pm_cols = ["fecha","energia","sensacion_global","cafeina_hoy_mg","rpd_sesion",
+    pm_cols = ["fecha","energia","sensacion_global","cafeina_hoy_mg","cafeina_hoy_hora","rpd_sesion",
                "dolor_sesion_zona","dolor_sesion_nota","notas_pm"]
     df = base.merge(am[[c for c in am_cols if c in am]], on="fecha", how="left") \
              .merge(pm[[c for c in pm_cols if c in pm]], on="fecha", how="left") \
@@ -432,6 +454,7 @@ def consolidate(am, pm, peso, objetivo, sesion, duraciones):
         df["sRPE"] = (df["rpd_sesion"] * df["duracion_min"]).round(0)
 
     # lags y carga
+    df["cafeina_ayer_mg"] = cafeina_de_ayer(df)
     df["hrv_ayer"] = df["hrv_rmssd"].shift(1) if "hrv_rmssd" in df else None
     df["sueno_horas_ayer"] = df["sueno_horas"].shift(1) if "sueno_horas" in df else None
     if "sRPE" in df:

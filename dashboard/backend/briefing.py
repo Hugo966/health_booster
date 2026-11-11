@@ -231,6 +231,19 @@ def generar() -> str:
     cal = _ultimo(dd, "sueno_calidad")
     partes.append(_linea("Calidad de sueño (percibida, 1-9: 5 normal, 9 mejor)", cal))
 
+    # Cafeína: va pegada al sueño a propósito. Se apunta el día que se la toma (PM), así
+    # que el sello de fecha de `_linea` —"(ayer)"— es lo que deja ver sin explicar nada
+    # que el café de ayer es el que le tocó la noche. Y la HORA pesa más que los mg: 300
+    # a las nueve de la mañana no es lo mismo que 300 a las siete de la tarde. Si no hay
+    # número apuntado no se pinta la línea, para no ensuciar el parte con un "sin datos"
+    # de algo que él no persigue.
+    caf = _ultimo(dd, "cafeina_hoy_mg")
+    if caf:
+        hora = next((str(r.get("cafeina_hoy_hora") or "")
+                     for r in dd if str(r.get("fecha", "")) == caf[1]), "")
+        extra = f" — la última, a las {hora}" if ":" in hora else ""
+        partes.append(_linea("Cafeína", caf, " mg", extra))
+
     # Peso: se coge el MÁS RECIENTE de las dos fuentes, no el de derived_diario a secas.
     # La tabla `peso` se alimenta aparte y suele ir por delante: si el pipeline lleva días
     # sin correr, derived_diario tiene un peso viejo —no vacío— y antes ganaba igual, así

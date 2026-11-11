@@ -134,11 +134,24 @@ canal de sincronización, así que:
   fuente única es `dashboard/backend/formularios.ESQUEMA`: la UI y las herramientas de
   Jarvis sacan de ahí sus rangos —y desde el 2026-10-13 también el `paso` de la rueda—,
   no los declaran por su cuenta.
-- **El alcohol y la cafeína del AM son del día ANTERIOR**, no del día de la fila: el
-  formulario se rellena al levantarse. Jarvis llegó a dar por hecho que `alcohol_ayer`
-  era lo de hoy. Lo dicen el prompt y la descripción de la herramienta `guardar_am`, no
-  la etiqueta del campo: eso había que enseñárselo a JARVIS, y la etiqueta del alcohol se
-  dejó como estaba porque Hugo ya sabe de qué día es lo que rellena (2026-10-14).
+- **El alcohol del AM es del día ANTERIOR**, no del día de la fila: el formulario se
+  rellena al levantarse. Jarvis llegó a dar por hecho que `alcohol_ayer` era lo de hoy.
+  Lo dicen el prompt y la descripción de la herramienta `guardar_am`, no la etiqueta del
+  campo: eso había que enseñárselo a JARVIS, y la etiqueta del alcohol se dejó como
+  estaba porque Hugo ya sabe de qué día es lo que rellena (2026-10-14).
+- **La cafeína se apunta UNA vez, en el PM, el día que se la toma** (`cafeina_hoy_mg` y
+  `cafeina_hoy_hora`). Hasta el 2026-11-11 se preguntaba también en el AM como "la de
+  ayer" —porque le toca el sueño de esa noche— y era rellenar lo mismo dos veces. El
+  alcohol NO se tocó: ese sí se bebe después de las 12 y le pega al día siguiente, así
+  que apuntarlo a la mañana siguiente es lo correcto. **`derived_diario.cafeina_ayer_mg`
+  sigue existiendo pero ya es DERIVADA**: `status_pipeline.cafeina_de_ayer()` desplaza la
+  del PM un día. Desplaza por **fecha natural, no con `shift(1)`**, porque
+  `derived_diario` solo tiene los días con datos y un hueco de dos días le colgaría el
+  café del martes a la noche del jueves (`hrv_ayer` y `sueno_horas_ayer` sí arrastran ese
+  defecto, sin arreglar). La columna del AM se queda en la hoja y hace de respaldo donde
+  no hay PM del día anterior, que es todo el histórico. Si se borrara sin reponerla, el
+  par "Cafeína ayer × sueño" del panel de Correlaciones se iría degradando a "n insuf"
+  sin avisar.
 - **Los campos con `paso` se pintan como RUEDA** (peso 0,1 kg, cafeína 50 mg), y las
   horas usan `<input type="time">`, que en el móvil abre el reloj nativo. La rueda
   ARRANCA en el último valor registrado (`formularios.sugerencias`), pero esa sugerencia

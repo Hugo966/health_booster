@@ -117,8 +117,6 @@ HERRAMIENTAS_ESCRITURA = [
             "estres": {"type": "integer", "description": "0-9, 0 = nada de estrés"},
             "molestias_nivel": {"type": "integer", "description": "0-9, 0 = sin molestias"},
             "molestias_zona": {"type": "string", "description": ZONAS_DESC},
-            "cafeina_ayer_mg": {"type": "integer", "description": "mg de cafeína de AYER"},
-            "cafeina_ayer_hora": {"type": "string", "description": "HH:MM de la última cafeína de ayer"},
             "alcohol_ayer": {"type": "integer", "description": "Lo que bebió AYER, no hoy "
                                                                "(el AM pregunta por el día "
                                                                "anterior). 0-27, su escala "
@@ -139,8 +137,14 @@ HERRAMIENTAS_ESCRITURA = [
             "fecha": {"type": "string", "description": "AAAA-MM-DD. Por defecto hoy."},
             "energia": {"type": "integer", "description": "1-9, energía del día"},
             "sensacion_global": {"type": "integer", "description": "1-9, sensación al cerrar el día"},
-            "cafeina_hoy_mg": {"type": "integer", "description": "mg de cafeína de HOY"},
-            "cafeina_hoy_hora": {"type": "string", "description": "HH:MM de la última cafeína de hoy"},
+            "cafeina_hoy_mg": {"type": "integer", "description": "mg de cafeína del DÍA de esa "
+                                                                 "fecha. La cafeína se apunta el "
+                                                                 "día que se la toma, aquí y en "
+                                                                 "ningún otro sitio"},
+            "cafeina_hoy_hora": {"type": "string", "description": "HH:MM de la última cafeína de "
+                                                                 "ese día. Pregúntasela si te da "
+                                                                 "los mg: lo tarde que fue explica "
+                                                                 "esa noche mejor que la cantidad"},
             "rpd_sesion": {"type": "number", "description": "0-10, esfuerzo global del entreno"},
             "dolor_sesion_zona": {"type": "string", "description": ZONAS_DESC},
             "dolor_sesion_nota": {"type": "string", "description": "El dolor del entreno, con SUS palabras"},
@@ -212,14 +216,16 @@ def _tool_dia(fecha: str) -> dict:
         return {"error": f"no hay datos del {fecha}"}
 
     fila = fila or {}
-    interesa = ["readiness", "hrv_rmssd", "sueno_horas", "sueno_calidad", "energia",
-                "molestias_nivel", "rpd_sesion", "volumen_total", "n_series_total"]
+    # `cafeina_ayer_mg` es DERIVADA (la del PM del día anterior, ver `cafeina_de_ayer`):
+    # es la que explica cómo durmió ESA noche, así que viaja junto al sueño.
+    interesa = ["readiness", "hrv_rmssd", "sueno_horas", "sueno_calidad", "cafeina_ayer_mg",
+                "energia", "molestias_nivel", "rpd_sesion", "volumen_total", "n_series_total"]
     resumen = {k: fila[k] for k in interesa if fila.get(k) not in ("", None)}
 
     # El origen manda sobre lo derivado: es lo que Hugo acaba de escribir.
     del_origen = ["sueno_calidad", "sensacion_am", "animo", "estres", "molestias_nivel",
                   "molestias_zona", "alcohol_ayer", "notas_am",
-                  "energia", "sensacion_global", "cafeina_hoy_mg", "rpd_sesion",
+                  "energia", "sensacion_global", "cafeina_hoy_mg", "cafeina_hoy_hora", "rpd_sesion",
                   "dolor_sesion_zona", "dolor_sesion_nota", "notas_pm"]
     for origen in (am, pm):
         for k in del_origen:

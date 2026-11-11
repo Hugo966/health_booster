@@ -94,16 +94,20 @@ ESQUEMA: dict[str, Formulario] = {
         Campo("estres", "Estrés", **_UNI),
         Campo("molestias_nivel", "Nivel de molestias", **_UNI),
         Campo("molestias_zona", "Zonas con molestias", "zonas"),
-        Campo("cafeina_ayer_mg", "Cafeína de AYER (mg)", "entero", 0, 2000, paso=50),
-        Campo("cafeina_ayer_hora", "Hora de la última cafeína de ayer", "hora", ayuda="HH:MM"),
+        # La cafeína se pregunta SOLO en el PM, el día que se la toma. Aquí se preguntaba
+        # también (como "la de ayer") porque afecta al sueño de esa noche, pero era
+        # rellenar lo mismo dos veces. Esa relación la resuelve ahora el pipeline:
+        # `derived_diario.cafeina_ayer_mg` se calcula desplazando la del PM un día.
+        # El alcohol sí se queda: lo bebe después de las 12 y le pega al día siguiente,
+        # así que apuntarlo a la mañana siguiente es lo correcto.
         Campo("alcohol_ayer", "Alcohol de ayer", "entero", 0, 27, "0 a 27 · 0 = nada"),
         Campo("notas_am", "Notas de la mañana", "texto"),
     ]),
     "pm": Formulario("pm", "wellness_pm", "Formulario PM", [
         Campo("energia", "Energía del día", **_BIP),
         Campo("sensacion_global", "Sensación global del día", **_BIP),
-        Campo("cafeina_hoy_mg", "Cafeína de HOY (mg)", "entero", 0, 2000, paso=50),
-        Campo("cafeina_hoy_hora", "Hora de la última cafeína de hoy", "hora", ayuda="HH:MM"),
+        Campo("cafeina_hoy_mg", "Cafeína (mg)", "entero", 0, 2000, paso=50),
+        Campo("cafeina_hoy_hora", "Hora de la última cafeína", "hora", ayuda="HH:MM"),
         # Sin esto no hay carga: sRPE_series no se calcula y la sesión entera se cae fuera.
         Campo("rpd_sesion", "RPE de la sesión", "decimal", 0, 10, "0 a 10 · esfuerzo del entreno"),
         Campo("dolor_sesion_zona", "Zonas con dolor en el entreno", "zonas"),

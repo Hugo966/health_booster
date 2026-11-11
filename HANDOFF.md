@@ -1147,6 +1147,14 @@ Resueltas en esta tanda:
   Zepp; de ahí `DURACION_DEFECTO_MIN`). Lo que bloqueaba el cambio **ya está hecho**: el sRPE
   por series existe como columna (`sRPE_series`, `sRPE_series_7d`). Solo falta apuntar el panel
   de Correlaciones y el ACWR a la columna buena.
+  **Verificado el 2026-11-11, sigue abierto y es pequeño**: `status_pipeline.py:440` calcula
+  el ACWR sobre `sRPE` (rpd × duración), y `CorrelationHeatmap.tsx:41-50` cruza `sRPE` y
+  `sRPE_7d` —los de duración— **aunque su propio comentario (línea 24) diga que son por
+  series**. El panel de Carga sí usa ya `sRPE_series`, así que hoy dos paneles enseñan
+  "carga" con dos fórmulas distintas. Son 4 líneas en el heatmap y 2 en el pipeline; la
+  fórmula no se duplica en el frontend. Pendiente de decidir: **si el ACWR se recalcula
+  sobre series se le mueve el número** — se pegaba al techo de 4.0 justo por los huecos de
+  duración, así que el nuevo no será comparable con el que ha visto hasta ahora.
 - **Detección de anomalías de sesión**: ver §11.
 
 ## 10. Convenciones y patrones
