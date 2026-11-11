@@ -67,6 +67,27 @@ export default function TrazaVoz() {
         >
           {abierto ? "ocultar" : "ver"}
         </button>
+        {/* Apagarla DESDE AQUÍ, y no solo con `?vozdebug=0`. La traza se guarda en el
+            navegador, así que encenderla una vez para medir algo dejaba este cuadro
+            para siempre; y en el móvil, con la app añadida a la pantalla de inicio, no
+            hay barra de direcciones donde escribir el parámetro. O sea que se podía
+            encender sin poder apagar. */}
+        <button
+          type="button"
+          data-no-expand
+          title="Apagar la traza"
+          aria-label="Apagar la traza"
+          onClick={() => {
+            try { localStorage.removeItem("jarvis.voz.debug"); } catch { /* en privado */ }
+            location.reload();
+          }}
+          style={{
+            border: `1px solid ${theme.muted}`, borderRadius: 6,
+            padding: "2px 8px", background: "transparent", color: "#d7e3ea", font: "inherit",
+          }}
+        >
+          apagar
+        </button>
       </div>
       {/* `column-reverse` mantiene lo último a la vista sin tener que medir el scroll. */}
       {abierto && (

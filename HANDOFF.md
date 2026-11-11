@@ -1377,9 +1377,11 @@ Los pasos, que si no es a ojo:
 4. Después, hablarle encima para ver **cuánto mide su voz** sobre ese ruido. Con esos dos
    números se fija `TECHO_HABLANDO` (entre uno y otro) y, si su eco por los altavoces del
    coche sube de 0,038, también `MINIMO_HABLANDO`.
-5. **Apagar la traza con `?vozdebug=0`.** Queda guardada en el `localStorage` del
-   navegador, así que si no se apaga el cuadro negro se queda ahí para siempre — también
-   en la VM. Por defecto está apagada; encenderla es siempre un acto voluntario.
+5. **Apagarla con el botón "apagar" del propio cuadro.** Queda guardada en el
+   `localStorage` del navegador, así que si no se apaga se queda ahí para siempre —
+   también al entrar a la VM. `?vozdebug=0` hace lo mismo, pero **en el móvil con la app
+   en la pantalla de inicio NO hay barra de direcciones**: se podía encender sin poder
+   apagar. Por defecto está apagada; encenderla es siempre un acto voluntario.
 
 Si tras ajustar los números sigue cortando: el ruido de coche es GRAVE (30-300 Hz) y el
 VAD mide banda ancha sin filtrar — limitar a 300-3000 Hz se lo llevaría, pero **cambia la
