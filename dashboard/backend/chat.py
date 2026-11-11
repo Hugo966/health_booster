@@ -28,6 +28,7 @@ import briefing
 import formularios
 import huecos
 import memoria
+import panorama
 import personalidad
 import plan_pestanas
 import proveedor
@@ -91,13 +92,15 @@ HERRAMIENTAS_LECTURA = [
     {
         "nombre": "refrescar",
         "descripcion": (
-            "Vuelve a leer la hoja AHORA MISMO y te devuelve el parte de estado recién "
-            "hecho. El parte que te llega al empezar la conversación puede tener hasta "
-            "cinco minutos, y además {usuario} puede haber rellenado algo o haber pasado "
-            "el pipeline mientras habláis. ÚSALA cuando te diga que acaba de apuntar "
-            "algo, cuando te lleve la contraria con un número que está viendo en "
-            "pantalla, o cuando te pida que te actualices. No la llames en cada mensaje: "
-            "cuesta una lectura entera de la hoja."
+            "Vuelve a leer la hoja AHORA MISMO y te devuelve DOS cosas: el parte de "
+            "estado recién hecho y TODO lo que enseñan los paneles —fuerza, la serie de "
+            "carga, el detalle del sueño y las correlaciones—, que no cabe en el parte de "
+            "cada mensaje. El parte normal puede tener hasta cinco minutos, y además "
+            "{usuario} puede haber rellenado algo o haber pasado el pipeline mientras "
+            "habláis. ÚSALA cuando te diga que acaba de apuntar algo, cuando te lleve la "
+            "contraria con un número que está viendo en pantalla, o cuando te pida que te "
+            "actualices: ahí es cuando necesitas verlo todo. No la llames en cada "
+            "mensaje, que cuesta una lectura entera de la hoja."
         ),
         "params": {},
         "requeridos": [],
@@ -470,7 +473,8 @@ def _ejecutar_backend(llamada, sesion: str | None = None) -> str:
             # Tira la caché de 5 min y relee. Es lo que hace que "oye, actualízate" o
             # "pues yo veo 622" tengan arreglo sin esperar a la conversación siguiente.
             sheets.invalidar()
-            res = {"parte_actualizado": briefing.generar(sesion)}
+            res = {"parte_actualizado": briefing.generar(sesion),
+                   "paneles": panorama.completo()}
         elif llamada.nombre == "estado_formularios":
             res = huecos.estado(dias=int(llamada.args.get("dias") or 14))
         elif llamada.nombre in ("guardar_am", "guardar_pm", "guardar_peso"):

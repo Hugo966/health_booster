@@ -252,10 +252,18 @@ canal de sincronización, así que:
   ritmo —4, 6, 12 pesadas e histórico— y el parte daba una sola, encima sobre días y no
   sobre pesadas: `_ritmos_peso` replica las cuatro). Al tocar un panel, mirar si el parte
   dice lo mismo.
+- **`panorama.completo()` es "todo lo que enseñan los paneles" y va SOLO en `refrescar`**
+  (fuerza por bloque desde `rm1`, la serie de sesiones del panel de Carga, eficiencia del
+  sueño y las 8 correlaciones del heatmap con sus mismos umbrales: 14 pares mínimo,
+  |r|≥0,2 para que cuente). Son **~460 tokens**: en el parte de cada mensaje encarecería
+  toda conversación normal, y lo que se necesita cuando algo no cuadra no es lo que se
+  necesita para charlar. Replica cuentas que viven en el frontend, así que **si se toca un
+  panel hay que tocar esto**; cada bloque dice de qué panel sale, y `test_panorama.py`
+  fija los umbrales.
 - **`refrescar` es la herramienta para ponerse al día a mitad de conversación.** El parte
   se monta al empezar el turno pero `sheets.fetch_all` cachea 5 minutos, así que Hugo
   puede estar viendo en pantalla algo que Jarvis no. La herramienta tira la caché y
-  devuelve el parte recién hecho. En el prompt le queda dicho que la use cuando le lleven
+  devuelve el parte recién hecho **más el panorama entero**. En el prompt le queda dicho que la use cuando le lleven
   la contraria con un número **en vez de decir "puede ser"**, y que no la llame en cada
   mensaje: cuesta una lectura entera de la hoja.
 - **Jarvis sabe cuánto hace que no hablas con él** (`memoria.ultima_visita`), y el parte
