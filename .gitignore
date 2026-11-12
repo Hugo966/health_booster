@@ -1,5 +1,12 @@
 # --- secretos y datos personales — NUNCA al repo (el histórico se publica al hacerlo público) ---
 .env
+# Cualquier variante del .env, con punto o sin él. El 2026-11-12 llegó del otro equipo un
+# fichero `env2` —sin punto— que el `.env` de arriba NO cubría: estuvo a un `git add -A`
+# de entrar al repo con las claves de Anthropic, Groq y ElevenLabs dentro, y el repo va a
+# ser público. Ignorar el patrón y no el nombre exacto es lo único que evita el siguiente.
+.env.*
+env*
+!.env.example
 health-boost-*.json
 keep.txt
 # memoria de Jarvis: conversaciones privadas y lo que sabe de Hugo
