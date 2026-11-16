@@ -22,9 +22,12 @@ canal de sincronización, así que:
   el trabajo de la sesión en vez de un commit por cada cosa. Pero nunca cerrar (ni
   cambiar de máquina) sin pushear: lo que no está en `origin/main` no le llega al otro equipo.
 - **Al cerrar la sesión, avisar a Hugo** de si hay algo **fuera de git** que necesite
-  traspaso a mano (pendrive, etc.) para retomar en el otro equipo: `.env`, `keep.txt`,
-  `jarvis.db`, `health-boost-*.json`. Precisar cuáles cambiaron y si el otro equipo los
-  necesita de verdad.
+  traspaso a mano (pendrive, etc.) para retomar en el otro equipo: `.env`,
+  `health-boost-*.json` y `jarvis.db`. Precisar cuáles cambiaron y si el otro equipo los
+  necesita de verdad. **`keep.txt` ya NO hace falta llevarlo**: el keep vive en un
+  documento de Drive (ver abajo). Y del `.env`, lo que se olvida son las variables
+  NUEVAS: una máquina sin `JARVIS_USUARIO` hace que Jarvis le llame "el usuario", y una
+  sin `KEEP_DOC_ID` lee su keep local y se desincroniza. Ninguna de las dos da error.
 - **El modelo local (Ollama, `qwen2.5:3b`) solo vive en el portátil.** El segundo equipo NO lo ejecuta, así que la config del modelo en `.env` no le hace falta.
 
 ## Convenciones
@@ -279,12 +282,19 @@ canal de sincronización, así que:
   keep ni de en qué máquina esté. Comparado con `entreno_sesion` (que sí sale del keep)
   da los días que le falta escribir. Verificado el 2026-08-24: los 33 días con RPE puesto
   estaban todos en el keep, y ningún día del keep posterior a junio se quedaba sin RPE.
-- **`entreno_sesion` (hoja) y `keep.txt` (local) se desincronizan entre las dos máquinas.**
-  El keep no va por git: si se vuelca en un equipo y se corre el pipeline, la hoja se
-  adelanta y el keep del otro equipo se queda atrás. Pasó el 2026-08-24: la hoja tenía
-  sesiones hasta el 20/08 y el keep del otro equipo se quedaba en el 17/08. Por eso la luz de
-  entreno de `huecos.py` compara las dos y distingue "falta traer el keep" de "no ha
-  entrenado" — decir lo segundo cuando entrenó anteayer es peor que no decir nada.
+- **El keep vive en un documento de DRIVE (`KEEP_DOC_ID`), no en disco.** El fichero
+  local (`KEEP_TXT`) es solo el respaldo de si Drive falla, y `entreno_pipeline.leer_keep`
+  elige: con `KEEP_DOC_ID` baja el documento, sin él abre el fichero. Esto resolvió un
+  problema real que **ya no hay que arreglar otra vez**: el keep no va por git, así que
+  volcándolo en un equipo la hoja se adelantaba y el keep del otro se quedaba atrás (el
+  2026-08-24, la hoja llegaba al 20/08 y el otro equipo al 17/08), y en la VM
+  directamente no existía. Ahora Hugo lo edita desde donde quiera, el móvil incluido.
+  **Al leerlo se normalizan los tipográficos** (Google Docs convierte el guion en raya y
+  las comillas de los tempos en tipográficas, y eso rompe el parser en silencio).
+  La luz de entreno de `huecos.py` sigue comparando el keep con `entreno_sesion` para
+  distinguir "falta volcar" de "no ha entrenado", **pero el consejo que da depende de
+  dónde lo haya leído**: mandar a "traerlo del otro equipo" cuando está en Drive es
+  mandar a buscar un fichero que ya no manda nada (corregido el 2026-11-16).
 - **Jarvis tiene que ver lo MISMO que los paneles, nunca menos** (principio de Hugo,
   2026-11-11). Dos sitios donde no era así, y los dos daban números que le contradecían
   en pantalla: la **carga** (la del parte cierra la ventana HOY y la del panel en el

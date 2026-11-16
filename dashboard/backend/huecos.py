@@ -247,8 +247,18 @@ def estado(dias: int = 14, ahora: datetime | None = None) -> dict:
             "etiqueta": "Entreno (keep)",
             "estado": "aviso",
             "ultima": ultimo_hoja,
-            "detalle": f"El keep de esta máquina ({_dm(ultimo_keep)}) va por detrás de la "
-                       f"hoja ({_dm(ultimo_hoja)}): tráetelo del otro equipo",
+            # El consejo depende de DÓNDE se lea el keep. Con `KEEP_DOC_ID` es un
+            # documento de Drive, el mismo para las dos máquinas y para la VM, así que
+            # "tráetelo del otro equipo" es imposible de cumplir y manda a buscar un
+            # fichero que ya no manda nada. Sin esa variable se cae al fichero local, y
+            # entonces sí: ese es el caso que el mensaje describía.
+            "detalle": (f"El keep ({_dm(ultimo_keep)}) va por detrás de la hoja "
+                        f"({_dm(ultimo_hoja)}): "
+                        + ("alguien borró sesiones del documento después de pasar el "
+                           "pipeline, o el pipeline escribió desde otro keep"
+                           if os.getenv("KEEP_DOC_ID", "").strip() else
+                           "esta máquina lee el keep LOCAL (le falta KEEP_DOC_ID en su "
+                           ".env), así que va por su cuenta")),
         }
     else:
         ultima = ultimo_hoja or ultimo_keep
