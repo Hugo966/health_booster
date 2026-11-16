@@ -29,6 +29,9 @@ CABECERAS = {"User-Agent": "jarvis-health-dashboard/1.0"}
 # "hola" se iría medio segundo a pedirlo. 20 min es más fino que el dato real.
 TTL_S = 20 * 60
 TIMEOUT_S = 6
+# Cuánto se mira hacia delante. Seis horas cubre "voy a salir" y "vuelvo por la noche"
+# sin convertir la línea del parte en un boletín: el parte se monta en CADA mensaje.
+HORAS_VISTA = 6
 
 # Códigos WMO. Solo los que se dan de verdad en una ciudad; el resto cae en "raro".
 _CIELO = {
@@ -116,6 +119,33 @@ def guardar_ubicacion(lugar: dict) -> None:
     _cache.update(ts=0.0, datos=None, clave=None)   # la caché era de otro sitio
 
 
+def _ventana(horario: dict, t_ahora: str, horas: int = HORAS_VISTA) -> dict | None:
+    """Lo que viene en las próximas horas, resumido. Función pura: la prueba `test_meteo.py`.
+
+    Hace falta porque el máximo y el mínimo DEL DÍA no sirven para decidir si coger
+    chaqueta: a las ocho de la tarde la mínima de hoy es la de esta madrugada, que ya
+    pasó. Lo que importa es lo que va a hacer mientras esté fuera.
+
+    Las horas vienen en hora LOCAL del sitio (`timezone=auto`) y en formato ISO, así que
+    comparar cadenas ordena bien y no hace falta parsear nada ni saber la zona.
+    """
+    tiempos = horario.get("time") or []
+    temps = horario.get("temperature_2m") or []
+    lluvias = horario.get("precipitation_probability") or []
+    # La primera hora que todavía no ha pasado. Si la lista se acabó (o no vino), no se
+    # inventa nada: el parte sale sin este tramo, como con cualquier otro fallo.
+    desde = next((i for i, t in enumerate(tiempos) if t > t_ahora), None)
+    if desde is None:
+        return None
+    t = [x for x in temps[desde:desde + horas] if x is not None]
+    if not t:
+        return None
+    ll = [x for x in lluvias[desde:desde + horas] if x is not None]
+    return {"min": round(min(t)), "max": round(max(t)),
+            "lluvia": max(ll) if ll else None,
+            "hasta": tiempos[min(desde + horas, len(tiempos)) - 1][11:16]}
+
+
 def ahora() -> dict | None:
     """El tiempo de ahora y el resto del día. `None` si no hay ubicación o si falla."""
     sitio = ubicacion()
@@ -128,8 +158,11 @@ def ahora() -> dict | None:
         d = requests.get(URL, timeout=TIMEOUT_S, params={
             "latitude": sitio["lat"], "longitude": sitio["lon"],
             "current": "temperature_2m,apparent_temperature,weather_code",
+            "hourly": "temperature_2m,precipitation_probability,weather_code",
             "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-            "timezone": "auto", "forecast_days": 1,
+            # Dos días, no uno: a las 22:00 la ventana de seis horas cruza la medianoche,
+            # y con un solo día se quedaría en dos horas sin que nadie lo note.
+            "timezone": "auto", "forecast_days": 2,
         }).json()
         act, dia = d["current"], d["daily"]
         datos = {
@@ -140,6 +173,7 @@ def ahora() -> dict | None:
             "maxima": round(dia["temperature_2m_max"][0]),
             "minima": round(dia["temperature_2m_min"][0]),
             "lluvia": dia["precipitation_probability_max"][0],
+            "proximas": _ventana(d.get("hourly", {}), act.get("time", "")),
         }
     except Exception as e:
         # Se devuelve lo último bueno si lo hay: un tiempo de hace una hora es mucho más
@@ -161,4 +195,11 @@ def frase() -> str | None:
     # La probabilidad solo se dice cuando significa algo: un 10% es ruido.
     if d["lluvia"] is not None and d["lluvia"] >= 30:
         texto += f" · {d['lluvia']}% de lluvia"
+    # Y lo que de verdad decide si sale con chaqueta: lo que viene, no lo que ya pasó.
+    p = d.get("proximas")
+    if p:
+        texto += (f"\n- Próximas horas (hasta las {p['hasta']}): "
+                  f"de {p['max']}° a {p['min']}°")
+        if p["lluvia"] is not None and p["lluvia"] >= 30:
+            texto += f", {p['lluvia']}% de lluvia"
     return texto

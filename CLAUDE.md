@@ -351,7 +351,13 @@ canal de sincronización, así que:
   comparten la misma casilla (`Ubicacion.tsx`, `CampoUbicacion`). No va en el `.env`
   a propósito: esto lo contesta quien USA la app, no quien la instala, y así vale desde
   el móvil, el portátil y la VM. Se guarda en la pestaña **`ajustes`** (clave/valor) de
-  la hoja. `meteo.frase()` mete una línea en el parte y **devuelve `None` si falla o si
+  la hoja. `meteo.frase()` mete en el parte **dos líneas: lo que hace AHORA y lo que viene
+  en las próximas 6 h** (`HORAS_VISTA`, resumido por `_ventana`, que es pura y tiene test
+  en `test_meteo.py`). La segunda no es un adorno: el máximo y el mínimo DEL DÍA no sirven
+  para decidir si coger chaqueta, porque a las ocho de la tarde la mínima de hoy es la de
+  esta madrugada, que ya pasó. Por eso se piden **dos días** a Open-Meteo —a las 23:00 la
+  ventana cruza la medianoche— y las horas se comparan como texto ISO en hora local
+  (`timezone=auto`), sin parsear ni saber la zona. Y **devuelve `None` si falla o si
   no hay ubicación**: un Jarvis sin saber si llueve sirve, uno mudo no. Caché de 20 min
   porque el parte se monta en CADA mensaje. Hacia fuera solo salen unas coordenadas.
 - **Escribir en la hoja gasta cuota de LECTURA.** Cada `ajustes.escribir` son metadatos +
@@ -370,6 +376,12 @@ canal de sincronización, así que:
   desde julio diciendo "entra en offseason" y Jarvis lo afirmaba en septiembre estando en
   Build. La etapa la resuelve `entreno_pipeline.nombre_etapa(plani, bloque)` desde la 4ª
   columna de `PLAN_TAB_RULES`, y llega por el parte de estado.
+- **Lo que el enrutado contesta por su cuenta, Jarvis NO lo ve** (2026-11-16). Preguntarle
+  "voy a salir, ¿cojo chaqueta?" daba un "yo soy entrenador personal, no la AEMET": Haiku
+  lo clasificaba como charla corta, contestaba él **sin el parte de estado** y se inventaba
+  que no tenía el dato, con el tiempo delante. Las preguntas del tiempo van a `CONSULTA` en
+  `_SIS_RUTA`. La regla general: **si una pregunta se contesta con algo que está en el
+  parte, no puede salir por el atajo** — es el mismo fallo de HANDOFF §18.1 con otra cara.
 - **El atajo del enrutado solo vale para ABRIR conversación.** `enrutar()` manda a Haiku el
   mensaje **suelto**, sin hilo; si devuelve `RESPUESTA:`, el turno se cierra y Sonnet no
   llega a verlo. A mitad de un formulario eso produjo "no tengo memoria de mensajes

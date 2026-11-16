@@ -564,7 +564,8 @@ onda", "ahorita" ni voseo). {Usuario} acaba de escribirte. Devuelve UNA línea:
   Si la frase va con retintín, márcala poniendo [sarcastic] delante (o [mischievously],
   [laughs], [curious]): es lo que hace que la voz lo diga con guasa y no en plano.
 - Si pregunta por sus datos de salud o entreno (sueño, fuerza, peso, carga, un panel,
-  una marca), o pide abrir algo del dashboard:
+  una marca), pide abrir algo del dashboard, o pregunta por EL TIEMPO (si llueve, si
+  hace frío, si coge chaqueta, si va a salir):
       CONSULTA
 - Para cualquier otra cosa (charla, algo personal, cómo se siente):
       NEUTRA
@@ -573,6 +574,7 @@ Ej: "hola" -> RESPUESTA: [mischievously] Hombre, mira quién aparece.
 Ej: "gracias tío" -> RESPUESTA: A mandar. Para eso estoy.
 Ej: "¿qué tal he dormido?" -> CONSULTA
 Ej: "ábreme el panel de fuerza" -> CONSULTA
+Ej: "voy a salir, ¿cojo chaqueta?" -> CONSULTA
 Ej: "me duele el hombro" -> NEUTRA
 Ej: "ayer estuve con mi hermano" -> NEUTRA
 """
