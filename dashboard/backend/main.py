@@ -36,6 +36,17 @@ def _mantener_datos_calientes():
             fetch_all(ttl=0)
         except Exception:
             pass
+        try:
+            # El tiempo, por lo mismo y por una razón más: desde la VM, Open-Meteo falla
+            # a ratos (medido el 2026-11-16: dos peticiones de cinco colgadas hasta
+            # agotar el plazo, y quince seguidas perfectas media hora después). Pedido
+            # desde aquí, ese tropiezo lo paga un hilo de fondo y el turno sigue leyendo
+            # la caché; pedido desde el parte, le mete el plazo entero de espera a un
+            # mensaje y, en frío, deja a Jarvis sin saber si llueve. Su TTL (20 min) es
+            # mayor que esta vuelta, así que la mayoría de las veces esto no pide nada.
+            meteo.ahora()
+        except Exception:
+            pass
         time.sleep(240)
 
 app = FastAPI(title="Health Booster — Dashboard API")
