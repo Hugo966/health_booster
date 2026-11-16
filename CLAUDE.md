@@ -359,7 +359,13 @@ canal de sincronización, así que:
   ventana cruza la medianoche— y las horas se comparan como texto ISO en hora local
   (`timezone=auto`), sin parsear ni saber la zona. Y **devuelve `None` si falla o si
   no hay ubicación**: un Jarvis sin saber si llueve sirve, uno mudo no. Caché de 20 min
-  porque el parte se monta en CADA mensaje. Hacia fuera solo salen unas coordenadas.
+  porque el parte se monta en CADA mensaje, **y quien la rellena es el hilo de
+  `main._mantener_datos_calientes`, no el turno**: desde la VM, Open-Meteo falla a ratos
+  (medido el 2026-11-16: dos peticiones de cinco colgadas hasta agotar el plazo, quince
+  seguidas perfectas media hora después), y pedirlo desde el parte le mete el plazo entero
+  de espera a un mensaje y, en frío, deja a Jarvis sin saber si llueve. Pedido desde el
+  hilo, ese tropiezo lo paga el fondo y el turno lee la caché.
+  Hacia fuera solo salen unas coordenadas.
 - **Escribir en la hoja gasta cuota de LECTURA.** Cada `ajustes.escribir` son metadatos +
   leer la columna + escribir, así que guardar la ubicación de una en una eran nueve
   peticiones y saltaba el 429. Se escriben todas las claves de una pasada. Y el `except`
