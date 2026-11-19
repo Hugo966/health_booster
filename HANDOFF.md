@@ -202,14 +202,18 @@ confirmar si eso sigue igual y si hay forma de que no dependa de abrir la app a 
 porque en la VM, con el pipeline por cron y nadie mirando, esto se vuelve el cuello de
 botella de verdad.
 
-### 4. Limpiar el histórico (ya desbloqueado)
-Receta en **`docs/publicar_repo.md`**. Al hacer el repo público se publica **todo el
-histórico**, no el estado final: el árbol ya está neutralizado, pero los commits viejos
-conservan la redacción que identifica las máquinas.
+### 4. Limpiar el histórico — HECHO el 2026-11-19, y el repo ya es público
+Se reescribieron los 91 commits con `git filter-repo --replace-text --mailmap` sobre un
+clon limpio, y `docs/publicar_repo.md` se borró en la misma pasada (citaba literalmente
+las cadenas que purgaba). Lo que se fue: la redacción que identificaba las dos máquinas,
+el nombre real de un tercero con su parentesco y su ciudad, y el segundo correo del autor.
 
-Dos trampas: **borrar `docs/publicar_repo.md`** antes del force-push (cita literalmente
-las cadenas que purga) y **volver a clonar en las dos máquinas** después, porque los
-hashes cambian y un `pull` normal no sirve.
+**Los hashes cambiaron**, así que cualquier clon anterior al 19/11 es una historia
+huérfana: hay que volver a clonar, no basta con `pull`. El respaldo de la historia vieja
+quedó en un bundle FUERA del repo.
+
+Lo que esto deja en pie para siempre está en `CLAUDE.md`, sección "El repo es PÚBLICO":
+lo que se escriba hoy se publica hoy, ya no hay una limpieza pendiente detrás.
 
 ### 5. Y entonces sí, la app
 Decisiones ya cerradas en `docs/app_movil.md` — no volver a plantearlas. El motor que va a

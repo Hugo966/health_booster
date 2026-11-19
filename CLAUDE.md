@@ -428,13 +428,24 @@ canal de sincronización, así que:
 - **Capturas de verificación**: `google-chrome --headless=new --force-prefers-reduced-motion`.
   Sin ese flag las animaciones de Recharts no avanzan y los gráficos salen vacíos.
 
-## Antes de hacer el repo público
+## El repo es PÚBLICO desde el 2026-11-19
 
-Ver **`docs/publicar_repo.md`**: el histórico entero se publica, así que la limpieza va en
-una sola pasada antes de publicar. Dos reglas: nada de datos personales en ficheros
-trackeados, y **no decir cuáles son los dos equipos** (que hay dos y se sincronizan por git
-sí es información necesaria). El árbol de trabajo ya está neutralizado; el histórico se
-arregla con la receta de `filter-repo` de ese documento.
+El histórico se reescribió con `filter-repo` ese día y `docs/publicar_repo.md` se borró en
+la misma pasada (contenía las cadenas purgadas). Lo que sigue en pie, ahora para siempre:
+
+- **Nada de datos personales en ficheros trackeados**: ni notas reales de los formularios,
+  ni nombres de terceros, ni valores de salud concretos. Lo que se escriba hoy se publica
+  hoy; ya no hay una limpieza pendiente detrás que lo arregle.
+- **No decir cuáles son los dos equipos.** Que hay dos y se sincronizan por git sí es
+  información necesaria; a qué corresponde cada uno, no. Se dice "el otro equipo".
+- En el código se habla de **"el usuario"**, no de Hugo (ver Convenciones). Su autoría sí
+  se queda: firma los commits y el repo cuelga de su cuenta.
+- Lo que SÍ conviene que se lea: el `README.md` en inglés con las cifras medidas, y el
+  análisis de `docs/app_movil.md` sobre lo que faltaría para comercializar (multiusuario,
+  autenticación, RGPD art. 9) — enseña que los límites del sistema están identificados.
+- El tailnet, los IDs de proyecto de GCP y el nombre de la VM se publicaron a propósito:
+  no son credenciales (entrar sigue pidiendo auth) y hacen `docs/reconstruir_vm.md`
+  reproducible.
 
 ## Ficheros que NUNCA van al repo
 
