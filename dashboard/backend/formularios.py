@@ -285,6 +285,31 @@ def sugerencias(tipo: str, fecha: str) -> dict:
     return ultimos
 
 
+def precarga(tipo: str, fecha: str, guardado: dict) -> dict:
+    """Lo que NO está en la hoja pero sale ya escrito en el formulario, y se MANDA.
+
+    Hoy solo el dolor de la sesión: el usuario lo apunta en el keep al acabar de entrenar
+    y más tarde copia ese mismo párrafo al campo del PM. Copiarlo a mano es justo el
+    trabajo que hace esto, y la mayoría de los días lo copia tal cual.
+
+    Va aparte de `sugerencias` porque la regla es la CONTRARIA: la rueda del peso no se
+    manda si no la toca (apuntaría la pesada de la semana pasada como la de hoy), y esto
+    sí se guarda sin tocarlo, como las ruedas de `plan_pestanas`. Puede, porque no es una
+    suposición: es una frase que escribió él sobre ese mismo día.
+
+    Si el campo del formulario ya tiene algo, no se toca: el form manda sobre el keep, que
+    es el borrador. Sale de `entreno_sesion` —el keep parseado— y no de `derived_diario`,
+    que es el derivado.
+    """
+    if tipo != "pm" or str(guardado.get("dolor_sesion_nota", "") or "").strip():
+        return {}
+    for s in sheets.fetch_all().get("entreno_sesion", []):
+        if str(s.get("fecha", ""))[:10] == fecha:
+            dolor = str(s.get("dolor_sesion_keep", "") or "").strip()
+            return {"dolor_sesion_nota": dolor} if dolor else {}
+    return {}
+
+
 def guardar(tipo: str, fecha: str, valores: dict, borrar=()) -> dict:
     """Upsert por fecha. Devuelve lo guardado y qué campos siguen sin contestar.
 

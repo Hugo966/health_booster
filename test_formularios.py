@@ -134,3 +134,18 @@ chat.fetch_all = lambda *a, **kw: {
 assert chat._tool_dia("2026-11-10")["datos"]["rpd_sesion"] == 7
 
 print("OK")
+
+# --- La precarga del dolor: lo del keep sale ya escrito en el form PM -------------------
+f.sheets.fetch_all = lambda *a, **kw: {"entreno_sesion": [
+    {"fecha": "2026-11-18", "dolor_sesion_keep": "Molestia en el codo en press"},
+    {"fecha": "2026-11-17", "dolor_sesion_keep": ""},
+]}
+assert f.precarga("pm", "2026-11-18", {}) == {
+    "dolor_sesion_nota": "Molestia en el codo en press"}
+# El form manda sobre el keep: si ya escribió algo ahí, no se pisa.
+assert f.precarga("pm", "2026-11-18", {"dolor_sesion_nota": "ya lo puse yo"}) == {}
+assert f.precarga("pm", "2026-11-17", {}) == {}   # entrenó, pero sin dolores
+assert f.precarga("pm", "2026-11-16", {}) == {}   # no entrenó: no hay fila
+assert f.precarga("am", "2026-11-18", {}) == {}   # el AM no tiene ese campo
+
+print("OK precarga")

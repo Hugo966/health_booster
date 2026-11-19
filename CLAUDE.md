@@ -263,6 +263,15 @@ canal de sincronización, así que:
   ARRANCA en el último valor registrado (`formularios.sugerencias`), pero esa sugerencia
   **no se guarda si no la toca**: si se mandara sola, abrir el formulario y darle a
   Guardar apuntaría el peso de la semana pasada como la pesada de hoy.
+- **Hay un segundo tipo de precarga, y va justo al revés: `formularios.precarga`.** Sale
+  escrita en el campo y **SÍ se guarda sin tocarla** (el frontend la mete en `tocados` al
+  cargar, o se vería en pantalla y no se guardaría). Hoy solo el **dolor de la sesión**:
+  el usuario lo apunta en el keep al acabar de entrenar y luego copia el mismo párrafo al
+  campo del PM, así que el form abre con él ya puesto y lo edita si quiere. Puede
+  mandarse sin tocarla porque no es una suposición —es una frase que escribió él sobre
+  ese mismo día—, al revés que el peso. Sale de `entreno_sesion` (el keep parseado), no
+  de `derived_diario`, y **si el campo del form ya tiene algo no se pisa**: el form manda
+  sobre el borrador. Test en `test_formularios.py`.
 - **El backend YA escribe en `wellness_am` / `wellness_pm` / `peso`** (`formularios.py`),
   aunque el docstring de `status_pipeline.py` diga "NUNCA toca": eso sigue siendo cierto
   *para el pipeline*. La escritura es un **upsert por fecha** —Hugo corrige lo que ya

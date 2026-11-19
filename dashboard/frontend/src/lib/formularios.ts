@@ -60,14 +60,18 @@ export async function fetchEstado(dias = 14): Promise<EstadoFormularios> {
 /** Lo guardado de ese día + dónde arranca la rueda (el último peso, la última cafeína).
  *  Las sugerencias van APARTE de los valores a propósito: no están guardadas y no se
  *  mandan si el usuario no toca la rueda, o darle a Guardar sin pesarse apuntaría el peso de
- *  la semana pasada como el de hoy. */
+ *  la semana pasada como el de hoy.
+ *
+ *  `precargados` va al revés: tampoco está guardado, pero sale escrito y SÍ se manda sin
+ *  tocarlo (el dolor que él mismo apuntó en el keep ese día). */
 export async function fetchValores(
   tipo: TipoFormulario, fecha: string,
-): Promise<{ valores: Valores; sugerencias: Valores }> {
+): Promise<{ valores: Valores; sugerencias: Valores; precargados: Valores }> {
   const r = await fetch(`${API_BASE}/formulario/${tipo}?fecha=${fecha}`);
   if (!r.ok) throw new Error("no pude leer ese día");
   const c = await r.json();
-  return { valores: c.valores ?? {}, sugerencias: c.sugerencias ?? {} };
+  return { valores: c.valores ?? {}, sugerencias: c.sugerencias ?? {},
+           precargados: c.precargados ?? {} };
 }
 
 export type PlanPendientes = {

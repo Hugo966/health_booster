@@ -104,8 +104,12 @@ def formulario_leer(tipo: str, fecha: str):
     # `sugerencias` NO son valores guardados: es dónde arranca la rueda (el último peso,
     # la última cafeína). Van aparte justo para que la UI no pueda confundirlas con un
     # valor puesto y mandarlas sin que el usuario las toque.
-    return {"tipo": tipo, "fecha": fecha, "valores": formularios.leer(tipo, fecha),
-            "sugerencias": formularios.sugerencias(tipo, fecha)}
+    # `precargados` es lo contrario: no está guardado pero sale escrito Y se manda sin
+    # que el usuario lo toque (el dolor que ya apuntó en el keep ese día).
+    guardado = formularios.leer(tipo, fecha)
+    return {"tipo": tipo, "fecha": fecha, "valores": guardado,
+            "sugerencias": formularios.sugerencias(tipo, fecha),
+            "precargados": formularios.precarga(tipo, fecha, guardado)}
 
 
 @app.post("/formulario/{tipo}")

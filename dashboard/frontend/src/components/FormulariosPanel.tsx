@@ -386,7 +386,14 @@ function Editor({ tipo, esquema, fecha, onGuardado }: {
     tocados.current = new Set();
     // Precargar lo que ya hay es lo que permite CORREGIR y no solo añadir.
     fetchValores(tipo, fecha)
-      .then((r) => { if (vivo) { setValores(r.valores); setSugerencias(r.sugerencias); } })
+      .then((r) => {
+        if (!vivo) return;
+        setValores({ ...r.valores, ...r.precargados });
+        setSugerencias(r.sugerencias);
+        // Lo precargado cuenta como TOCADO: no está en la hoja, así que sin esto saldría
+        // escrito en pantalla y no se guardaría, que es justo lo contrario de la idea.
+        tocados.current = new Set(Object.keys(r.precargados));
+      })
       .catch((e) => vivo && setError(String(e.message ?? e)))
       .finally(() => vivo && setCargando(false));
     return () => { vivo = false; };
